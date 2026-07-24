@@ -3,11 +3,18 @@ import socket
 import argparse
 import paramiko
 
+# Khai báo UTF-8 cho stdout trên Windows console để tránh UnicodeEncodeError
+if sys.platform.startswith('win'):
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+    except AttributeError:
+        pass
+
 def test_ssh_connection(hostname, port, username, password=None, key_filename=None, timeout=5):
     """
     Kiểm thử kết nối SSH đến Router Beryl 7 với đầy đủ xử lý ngoại lệ (Exception Handling).
     """
-    print(f"🔄 Đang kết nối tới SSH Server tại {username}@{hostname}:{port} (Timeout: {timeout}s)...")
+    print(f"[*] Đang kết nối tới SSH Server tại {username}@{hostname}:{port} (Timeout: {timeout}s)...")
     
     client = paramiko.SSHClient()
     # Tự động chấp nhận Host Key nếu lần đầu kết nối (Auto-Add Policy)
@@ -23,11 +30,11 @@ def test_ssh_connection(hostname, port, username, password=None, key_filename=No
             timeout=timeout,
             banner_timeout=timeout
         )
-        print("✅ KẾT NỐI SSH THÀNH CÔNG!")
+        print("[SUCCESS] KẾT NỐI SSH THÀNH CÔNG!")
         
         # Thử thực thi 1 lệnh đọc thông tin hệ thống OpenWrt
         cmd = "cat /etc/openwrt_release"
-        print(f"📖 Đang chạy lệnh thử nghiệm: '{cmd}'...")
+        print(f"[*] Đang chạy lệnh thử nghiệm: '{cmd}'...")
         stdin, stdout, stderr = client.exec_command(cmd)
         
         output = stdout.read().decode('utf-8').strip()
@@ -39,19 +46,19 @@ def test_ssh_connection(hostname, port, username, password=None, key_filename=No
             print("-------------------------------------------\n")
             return True
         elif error:
-            print(f"⚠️ Lệnh chạy có lỗi: {error}")
+            print(f"[WARNING] Lệnh chạy có lỗi: {error}")
             return False
             
     except paramiko.AuthenticationException:
-        print("❌ LỖI XÁC THỰC (Authentication Error): Sai tên đăng nhập hoặc mật khẩu Root!")
+        print("[ERROR] LỖI XÁC THỰC (Authentication Error): Sai tên đăng nhập hoặc mật khẩu Root!")
     except paramiko.SSHException as ssh_err:
-        print(f"❌ LỖI GIAO THỨC SSH (SSH Protocol Error): {ssh_err}")
+        print(f"[ERROR] LỖI GIAO THỨC SSH (SSH Protocol Error): {ssh_err}")
     except socket.timeout:
-        print(f"❌ LỖI TIMEOUT: Không thể phản hồi từ {hostname} sau {timeout}s. Vui lòng kiểm tra lại IP Router hoặc cáp mạng!")
+        print(f"[ERROR] LỖI TIMEOUT: Không thể phản hồi từ {hostname} sau {timeout}s. Vui lòng kiểm tra lại IP Router hoặc cáp mạng!")
     except socket.error as sock_err:
-        print(f"❌ LỖI KẾT NỐI MẠNG (Socket Error): {sock_err}. Không thể tới được IP {hostname}.")
+        print(f"[ERROR] LỖI KẾT NỐI MẠNG (Socket Error): {sock_err}. Không thể tới được IP {hostname}.")
     except Exception as e:
-        print(f"❌ LỖI KHÔNG XÁC ĐỊNH: {type(e).__name__} - {e}")
+        print(f"[ERROR] LỖI KHÔNG XÁC ĐỊNH: {type(e).__name__} - {e}")
     finally:
         client.close()
         
