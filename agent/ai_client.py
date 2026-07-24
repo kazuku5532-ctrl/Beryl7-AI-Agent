@@ -1,8 +1,12 @@
 import os
 import json
+from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 from agent.sanitizer import DataSanitizer
+
+# Tự động nạp môi trường từ file .env nếu có
+load_dotenv()
 
 class RouterAIAgent:
     """
@@ -21,13 +25,13 @@ Các nguyên tắc hoạt động:
 4. Nếu mạng bình thường không có lỗi -> Gọi tool `no_action_required`.
 """
 
-    def __init__(self, api_key=None):
+    def __init__(self, api_key=None, model_name="gemini-2.5-flash"):
         self.api_key = api_key or os.environ.get("GEMINI_API_KEY")
         if not self.api_key:
-            raise ValueError("Không tìm thấy GEMINI_API_KEY. Vui lòng cung cấp API Key qua biến môi trường hoặc tham số!")
+            raise ValueError("Không tìm thấy GEMINI_API_KEY. Vui lòng cung cấp API Key qua .env hoặc tham số!")
             
         self.client = genai.Client(api_key=self.api_key)
-        self.model_name = "gemini-2.0-flash"
+        self.model_name = model_name
 
     def _get_tools_definition(self):
         """
@@ -122,7 +126,7 @@ Hãy phân tích tình trạng hệ thống Router Beryl 7 dưới đây và đ�
         config = types.GenerateContentConfig(
             system_instruction=self.SYSTEM_INSTRUCTION,
             tools=tools,
-            temperature=0.1 # Nhiệt độ thấp giúp AI ra quyết định logic, nhất quán
+            temperature=0.1
         )
 
         response = self.client.models.generate_content(
