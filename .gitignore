@@ -1,3 +1,12 @@
+# Python Bytecode & Cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Virtual Environment
+venv/
+.venv/
+
 # Executables and Binaries
 /bin/
 *.exe
