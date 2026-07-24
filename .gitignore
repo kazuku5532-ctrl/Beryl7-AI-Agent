@@ -1,0 +1,24 @@
+# Executables and Binaries
+/bin/
+*.exe
+*.dll
+*.so
+*.dylib
+beryl7-agent
+
+# Secrets and Environment variables (CRITICAL)
+.env
+.env.*
+*.secrets.*
+*.key
+*.pem
+
+# Database & Logs
+/data/*.db
+*.log
+
+# IDE & OS Garbage
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
