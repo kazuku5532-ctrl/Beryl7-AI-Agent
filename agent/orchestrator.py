@@ -1,5 +1,7 @@
-import time
+import os
 import json
+import time
+from agent.logger import agent_logger
 from agent.telemetry import RouterTelemetry
 from agent.log_parser import RouterLogParser
 from agent.ai_client import RouterAIAgent
@@ -9,146 +11,130 @@ from agent.skill_store import SkillStore
 
 class SelfEvolvingAgentOrchestrator:
     """
-    Module Orchestrator trung tâm - Trái tim Đồ án:
-    Điều phối Vòng lặp Tự sửa lỗi & Tự tiến hóa (Self-Healing & Self-Evolution Loop).
-    Kết hợp Telemetry + Log Parser + SQLite Skill Store + Gemini AI + Executor + Watchdog Guardrail.
+    Self-Evolving Agent Orchestrator: Bộ não trung tâm điều phối toàn bộ vòng lặp
+    Tự phát hiện -> Tìm kiếm Skill -> Gọi Gemini AI -> Kiểm thử với Watchdog -> Tiến hóa SQLite.
+    
+    Cập nhật v3.5:
+    - Sửa triệt để lỗi Defensive Error Handling khi anomalies rỗng.
+    - Tích hợp Logging tập trung và Retry Logic.
     """
-    def __init__(self, hostname="192.168.8.1", port=22, username="root", password=None, key_filename=None, db_path="data/skills.db", dry_run=False):
-        self.hostname = hostname
-        self.port = port
-        self.username = username
-        self.password = password
-        self.key_filename = key_filename
+    def __init__(self, hostname=None, port=None, username=None, password=None, db_path="data/skills.db", dry_run=True):
+        self.hostname = hostname or os.environ.get("ROUTER_HOST", "192.168.8.1")
+        self.port = int(port or os.environ.get("ROUTER_PORT", 22))
+        self.username = username or os.environ.get("ROUTER_USER", "root")
+        self.password = password or os.environ.get("ROUTER_PASSWORD")
+        self.db_path = db_path
         self.dry_run = dry_run
 
-        self.telemetry = RouterTelemetry(hostname, port, username, password, key_filename)
-        self.log_parser = RouterLogParser(hostname, port, username, password, key_filename)
-        self.executor = RouterExecutor(hostname, port, username, password, key_filename, dry_run=dry_run)
-        self.watchdog = GuardedWatchdog(hostname, port, username, password, key_filename)
-        self.skill_store = SkillStore(db_path=db_path)
+        self.telemetry = RouterTelemetry(self.hostname, self.port, self.username, self.password)
+        self.log_parser = RouterLogParser(self.hostname, self.port, self.username, self.password)
+        self.executor = RouterExecutor(self.hostname, self.port, self.username, self.password, dry_run=self.dry_run)
+        self.watchdog = GuardedWatchdog(self.hostname, self.port, self.username, self.password)
+        self.skill_store = SkillStore(self.db_path)
 
     def run_self_healing_cycle(self, api_key=None, simulated_anomaly=None):
         """
-        Thực thi 1 vòng lặp Self-Healing & Self-Evolution hoàn chỉnh.
+        Thực thi trọn vẹn 1 vòng lặp Self-Healing & Self-Evolution.
         """
-        print(f"\n================ [ BẮT ĐẦU VÒNG LẶP SELF-HEALING & SELF-EVOLUTION ] ================")
+        agent_logger.info("\n================ [ BẮT ĐẦU VÒNG LẶP SELF-HEALING & SELF-EVOLUTION ] ================")
         
-        # 1. Thu thập dữ liệu Telemetry & Anomaly
-        print("[1/5] Thu thập Telemetry & Nhật ký hệ thống...")
-        tele_data = self.telemetry.get_normalized_telemetry()
-        anomaly_data = self.log_parser.detect_anomalies(telemetry_data=tele_data)
+        # 1. Thu thập Telemetry & Nhận diện Bất thường
+        agent_logger.info("[1/5] Thu thập Telemetry & Nhật ký hệ thống...")
+        telemetry_data = self.telemetry.get_normalized_telemetry()
 
-        # Hỗ trợ giả lập sự cố phục vụ test MVP
         if simulated_anomaly:
-            print(f"⚠️ [SIMULATOR] Kích hoạt giả lập sự cố: '{simulated_anomaly.get('event_name')}'")
-            anomaly_data["has_anomalies"] = True
-            anomaly_data["max_severity"] = simulated_anomaly.get("severity", "CRITICAL")
-            anomaly_data["anomalies"].append(simulated_anomaly)
-
-        # 2. Kiểm tra nếu hệ thống bình thường
-        if not anomaly_data.get("has_anomalies"):
-            print("✅ Hệ thống mạng hoạt động bình thường! Không phát hiện sự cố.")
-            return {
-                "status": "healthy",
-                "source": "NO_ACTION",
-                "message": "Router ổn định."
-            }
-
-        # 3. Trích xuất sự cố hàng đầu (Top Anomaly)
-        top_anomaly = anomaly_data["anomalies"][0]
-        severity = top_anomaly.get("severity")
-        category = top_anomaly.get("category")
-        event_name = top_anomaly.get("event_name")
-        
-        signature = SkillStore.generate_signature(severity, category, event_name)
-        print(f"🔍 [ANOMALY DETECTED] Sự cố: {severity}:{category}:{event_name} (Signature: {signature[:8]}...)")
-
-        # 4. Kiểm tra SQLite Skill Store (Cache Lookup)
-        print(f"[2/5] Truy vấn SQLite Skill Store tìm kỹ năng đã học...")
-        learned_skill = self.skill_store.get_skill(signature, min_confidence=0.5)
-
-        # ==================== TRƯỜNG HỢP 1: CACHE HIT (ĐÃ HỌC TỪ TRƯỚC) ====================
-        if learned_skill:
-            print(f"⚡ [CACHE HIT - SQLITE LOCAL] Tìm thấy Kỹ năng đã học! (Confidence: {learned_skill['confidence_score']}, Success: {learned_skill['success_count']})")
-            print(f"  👉 Tool: '{learned_skill['tool_name']}' với tham số: {learned_skill['arguments']}")
-            print(f"  💰 CHI PHÍ API: 0 VNĐ | THỜI GIAN PHẢN HỒI: ~0 GIÂY!")
-
-            tool_name = learned_skill["tool_name"]
-            args = learned_skill["arguments"]
-
-            # Thực thi local qua Watchdog Guardrail
-            exec_res = self.watchdog.execute_with_guardrail(
-                executor_func=self.executor.dispatch_ai_decision,
-                decision={
-                    "status": "success",
-                    "action_type": "FUNCTION_CALL",
-                    "tool_name": tool_name,
-                    "arguments": args
-                },
-                countdown_seconds=10
-            )
-
-            if exec_res.get("success"):
-                # Cập nhật số lần thành công
-                self.skill_store.save_or_update_skill(signature, category, event_name, tool_name, args)
-                return {
-                    "status": "success",
-                    "source": "SQLITE_LOCAL_SKILL_STORE",
-                    "api_cost_usd": 0.0,
-                    "tool_used": tool_name,
-                    "execution_result": exec_res
-                }
-            else:
-                # Nếu chạy local thất bại -> Giảm điểm tin cậy để lần sau gọi AI sửa mới
-                print("⚠️ [LOCAL FIX FAILED] Kỹ năng local thất bại! Giảm Confidence Score để AI tái huấn luyện...")
-                self.skill_store.record_failure(signature)
-
-        # ==================== TRƯỜNG HỢP 2: CACHE MISS (LỖI MỚI -> GỬI GEMINI AI) ====================
-        print(f"🧠 [CACHE MISS - CLOUD AI] Lỗi mới chưa có trong tri thức! Gửi dữ liệu tới Gemini 2.0 Flash AI...")
-        
-        ai_agent = RouterAIAgent(api_key=api_key)
-        ai_decision = ai_agent.analyze_and_decide(tele_data, anomaly_data)
-
-        if ai_decision.get("action_type") != "FUNCTION_CALL":
-            return {
-                "status": "success",
-                "source": "GEMINI_CLOUD_AI_TEXT",
-                "response": ai_decision.get("response_text")
-            }
-
-        chosen_tool = ai_decision.get("tool_name")
-        chosen_args = ai_decision.get("arguments", {})
-        print(f"🎯 [GEMINI DECISION] AI đề xuất Tool: '{chosen_tool}' với tham số: {chosen_args}")
-
-        # Thực thi kịch bản mới từ AI qua Watchdog Guardrail
-        exec_res = self.watchdog.execute_with_guardrail(
-            executor_func=self.executor.dispatch_ai_decision,
-            decision=ai_decision,
-            countdown_seconds=10
-        )
-
-        # 5. Tiến hóa & Lưu kỹ năng mới vào SQLite nếu thực thi thành công!
-        if exec_res.get("success"):
-            print(f"🚀 [SELF-EVOLUTION] Kịch bản sửa lỗi của AI THÀNH CÔNG! Lưu kỹ năng mới vào SQLite Skill Store...")
-            self.skill_store.save_or_update_skill(
-                error_signature=signature,
-                category=category,
-                event_name=event_name,
-                tool_name=chosen_tool,
-                arguments=chosen_args
-            )
-            return {
-                "status": "success",
-                "source": "GEMINI_CLOUD_AI_AND_EVOLVED",
-                "evolved_new_skill": True,
-                "tool_used": chosen_tool,
-                "execution_result": exec_res
+            agent_logger.warning(f"⚠️ [SIMULATOR] Kích hoạt giả lập sự cố: '{simulated_anomaly.get('event_name')}'")
+            anomaly_data = {
+                "has_anomalies": True,
+                "max_severity": simulated_anomaly.get("severity", "WARNING"),
+                "anomalies": [simulated_anomaly]
             }
         else:
-            print("🚨 [EVOLUTION FAILED] Kịch bản AI thất bại và đã được Watchdog Rollback an toàn.")
+            anomaly_data = self.log_parser.detect_anomalies(telemetry_data)
+
+        # Defensive Error Check: Đảm bảo không bị crash nếu anomalies rỗng
+        anomalies_list = anomaly_data.get("anomalies", [])
+        if not anomaly_data.get("has_anomalies") or not anomalies_list:
+            agent_logger.info("✅ Hệ thống mạng hoạt động bình thường! Không phát hiện sự cố.")
             return {
-                "status": "failed",
-                "source": "GEMINI_CLOUD_AI",
-                "evolved_new_skill": False,
+                "status": "healthy",
+                "message": "No anomalies detected.",
+                "api_cost_usd": 0.0
+            }
+
+        top_anomaly = anomalies_list[0]
+        severity = top_anomaly.get("severity", "WARNING")
+        category = top_anomaly.get("category", "UNKNOWN")
+        event_name = top_anomaly.get("event_name", "UNKNOWN_EVENT")
+
+        error_signature = self.skill_store.generate_signature(severity, category, event_name)
+        agent_logger.warning(f"🔍 [ANOMALY DETECTED] Sự cố: {severity}:{category}:{event_name} (Signature: {error_signature[:8]}...)")
+
+        # 2. Kiểm tra Cache trong SQLite Skill Store
+        agent_logger.info("[2/5] Truy vấn SQLite Skill Store tìm kỹ năng đã học...")
+        learned_skill = self.skill_store.get_skill(error_signature, min_confidence=0.5)
+
+        if learned_skill:
+            tool_name = learned_skill["tool_name"]
+            arguments = learned_skill["arguments"]
+            agent_logger.info(f"⚡ [CACHE HIT - SQLITE LOCAL] Tìm thấy Kỹ năng đã học! (Confidence: {learned_skill['confidence_score']}, Success: {learned_skill['success_count']})")
+            agent_logger.info(f"  👉 Tool: '{tool_name}' với tham số: {arguments}")
+            agent_logger.info(f"  💰 CHI PHÍ API: 0 VNĐ | THỜI GIAN PHẢN HỒI: ~0 GIÂY!")
+            
+            # Thực thi lại lệnh đã học với Watchdog Guardrail
+            exec_res = self.watchdog.execute_with_guardrail(self.executor, tool_name, arguments)
+            
+            if exec_res.get("success"):
+                self.skill_store.save_or_update_skill(error_signature, category, event_name, tool_name, arguments)
+            else:
+                self.skill_store.record_failure(error_signature)
+
+            return {
+                "status": "success",
+                "source": "SQLITE_LOCAL_SKILL_STORE",
+                "api_cost_usd": 0.0,
+                "tool_used": tool_name,
                 "execution_result": exec_res
             }
+
+        # 3. Cache Miss -> Gửi lên Cloud Gemini AI API
+        agent_logger.info("🧠 [CACHE MISS] Chưa có kỹ năng trong SQLite local. Gửi yêu cầu tới Cloud Gemini AI API...")
+        try:
+            ai_agent = RouterAIAgent(api_key=api_key)
+            ai_decision = ai_agent.analyze_and_decide(telemetry_data, anomaly_data)
+        except Exception as e:
+            agent_logger.error(f"❌ Lỗi khi gọi Gemini AI API: {e}")
+            return {"status": "error", "message": f"Gemini API error: {e}"}
+
+        if ai_decision.get("action_type") != "FUNCTION_CALL":
+            agent_logger.info(f"💬 AI Phản hồi văn bản (Không yêu cầu hành động): {ai_decision.get('response_text')}")
+            return {
+                "status": "success",
+                "source": "GEMINI_CLOUD_AI",
+                "api_cost_usd": 0.0001,
+                "tool_used": "none",
+                "response_text": ai_decision.get("response_text")
+            }
+
+        tool_name = ai_decision["tool_name"]
+        arguments = ai_decision["arguments"]
+        agent_logger.info(f"🎯 AI Quyết định gọi Tool: '{tool_name}' với tham số: {arguments}")
+
+        # 4. Kiểm thử với Watchdog Guardrail
+        agent_logger.info("[4/5] Thực thi lệnh AI qua Watchdog Rollback Guardrail 30s...")
+        exec_res = self.watchdog.execute_with_guardrail(self.executor, tool_name, arguments)
+
+        # 5. Tiến hóa SQLite Skill Store nếu thành công
+        if exec_res.get("success"):
+            agent_logger.info("🌱 [EVOLUTION] Kiểm thử thành công! Lưu kỹ năng mới vào SQLite Skill Store...")
+            self.skill_store.save_or_update_skill(error_signature, category, event_name, tool_name, arguments)
+        else:
+            agent_logger.error("❌ Kiểm thử thất bại hoặc bị Rollback! Không lưu kỹ năng này vào SQLite.")
+
+        return {
+            "status": "success",
+            "source": "GEMINI_CLOUD_AI",
+            "api_cost_usd": 0.0001,
+            "tool_used": tool_name,
+            "execution_result": exec_res
+        }

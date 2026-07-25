@@ -1,77 +1,62 @@
-import os
-import shutil
 import unittest
-import tempfile
 from agent.skill_store import SkillStore
 
 class TestSkillStore(unittest.TestCase):
-    """
-    Unit Tests cho SQLite Skill Store và thuật toán Confidence Scoring (Chạy local 100%).
-    """
 
     def setUp(self):
-        self.temp_dir = tempfile.mkdtemp()
-        self.temp_db_path = os.path.join(self.temp_dir, "skills_test.db")
-        self.skill_store = SkillStore(db_path=self.temp_db_path)
-
-    def tearDown(self):
-        del self.skill_store
-        shutil.rmtree(self.temp_dir, ignore_errors=True)
+        # Dùng :memory: database cho Unit Test an toàn trên Windows
+        self.store = SkillStore(db_path=":memory:")
 
     def test_save_and_get_skill(self):
-        sig = SkillStore.generate_signature("CRITICAL", "WAN", "WAN_INTERFACE_DROPPED")
-        self.skill_store.save_or_update_skill(
+        sig = self.store.generate_signature("CRITICAL", "WAN", "WAN_INTERFACE_DROPPED")
+        self.store.save_or_update_skill(
             error_signature=sig,
             category="WAN",
             event_name="WAN_INTERFACE_DROPPED",
             tool_name="restart_interface",
-            arguments={"interface_name": "wan", "reason": "Fix WAN drop"}
+            arguments={"interface_name": "wan"}
         )
 
-        skill = self.skill_store.get_skill(sig)
+        skill = self.store.get_skill(sig)
         self.assertIsNotNone(skill)
         self.assertEqual(skill["tool_name"], "restart_interface")
         self.assertEqual(skill["arguments"]["interface_name"], "wan")
-        self.assertEqual(skill["success_count"], 1)
+        self.assertEqual(skill["confidence_score"], 1.0)
 
-    def test_skill_evolution_increments_success(self):
-        sig = SkillStore.generate_signature("WARNING", "WIFI", "REPEATED_DISCONNECTS")
-        
-        # Lần 1: Học kỹ năng mới
-        self.skill_store.save_or_update_skill(
-            error_signature=sig, category="WIFI", event_name="REPEATED_DISCONNECTS",
-            tool_name="optimize_wifi_channel", arguments={"band": "2.4G", "channel": 6}
-        )
-        
-        # Lần 2: Tái sử dụng kỹ năng -> Success count tăng lên 2
-        self.skill_store.save_or_update_skill(
-            error_signature=sig, category="WIFI", event_name="REPEATED_DISCONNECTS",
-            tool_name="optimize_wifi_channel", arguments={"band": "2.4G", "channel": 6}
-        )
+    def test_ema_confidence_score_growth(self):
+        """Test thuật toán EMA giúp điểm tin cậy cập nhật mượt mà khi học lặp lại"""
+        sig = self.store.generate_signature("WARNING", "WIFI", "REPEATED_DISCONNECTS")
+        self.store.save_or_update_skill(sig, "WIFI", "REPEATED_DISCONNECTS", "optimize_wifi_channel", {"band": "5G", "channel": 36})
+        self.store.save_or_update_skill(sig, "WIFI", "REPEATED_DISCONNECTS", "optimize_wifi_channel", {"band": "5G", "channel": 36})
 
-        skill = self.skill_store.get_skill(sig)
+        skill = self.store.get_skill(sig)
         self.assertEqual(skill["success_count"], 2)
-        self.assertGreater(skill["confidence_score"], 1.0 - 0.01)
+        self.assertEqual(skill["confidence_score"], 1.0)
 
     def test_record_failure_reduces_confidence(self):
-        sig = SkillStore.generate_signature("CRITICAL", "KERNEL", "OOM_ERROR")
-        self.skill_store.save_or_update_skill(
-            error_signature=sig, category="KERNEL", event_name="OOM_ERROR",
-            tool_name="restart_interface", arguments={"interface_name": "lan"}
-        )
-
-        # Giảm confidence score do thực thi thất bại
-        self.skill_store.record_failure(sig)
+        """Test cơ chế giảm điểm suy giảm (Decay 50%) khi thất bại"""
+        sig = self.store.generate_signature("CRITICAL", "SYSTEM", "OOM_ERROR")
+        self.store.save_or_update_skill(sig, "SYSTEM", "OOM_ERROR", "restart_interface", {"interface_name": "br-lan"})
         
-        # Với confidence score 0.6 >= 0.5 vẫn lấy được
-        skill = self.skill_store.get_skill(sig, min_confidence=0.5)
+        # Thất bại làm confidence giảm từ 1.0 xuống 0.5 (Decay factor 0.5)
+        self.store.record_failure(sig)
+        
+        skill = self.store.get_skill(sig, min_confidence=0.1)
         self.assertIsNotNone(skill)
-        self.assertEqual(round(skill["confidence_score"], 1), 0.6)
+        self.assertEqual(round(skill["confidence_score"], 1), 0.5)
 
-        # Giảm tiếp lần 2 -> confidence score thành 0.2 < 0.5 (Đào thải kỹ năng hỏng)
-        self.skill_store.record_failure(sig)
-        skill_after = self.skill_store.get_skill(sig, min_confidence=0.5)
-        self.assertIsNone(skill_after) # Đã bị loại khỏi cache!
+    def test_skill_pruning_low_confidence(self):
+        """Test tự động ẩn/đào thải kỹ năng khi confidence_score < 0.5"""
+        sig = self.store.generate_signature("CRITICAL", "SYSTEM", "OOM_ERROR")
+        self.store.save_or_update_skill(sig, "SYSTEM", "OOM_ERROR", "restart_interface", {"interface_name": "br-lan"})
+        
+        # Lần 1 thất bại: 1.0 -> 0.5
+        self.store.record_failure(sig)
+        # Lần 2 thất bại: 0.5 -> 0.25 (< 0.5)
+        self.store.record_failure(sig)
+
+        skill = self.store.get_skill(sig, min_confidence=0.5)
+        self.assertIsNone(skill) # Đã bị đào thải không lấy ra nữa!
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,17 +1,19 @@
+import os
 import json
 import time
 import socket
 import paramiko
+from agent.logger import agent_logger
 
 class RouterTelemetry:
     """
     Module thu thập dữ liệu mạng và trạng thái hệ thống từ Router Beryl 7 qua SSH.
     """
-    def __init__(self, hostname="192.168.8.1", port=22, username="root", password=None, key_filename=None, timeout=5):
-        self.hostname = hostname
-        self.port = port
-        self.username = username
-        self.password = password
+    def __init__(self, hostname=None, port=None, username=None, password=None, key_filename=None, timeout=5):
+        self.hostname = hostname or os.environ.get("ROUTER_HOST", "192.168.8.1")
+        self.port = int(port or os.environ.get("ROUTER_PORT", 22))
+        self.username = username or os.environ.get("ROUTER_USER", "root")
+        self.password = password or os.environ.get("ROUTER_PASSWORD")
         self.key_filename = key_filename
         self.timeout = timeout
         self.last_sample_time = None
@@ -73,7 +75,7 @@ class RouterTelemetry:
                         })
                 raw_data["dhcp_leases"] = leases
 
-            # 3. Wi-Fi Clients (wlan0 = 2.4GHz / 5GHz depending on config, check wlan0 & wlan1)
+            # 3. Wi-Fi Clients
             out, _ = self._exec_ssh_cmd(client, "ubus call hostapd.wlan0 get_clients")
             if out:
                 try:
@@ -105,6 +107,7 @@ class RouterTelemetry:
                     pass
 
         except Exception as e:
+            agent_logger.error(f"Lỗi thu thập Telemetry từ Router: {e}")
             raw_data["error"] = str(e)
         finally:
             client.close()
