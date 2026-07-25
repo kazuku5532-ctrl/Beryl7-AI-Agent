@@ -181,6 +181,16 @@ class RouterExecutor:
             "audit_log": []
         }
 
+    def execute_tool(self, tool_name, arguments):
+        """
+        Hàm bổ trợ thực thi Tool theo tên tool_name và dict tham số arguments.
+        """
+        return self.dispatch_ai_decision({
+            "action_type": "FUNCTION_CALL",
+            "tool_name": tool_name,
+            "arguments": arguments
+        })
+
     def dispatch_ai_decision(self, decision):
         """
         Hàm trung tâm (Dispatcher): Nhận AI JSON Decision và phân phối đến đúng hàm Executor.

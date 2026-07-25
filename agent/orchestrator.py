@@ -82,7 +82,7 @@ class SelfEvolvingAgentOrchestrator:
             agent_logger.info(f"  💰 CHI PHÍ API: 0 VNĐ | THỜI GIAN PHẢN HỒI: ~0 GIÂY!")
             
             # Thực thi lại lệnh đã học với Watchdog Guardrail
-            exec_res = self.watchdog.execute_with_guardrail(self.executor, tool_name, arguments)
+            exec_res = self.watchdog.execute_with_guardrail(self.executor.execute_tool, tool_name, arguments)
             
             if exec_res.get("success"):
                 self.skill_store.save_or_update_skill(error_signature, category, event_name, tool_name, arguments)
@@ -122,7 +122,7 @@ class SelfEvolvingAgentOrchestrator:
 
         # 4. Kiểm thử với Watchdog Guardrail
         agent_logger.info("[4/5] Thực thi lệnh AI qua Watchdog Rollback Guardrail 30s...")
-        exec_res = self.watchdog.execute_with_guardrail(self.executor, tool_name, arguments)
+        exec_res = self.watchdog.execute_with_guardrail(self.executor.execute_tool, tool_name, arguments)
 
         # 5. Tiến hóa SQLite Skill Store nếu thành công
         if exec_res.get("success"):
