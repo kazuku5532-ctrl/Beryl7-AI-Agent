@@ -4,6 +4,8 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 from agent.sanitizer import DataSanitizer
+from agent.logger import agent_logger
+from agent.retry import retry_on_exception
 
 # Tự động nạp môi trường từ file .env nếu có
 load_dotenv()
@@ -12,6 +14,10 @@ class RouterAIAgent:
     """
     AI Agent cho Router Beryl 7, đóng vai trò Kỹ sư Chuyên gia Mạng OpenWrt.
     Sử dụng Gemini API với cơ chế Function Calling (Tool Use) để ra quyết định xử lý.
+    
+    Cập nhật v3.6:
+    - Tích hợp Retry Logic với Exponential Backoff.
+    - Fallback Model tự động (từ gemini-2.5-flash sang gemini-2.0-flash-lite) khi Cloud API quá tải 429 / 500.
     """
     SYSTEM_INSTRUCTION = """
 Bạn là "Beryl 7 AI Network Administrator", một kỹ sư chuyên gia về OpenWrt và mạng máy tính.
@@ -24,6 +30,8 @@ Các nguyên tắc hoạt động:
 3. Nếu phát hiện nhiễu Wi-Fi hoặc ngắt kết nối lặp lại -> Gọi tool `optimize_wifi_channel`.
 4. Nếu mạng bình thường không có lỗi -> Gọi tool `no_action_required`.
 """
+
+    FALLBACK_MODELS = ["gemini-2.5-flash", "gemini-2.0-flash-lite", "gemini-2.0-flash"]
 
     def __init__(self, api_key=None, model_name="gemini-2.5-flash"):
         self.api_key = api_key or os.environ.get("GEMINI_API_KEY")
@@ -102,10 +110,25 @@ Các nguyên tắc hoạt động:
             )
         ]
 
+    @retry_on_exception(max_retries=3, delay_seconds=2)
+    def _call_gemini_api(self, prompt, model_name):
+        """Hàm thực thi cuộc gọi API có Retry Decorator"""
+        tools = [types.Tool(function_declarations=self._get_tools_definition())]
+        config = types.GenerateContentConfig(
+            system_instruction=self.SYSTEM_INSTRUCTION,
+            tools=tools,
+            temperature=0.1
+        )
+        return self.client.models.generate_content(
+            model=model_name,
+            contents=prompt,
+            config=config
+        )
+
     def analyze_and_decide(self, telemetry_data, anomaly_data):
         """
         Gửi dữ liệu Telemetry + Anomaly đã qua Sanitizer tới Gemini AI API.
-        Nhận lại Function Call Decision từ AI.
+        Hỗ trợ Fallback Model tự động nếu model mặc định gặp sự cố.
         """
         # Lọc thông tin nhạy cảm trước khi gửi
         clean_telemetry = DataSanitizer.sanitize_telemetry_dict(telemetry_data)
@@ -121,19 +144,25 @@ Hãy phân tích tình trạng hệ thống Router Beryl 7 dưới đây và đ�
 {json.dumps(clean_anomaly, indent=2, ensure_ascii=False)}
 """
 
-        tools = [types.Tool(function_declarations=self._get_tools_definition())]
-        
-        config = types.GenerateContentConfig(
-            system_instruction=self.SYSTEM_INSTRUCTION,
-            tools=tools,
-            temperature=0.1
-        )
+        response = None
+        last_error = None
 
-        response = self.client.models.generate_content(
-            model=self.model_name,
-            contents=prompt,
-            config=config
-        )
+        # Thử nghiệm với danh sách Model Fallback
+        models_to_try = [self.model_name] + [m for m in self.FALLBACK_MODELS if m != self.model_name]
+
+        for model in models_to_try:
+            try:
+                agent_logger.info(f"🤖 Đang gửi yêu cầu tới Gemini API (Model: '{model}')...")
+                response = self._call_gemini_api(prompt, model)
+                if response:
+                    break
+            except Exception as e:
+                last_error = e
+                agent_logger.warning(f"⚠️ Model '{model}' gặp lỗi ({e}). Thử chuyển sang Fallback Model tiếp theo...")
+
+        if not response:
+            agent_logger.error(f"❌ Toàn bộ Fallback Models Gemini API đều thất bại! Lỗi cuối: {last_error}")
+            raise RuntimeError(f"Gemini API Robust Error: {last_error}")
 
         # Trích xuất Function Call từ response
         function_calls = response.function_calls
