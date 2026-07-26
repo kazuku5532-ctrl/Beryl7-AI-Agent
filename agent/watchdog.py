@@ -49,7 +49,8 @@ class GuardedWatchdog:
         fallback_script = "/tmp/watchdog_fallback.sh"
 
         client = paramiko.SSHClient()
-        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        client.load_system_host_keys()
+        client.set_missing_host_key_policy(paramiko.RejectPolicy())
 
         try:
             client.connect(
@@ -129,7 +130,8 @@ fi
         """Xóa file checkpoint và dừng script fallback khi lệnh chạy thành công"""
         try:
             client = paramiko.SSHClient()
-            client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            client.load_system_host_keys()
+            client.set_missing_host_key_policy(paramiko.RejectPolicy())
             client.connect(hostname=self.hostname, port=self.port, username=self.username, password=self.password, timeout=3)
             self._exec_ssh_cmd(client, f"rm -f {checkpoint_file} {fallback_script} && pkill -f watchdog_fallback.sh")
             client.close()
@@ -140,7 +142,8 @@ fi
         """Khôi phục ngay lập tức cấu hình cũ"""
         try:
             client = paramiko.SSHClient()
-            client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            client.load_system_host_keys()
+            client.set_missing_host_key_policy(paramiko.RejectPolicy())
             client.connect(hostname=self.hostname, port=self.port, username=self.username, password=self.password, timeout=3)
             self._exec_ssh_cmd(client, f"uci import < {checkpoint_file} && uci commit && /etc/init.d/firewall reload && /etc/init.d/network reload && rm -f {checkpoint_file}")
             client.close()

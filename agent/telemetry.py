@@ -31,7 +31,8 @@ class RouterTelemetry:
         Gửi các câu lệnh ubus & system lệnh xuống Beryl 7 để lấy dữ liệu thô.
         """
         client = paramiko.SSHClient()
-        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        client.load_system_host_keys()
+        client.set_missing_host_key_policy(paramiko.RejectPolicy())
         
         raw_data = {
             "system_info": {},

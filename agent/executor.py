@@ -13,7 +13,7 @@ class RouterExecutor:
     ALLOWED_INTERFACES = {"wan", "lan", "br-lan", "eth0", "eth1", "ra0", "rai0", "wlan0", "wlan1"}
     ALLOWED_WIFI_BANDS = {"2.4G", "5G", "2G"}
 
-    def __init__(self, hostname="192.168.8.1", port=22, username="root", password=None, key_filename=None, timeout=5, dry_run=False):
+    def __init__(self, hostname="192.168.8.1", port=22, username="root", password=None, key_filename=None, timeout=5, dry_run=False, accept_insecure_hostkey=False):
         if not hostname or not username:
             raise ValueError("SECURITY ERROR: hostname and username must be explicitly configured.")
 
@@ -23,7 +23,8 @@ class RouterExecutor:
         self.password = password
         self.key_filename = key_filename
         self.timeout = timeout
-        self.dry_run = dry_run # Chế độ Dry-Run
+        self.dry_run = dry_run
+        self.accept_insecure_hostkey = accept_insecure_hostkey
 
     def _exec_remote_commands(self, commands):
         """
@@ -36,9 +37,13 @@ class RouterExecutor:
             return {"success": True, "dry_run": True, "audit_log": audit_log}
 
         client = paramiko.SSHClient()
-        # Khắc phục Lỗ hổng 6: Dùng AutoAddPolicy với RejectPolicy fallback an toàn
-        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        
+        client.load_system_host_keys()
+
+        if self.accept_insecure_hostkey:
+            client.set_missing_host_key_policy(paramiko.WarningPolicy())
+        else:
+            client.set_missing_host_key_policy(paramiko.RejectPolicy())
+
         try:
             client.connect(
                 hostname=self.hostname,
@@ -49,7 +54,6 @@ class RouterExecutor:
                 timeout=self.timeout
             )
             
-            # Đặt socket keepalive và per-command channel timeout
             transport = client.get_transport()
             if transport:
                 transport.set_keepalive(5)
@@ -80,18 +84,14 @@ class RouterExecutor:
         return {"success": True, "dry_run": False, "audit_log": audit_log}
 
     def validate_mac(self, mac_address):
-        """Validate định dạng địa chỉ MAC"""
         if not mac_address or not self.VALID_MAC_REGEX.match(mac_address):
             raise ValueError(f"Địa chỉ MAC không hợp lệ hoặc không an toàn: '{mac_address}'")
         return mac_address.upper()
 
     def validate_interface(self, interface_name):
-        """Validate tên interface trong Whitelist"""
         if not interface_name or interface_name.lower() not in self.ALLOWED_INTERFACES:
             raise ValueError(f"Interface '{interface_name}' không nằm trong Whitelist cho phép ({self.ALLOWED_INTERFACES})")
         return interface_name.lower()
-
-    # ==================== IMPLEMENTATION CÁC TOOL AI ====================
 
     def execute_set_qos_priority(self, target_mac, priority="HIGH", max_bandwidth_mbps=10, reason=""):
         valid_mac = self.validate_mac(target_mac)
@@ -190,10 +190,6 @@ class RouterExecutor:
         })
 
     def dispatch_ai_decision(self, decision):
-        """
-        Hàm trung tâm (Dispatcher): Nhận AI JSON Decision và phân phối đến đúng hàm Executor.
-        Khắc phục Lỗ hổng 4 & 5: Whitelist strict + ép kiểu an toàn (int casting + safe fallback).
-        """
         if decision.get("action_type") != "FUNCTION_CALL":
             return {"success": True, "action": "text_response", "details": decision.get("response_text")}
 
@@ -228,5 +224,4 @@ class RouterExecutor:
                 reason=args.get("reason", "")
             )
         else:
-            # Bác bỏ hoàn toàn nếu tool_name không có trong Whitelist
             raise ValueError(f"SECURITY ERROR: Tool '{tool_name}' không nằm trong danh mục Whitelist được phép thực thi.")

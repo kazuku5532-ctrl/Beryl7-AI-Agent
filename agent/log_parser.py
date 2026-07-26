@@ -48,7 +48,8 @@ class RouterLogParser:
         Lấy 100 dòng log gần nhất từ logread qua SSH.
         """
         client = paramiko.SSHClient()
-        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        client.load_system_host_keys()
+        client.set_missing_host_key_policy(paramiko.RejectPolicy())
         
         logs = []
         try:

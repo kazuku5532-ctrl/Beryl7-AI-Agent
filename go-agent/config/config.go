@@ -3,7 +3,6 @@ package config
 import (
 	"bufio"
 	"flag"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
