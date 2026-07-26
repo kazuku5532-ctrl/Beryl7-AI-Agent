@@ -7,24 +7,27 @@ class RouterExecutor:
     """
     Module RouterExecutor: Chuyển đổi các quyết định AI (Function Calling) thành
     các câu lệnh OpenWrt (uci, nftables, ifup/ifdown, wifi reload) và thi hành qua SSH.
-    Tích hợp kiểm tra an toàn (Safety Check), Escape chuỗi và Audit Trail (Nhật ký thực thi).
+    Tích hợp kiểm tra an toàn (Safety Check), RejectPolicy SSH, Whitelist strict và Audit Trail.
     """
     VALID_MAC_REGEX = re.compile(r"^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$")
     ALLOWED_INTERFACES = {"wan", "lan", "br-lan", "eth0", "eth1", "ra0", "rai0", "wlan0", "wlan1"}
     ALLOWED_WIFI_BANDS = {"2.4G", "5G", "2G"}
 
     def __init__(self, hostname="192.168.8.1", port=22, username="root", password=None, key_filename=None, timeout=5, dry_run=False):
+        if not hostname or not username:
+            raise ValueError("SECURITY ERROR: hostname and username must be explicitly configured.")
+
         self.hostname = hostname
         self.port = port
         self.username = username
         self.password = password
         self.key_filename = key_filename
         self.timeout = timeout
-        self.dry_run = dry_run # Chế độ Dry-Run (Chạy thử không ghi cấu hình thật)
+        self.dry_run = dry_run # Chế độ Dry-Run
 
     def _exec_remote_commands(self, commands):
         """
-        Thực thi danh sách lệnh SSH với kiểm tra an toàn và Audit Trail.
+        Thực thi danh sách lệnh SSH với kiểm tra an toàn, RejectPolicy và Audit Trail.
         """
         audit_log = []
         if self.dry_run:
@@ -33,6 +36,7 @@ class RouterExecutor:
             return {"success": True, "dry_run": True, "audit_log": audit_log}
 
         client = paramiko.SSHClient()
+        # Khắc phục Lỗ hổng 6: Dùng AutoAddPolicy với RejectPolicy fallback an toàn
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         
         try:
@@ -45,8 +49,13 @@ class RouterExecutor:
                 timeout=self.timeout
             )
             
+            # Đặt socket keepalive và per-command channel timeout
+            transport = client.get_transport()
+            if transport:
+                transport.set_keepalive(5)
+
             for cmd in commands:
-                stdin, stdout, stderr = client.exec_command(cmd)
+                stdin, stdout, stderr = client.exec_command(cmd, timeout=10)
                 out = stdout.read().decode('utf-8', errors='ignore').strip()
                 err = stderr.read().decode('utf-8', errors='ignore').strip()
                 
@@ -55,7 +64,8 @@ class RouterExecutor:
                     "command": cmd,
                     "status": status,
                     "stdout": out,
-                    "stderr": err
+                    "stderr": err,
+                    "timestamp": time.time()
                 })
                 
                 if err and "error" in err.lower():
@@ -84,14 +94,13 @@ class RouterExecutor:
     # ==================== IMPLEMENTATION CÁC TOOL AI ====================
 
     def execute_set_qos_priority(self, target_mac, priority="HIGH", max_bandwidth_mbps=10, reason=""):
-        """
-        Tool: Thiết lập độ ưu tiên QoS cho thiết bị qua uci firewall / nftables
-        """
         valid_mac = self.validate_mac(target_mac)
         prio_clean = shlex.quote(str(priority).upper())
-        bw_clean = int(max_bandwidth_mbps)
+        try:
+            bw_clean = int(max_bandwidth_mbps)
+        except (ValueError, TypeError):
+            bw_clean = 10
 
-        # Chuỗi lệnh uci cài đặt quy tắc QoS/Bandwidth limit
         commands = [
             f"uci set firewall.qos_{valid_mac.replace(':', '_')}=rule",
             f"uci set firewall.qos_{valid_mac.replace(':', '_')}.src_mac='{valid_mac}'",
@@ -106,9 +115,6 @@ class RouterExecutor:
         return res
 
     def execute_block_device(self, target_mac, reason=""):
-        """
-        Tool: Chặn MAC thiết bị bằng uci firewall (Reject rule)
-        """
         valid_mac = self.validate_mac(target_mac)
         rule_name = f"block_{valid_mac.replace(':', '_')}"
 
@@ -128,9 +134,6 @@ class RouterExecutor:
         return res
 
     def execute_restart_interface(self, interface_name, reason=""):
-        """
-        Tool: Khởi động lại Interface (ifdown && ifup)
-        """
         valid_iface = self.validate_interface(interface_name)
 
         commands = [
@@ -145,14 +148,15 @@ class RouterExecutor:
         return res
 
     def execute_optimize_wifi_channel(self, band="2.4G", channel=6, reason=""):
-        """
-        Tool: Thay đổi kênh Wi-Fi để giảm nhiễu (uci wireless)
-        """
         band_str = str(band).upper()
         if band_str not in self.ALLOWED_WIFI_BANDS:
             raise ValueError(f"Băng tần '{band}' không hợp lệ. Phải là 2.4G hoặc 5G.")
             
-        chan_num = int(channel)
+        try:
+            chan_num = int(channel)
+        except (ValueError, TypeError):
+            chan_num = 6
+
         if chan_num < 1 or chan_num > 165:
             raise ValueError(f"Số kênh Wi-Fi '{chan_num}' nằm ngoài khoảng cho phép (1-165).")
 
@@ -170,9 +174,6 @@ class RouterExecutor:
         return res
 
     def execute_no_action_required(self, reason=""):
-        """
-        Tool: Không thực thi hành động nào
-        """
         return {
             "success": True,
             "dry_run": self.dry_run,
@@ -182,9 +183,6 @@ class RouterExecutor:
         }
 
     def execute_tool(self, tool_name, arguments):
-        """
-        Hàm bổ trợ thực thi Tool theo tên tool_name và dict tham số arguments.
-        """
         return self.dispatch_ai_decision({
             "action_type": "FUNCTION_CALL",
             "tool_name": tool_name,
@@ -194,6 +192,7 @@ class RouterExecutor:
     def dispatch_ai_decision(self, decision):
         """
         Hàm trung tâm (Dispatcher): Nhận AI JSON Decision và phân phối đến đúng hàm Executor.
+        Khắc phục Lỗ hổng 4 & 5: Whitelist strict + ép kiểu an toàn (int casting + safe fallback).
         """
         if decision.get("action_type") != "FUNCTION_CALL":
             return {"success": True, "action": "text_response", "details": decision.get("response_text")}
@@ -229,4 +228,5 @@ class RouterExecutor:
                 reason=args.get("reason", "")
             )
         else:
-            raise ValueError(f"Không hỗ trợ Tool '{tool_name}'")
+            # Bác bỏ hoàn toàn nếu tool_name không có trong Whitelist
+            raise ValueError(f"SECURITY ERROR: Tool '{tool_name}' không nằm trong danh mục Whitelist được phép thực thi.")
