@@ -228,6 +228,7 @@ func recordApprovalAuditLog(action, remoteAddr string) {
 	f, err := os.OpenFile("/var/log/beryl7_approval_audit.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 	if err == nil {
 		_, _ = f.WriteString(auditLine)
+		_ = f.Sync() // Đảm bảo đồng bộ ngay lập tức vào ổ đĩa trước khi thi hành lệnh
 		_ = f.Close()
 	}
 }
@@ -304,6 +305,9 @@ func startHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 			return
 		}
 
+		// Ghi Append-Only Audit Trail Log và fsync ngay lập tức trước khi thi hành
+		recordApprovalAuditLog(pending.Action, r.RemoteAddr)
+
 		actReq := &executor.ActionRequest{
 			ActionName: pending.Action,
 			Target:     "wan",
@@ -311,9 +315,6 @@ func startHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 		execErr := execEngine.ExecuteAction(r.Context(), actReq, cfg.DryRun)
 
 		_ = os.Remove(pendingFile)
-
-		// Ghi Append-Only Audit Trail Log bảo mật
-		recordApprovalAuditLog(pending.Action, r.RemoteAddr)
 
 		w.Header().Set("Content-Type", "application/json")
 		if execErr != nil {
