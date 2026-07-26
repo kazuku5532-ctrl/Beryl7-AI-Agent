@@ -8,7 +8,8 @@ import (
 )
 
 func setOOMScore() {
-	_ = os.WriteFile("/proc/self/oom_score_adj", []byte("-500"), 0644)
+	// G306 Fix: Đặt quyền 0600 chuẩn hóa an ninh mạng theo quy tắc Gosec
+	_ = os.WriteFile("/proc/self/oom_score_adj", []byte("-500"), 0600)
 }
 
 func checkPIDAlive(pid int) bool {
