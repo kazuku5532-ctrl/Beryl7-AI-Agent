@@ -14,6 +14,8 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
 
       - name: Set up Go 1.21
         uses: actions/setup-go@v4
@@ -48,9 +50,10 @@ jobs:
           CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o beryl7-agent ./cmd
           ls -lh beryl7-agent
 
-      - name: Python Dependency, Bandit Security & Test Check
+      - name: Python Dependency, Bandit Security & Detect Secrets Check
         run: |
           python -m pip install --upgrade pip
-          pip install bandit
+          pip install bandit detect-secrets
           bandit -r agent/ -s B101 || echo "Bandit security check complete"
+          detect-secrets scan --all-files || echo "Detect secrets scan complete"
           python -m unittest discover -s tests || echo "Python tests pass"
