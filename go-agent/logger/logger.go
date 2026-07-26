@@ -31,7 +31,9 @@ var (
 	globalLogger *Logger
 	ipRegex      = regexp.MustCompile(`\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b`)
 	macRegex     = regexp.MustCompile(`(?i)\b([0-9A-F]{2}[:-]){5}([0-9A-F]{2})\b`)
-	passRegex    = regexp.MustCompile(`(?i)(password|secret|key)=["']?([^"' \n]+)["']?`)
+	passRegex    = regexp.MustCompile(`(?i)(password|secret|key|token|auth)=["']?([^"' \n]+)["']?`)
+	bearerRegex  = regexp.MustCompile(`(?i)Bearer\s+[A-Za-z0-9\-\._~\+\/]+=*`)
+	jwtRegex     = regexp.MustCompile(`eyJ[A-Za-z0-9\-_%]+\.eyJ[A-Za-z0-9\-_%]+\.[A-Za-z0-9\-_%]+`)
 )
 
 func Init(filePath string, levelStr string) (*Logger, error) {
@@ -50,8 +52,8 @@ func Init(filePath string, levelStr string) (*Logger, error) {
 	l := &Logger{
 		level:       lvl,
 		filePath:    filePath,
-		maxBytes:    2 * 1024 * 1024, // 2MB max
-		backupCount: 1,              // Chỉ giữ 1 file backup bảo vệ Inode /var/log
+		maxBytes:    2 * 1024 * 1024,
+		backupCount: 1,
 	}
 
 	if filePath != "" {
@@ -86,10 +88,10 @@ func (l *Logger) rotate() {
 	}
 }
 
-// sanitizeRedact ẩn danh các thông tin nhạy cảm (IP, MAC, Password) trong log cấp INFO/WARN
 func sanitizeRedact(msg string) string {
 	msg = passRegex.ReplaceAllString(msg, "$1=***REDACTED***")
-	// Ẩn 2 octet cuối của IP
+	msg = bearerRegex.ReplaceAllString(msg, "Bearer ***REDACTED***")
+	msg = jwtRegex.ReplaceAllString(msg, "***JWT_REDACTED***")
 	msg = ipRegex.ReplaceAllStringFunc(msg, func(ip string) string {
 		parts := regexp.MustCompile(`\.`).Split(ip, -1)
 		if len(parts) == 4 {
@@ -113,16 +115,13 @@ func (l *Logger) log(level LogLevel, levelStr, format string, v ...interface{}) 
 	timestamp := time.Now().UTC().Format(time.RFC3339)
 	msg := fmt.Sprintf(format, v...)
 
-	if level == INFO {
-		msg = sanitizeRedact(msg)
-	}
+	// Áp dụng bóc tách nhạy cảm cho mọi log level
+	msg = sanitizeRedact(msg)
 
 	line := fmt.Sprintf("[%s] [%s] %s\n", timestamp, levelStr, msg)
 
-	// Ghi ra Console
 	fmt.Print(line)
 
-	// Ghi ra File xoay vòng nguyên tử
 	if l.file != nil {
 		_, _ = io.WriteString(l.file, line)
 	}

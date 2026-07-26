@@ -93,7 +93,7 @@ func main() {
 		UptimeSeconds: 0,
 	}
 
-	httpServer := startHealthCheckServer(cfg, health)
+	httpServer := startHealthCheckServer(cfg, health, execEngine)
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
@@ -159,7 +159,6 @@ func main() {
 			if m.WANStatus == "Offline (0/1)" || strings.Contains(m.WANStatus, "Offline") {
 				logger.Warn("WAN Network Drop Detected! Processing Auto-Healing Action...")
 
-				// 1. Tra cứu Local SkillStore
 				skill := store.GetSkill("restart_wan_interface")
 				requiredLocalThreshold := execEngine.GetActionRiskThreshold("restart_wan_interface")
 
@@ -174,14 +173,12 @@ func main() {
 					continue
 				}
 
-				// 2. Gọi Cloud AI với Log đã được sanitize
 				cleanLog := logParser.SanitizeLog("kernel: eth1 link down (WAN disconnected)")
 				aiResp, aiErr := aiClient.AnalyzeAnomaly(ctx, "WAN_DROP", "WAN interface down", cleanLog)
 
 				if aiErr == nil && aiResp != nil {
 					requiredThreshold := execEngine.GetActionRiskThreshold(aiResp.Action)
 
-					// Gating Matrix: Kiểm tra xem Confidence có vượt qua Ngưỡng Rủi ro quy định hay không
 					if aiResp.Confidence >= requiredThreshold {
 						logger.Info("Gemini AI Action Approved: [%s] (Confidence=%.2f >= Required=%.2f) - Reasoning: %s", aiResp.Action, aiResp.Confidence, requiredThreshold, aiResp.Reasoning)
 						actReq := &executor.ActionRequest{
@@ -198,7 +195,6 @@ func main() {
 						}
 						_ = store.SaveOrUpdateSkill(newSkill, execErr == nil, cfg.EMAAlpha)
 					} else {
-						// Nếu Confidence < Required Threshold: Queue cho Operator duyệt và log cảnh báo
 						logger.Warn("SECURITY GATING TRIGGERED: AI Action [%s] Confidence (%.2f) below Required Risk Threshold (%.2f)! Queued for Operator Approval.", aiResp.Action, aiResp.Confidence, requiredThreshold)
 						queuePendingApproval(aiResp, requiredThreshold)
 						_ = wd.ExecuteRollback()
@@ -242,9 +238,10 @@ func acquirePIDLock(pidPath string) error {
 	return os.WriteFile(pidPath, []byte(strconv.Itoa(os.Getpid())), 0600)
 }
 
-func startHealthCheckServer(cfg *config.Config, health *HealthState) *http.Server {
+func startHealthCheckServer(cfg *config.Config, health *HealthState, execEngine *executor.Executor) *http.Server {
 	mux := http.NewServeMux()
 
+	// Endpoint 1: Health Check
 	mux.HandleFunc("/api/health", func(w http.ResponseWriter, r *http.Request) {
 		auth := r.Header.Get("Authorization")
 		expectedAuth := "Bearer " + cfg.AuthToken
@@ -262,6 +259,64 @@ func startHealthCheckServer(cfg *config.Config, health *HealthState) *http.Serve
 
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(snapshot)
+	})
+
+	// Endpoint 2: Operator Approval Endpoint (/api/approve)
+	mux.HandleFunc("/api/approve", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			http.Error(w, `{"error":"Method Not Allowed"}`, http.StatusMethodNotAllowed)
+			return
+		}
+
+		auth := r.Header.Get("Authorization")
+		expectedAuth := "Bearer " + cfg.AuthToken
+
+		if cfg.AuthToken != "" {
+			if len(auth) == 0 || subtle.ConstantTimeCompare([]byte(auth), []byte(expectedAuth)) != 1 {
+				http.Error(w, `{"error":"Unauthorized"}`, http.StatusUnauthorized)
+				return
+			}
+		}
+
+		pendingFile := "/var/run/beryl7_pending_approval.json"
+		data, err := os.ReadFile(pendingFile)
+		if err != nil {
+			http.Error(w, `{"error":"No pending approval request found"}`, http.StatusNotFound)
+			return
+		}
+
+		var pending PendingApproval
+		if err := json.Unmarshal(data, &pending); err != nil {
+			http.Error(w, `{"error":"Failed to parse pending approval file"}`, http.StatusInternalServerError)
+			return
+		}
+
+		// Thực thi hành động sau khi Operator duyệt
+		actReq := &executor.ActionRequest{
+			ActionName: pending.Action,
+			Target:     "wan",
+		}
+		execErr := execEngine.ExecuteAction(r.Context(), actReq, cfg.DryRun)
+
+		// Xóa file pending approval sau khi đã thi hành
+		_ = os.Remove(pendingFile)
+
+		w.Header().Set("Content-Type", "application/json")
+		if execErr != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			_ = json.NewEncoder(w).Encode(map[string]string{
+				"status": "approval_executed_with_error",
+				"error":  execErr.Error(),
+			})
+			return
+		}
+
+		logger.Info("OPERATOR APPROVED & EXECUTED Action [%s] successfully!", pending.Action)
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"status":  "approved_and_executed",
+			"action":  pending.Action,
+			"details": "Operator approval verified and executed successfully",
+		})
 	})
 
 	server := &http.Server{
