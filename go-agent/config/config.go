@@ -84,8 +84,9 @@ func LoadConfig() (*Config, error) {
 		logger.Warn("AUTH_TOKEN is empty in config! Health check endpoint will require setting AUTH_TOKEN.")
 	}
 
-	if cfg.ApproveToken == "" {
-		cfg.ApproveToken = cfg.AuthToken // Fallback to AuthToken if ApproveToken not explicitly configured separately
+	// Fail-Closed Hardening: APPROVE_TOKEN bắt buộc phải đặt riêng biệt, không dùng chung với AUTH_TOKEN
+	if cfg.ApproveToken == "" || cfg.ApproveToken == cfg.AuthToken {
+		logger.Warn("SECURITY WARNING: APPROVE_TOKEN is not set or identical to AUTH_TOKEN! /api/approve endpoint will be disabled (Fail-Closed).")
 	}
 
 	return cfg, nil

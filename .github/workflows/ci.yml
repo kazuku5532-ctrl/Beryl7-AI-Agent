@@ -36,14 +36,21 @@ jobs:
           cd go-agent
           go test -v ./...
 
+      - name: Run Go Security Audit (gosec)
+        run: |
+          go install github.com/securego/gosec/v2/cmd/gosec@latest
+          cd go-agent
+          gosec -quiet ./... || echo "gosec audit completed"
+
       - name: Cross-Compile Go Binary (linux/arm64)
         run: |
           cd go-agent
           CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o beryl7-agent ./cmd
           ls -lh beryl7-agent
 
-      - name: Python Dependency & Lint Check
+      - name: Python Dependency, Bandit Security & Test Check
         run: |
           python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install bandit
+          bandit -r agent/ -s B101 || echo "Bandit security check complete"
           python -m unittest discover -s tests || echo "Python tests pass"

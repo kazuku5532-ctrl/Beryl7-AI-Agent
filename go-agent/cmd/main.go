@@ -223,6 +223,15 @@ func queuePendingApproval(resp *ai.AIResponse, required float64) {
 	}
 }
 
+func recordApprovalAuditLog(action, remoteAddr string) {
+	auditLine := fmt.Sprintf("[%s] AUDIT: Operator approved action [%s] from %s\n", time.Now().Format(time.RFC3339), action, remoteAddr)
+	f, err := os.OpenFile("/var/log/beryl7_approval_audit.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
+	if err == nil {
+		_, _ = f.WriteString(auditLine)
+		_ = f.Close()
+	}
+}
+
 func acquirePIDLock(pidPath string) error {
 	if content, err := os.ReadFile(pidPath); err == nil && len(content) > 0 {
 		var oldPID int
@@ -241,7 +250,7 @@ func acquirePIDLock(pidPath string) error {
 func startHealthCheckServer(cfg *config.Config, health *HealthState, execEngine *executor.Executor) *http.Server {
 	mux := http.NewServeMux()
 
-	// Endpoint 1: Health Check (Dùng AUTH_TOKEN)
+	// Endpoint 1: Health Check (AUTH_TOKEN)
 	mux.HandleFunc("/api/health", func(w http.ResponseWriter, r *http.Request) {
 		auth := r.Header.Get("Authorization")
 		expectedAuth := "Bearer " + cfg.AuthToken
@@ -261,21 +270,25 @@ func startHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 		_ = json.NewEncoder(w).Encode(snapshot)
 	})
 
-	// Endpoint 2: Operator Approval Endpoint (/api/approve) (Dùng APPROVE_TOKEN riêng biệt cấp cao)
+	// Endpoint 2: Operator Approval Endpoint (/api/approve) - Fail-Closed Hardened
 	mux.HandleFunc("/api/approve", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" {
 			http.Error(w, `{"error":"Method Not Allowed"}`, http.StatusMethodNotAllowed)
 			return
 		}
 
+		// Fail-Closed Policy: Bắt buộc APPROVE_TOKEN phải được cấu hình riêng biệt và khác AUTH_TOKEN
+		if cfg.ApproveToken == "" || cfg.ApproveToken == cfg.AuthToken {
+			http.Error(w, `{"error":"Forbidden: Operator APPROVE_TOKEN must be set distinctly from AUTH_TOKEN for approval safety"}`, http.StatusForbidden)
+			return
+		}
+
 		auth := r.Header.Get("Authorization")
 		expectedAuth := "Bearer " + cfg.ApproveToken
 
-		if cfg.ApproveToken != "" {
-			if len(auth) == 0 || subtle.ConstantTimeCompare([]byte(auth), []byte(expectedAuth)) != 1 {
-				http.Error(w, `{"error":"Unauthorized: Invalid Operator Approval Token"}`, http.StatusUnauthorized)
-				return
-			}
+		if len(auth) == 0 || subtle.ConstantTimeCompare([]byte(auth), []byte(expectedAuth)) != 1 {
+			http.Error(w, `{"error":"Unauthorized: Invalid High-Privilege APPROVE_TOKEN"}`, http.StatusUnauthorized)
+			return
 		}
 
 		pendingFile := "/var/run/beryl7_pending_approval.json"
@@ -298,6 +311,9 @@ func startHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 		execErr := execEngine.ExecuteAction(r.Context(), actReq, cfg.DryRun)
 
 		_ = os.Remove(pendingFile)
+
+		// Ghi Append-Only Audit Trail Log bảo mật
+		recordApprovalAuditLog(pending.Action, r.RemoteAddr)
 
 		w.Header().Set("Content-Type", "application/json")
 		if execErr != nil {

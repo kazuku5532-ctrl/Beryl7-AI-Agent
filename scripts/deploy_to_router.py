@@ -3,6 +3,7 @@ import sys
 import time
 import secrets
 import base64
+import hashlib
 import paramiko
 from dotenv import load_dotenv
 
@@ -18,6 +19,7 @@ router_user = os.getenv("ROUTER_USER", "root")
 router_password = os.getenv("ROUTER_PASSWORD")
 gemini_key = os.getenv("GEMINI_API_KEY", "")
 auth_token = os.getenv("AUTH_TOKEN")
+approve_token = os.getenv("APPROVE_TOKEN")
 
 if not router_password:
     print("❌ ERROR: ROUTER_PASSWORD environment variable not set in .env file!")
@@ -26,6 +28,10 @@ if not router_password:
 if not auth_token:
     auth_token = secrets.token_hex(16)
     print(f"✓ Generated secure dynamic AUTH_TOKEN: {auth_token[:6]}***")
+
+if not approve_token:
+    approve_token = secrets.token_hex(16)
+    print(f"✓ Generated secure high-privilege APPROVE_TOKEN: {approve_token[:6]}***")
 
 binary_local = os.path.join("bin", "beryl7-agent")
 procd_local = os.path.join("go-agent", "procd", "beryl7-agent")
@@ -52,8 +58,17 @@ print("2. Stopping active beryl7-agent service to release binary lock...")
 ssh.exec_command("/etc/init.d/beryl7-agent stop || killall beryl7-agent")
 time.sleep(1)
 
+def calculate_sha256(filepath):
+    h = hashlib.sha256()
+    with open(filepath, "rb") as f:
+        while chunk := f.read(65536):
+            h.update(chunk)
+    return h.hexdigest()
+
 def safe_upload_file(ssh_client, local_path, remote_path, mode=0o644):
     print(f"   Uploading {local_path} ({os.path.getsize(local_path) / 1024 / 1024:.2f} MB) -> {remote_path}...")
+    local_sha256 = calculate_sha256(local_path)
+    
     try:
         sftp = ssh_client.open_sftp()
         sftp.put(local_path, remote_path)
@@ -61,7 +76,6 @@ def safe_upload_file(ssh_client, local_path, remote_path, mode=0o644):
         sftp.close()
         print("   ✓ Uploaded via Paramiko SFTPClient.put successfully!")
     except Exception:
-        # Chuẩn hóa Hạng mục 1 & 10: Dùng Base64 encoding cho tất cả fallback upload chống lỗi shell quoting
         with open(local_path, "rb") as f:
             file_bytes = f.read()
         b64_content = base64.b64encode(file_bytes).decode('utf-8')
@@ -74,6 +88,14 @@ def safe_upload_file(ssh_client, local_path, remote_path, mode=0o644):
             
         ssh_client.exec_command(f"chmod {oct(mode)[2:]} '{remote_path}'")
         print("   ✓ Uploaded via Safe Base64 Stream (Dropbear Fallback Verified)!")
+
+    # Khắc phục Hạng mục 5: Xác minh Checksum SHA256 sau khi upload
+    stdin, stdout, stderr = ssh_client.exec_command(f"sha256sum '{remote_path}' | cut -d' ' -f1")
+    remote_sha256 = stdout.read().decode('utf-8').strip()
+    if remote_sha256.lower() == local_sha256.lower():
+        print(f"   ✓ Checksum SHA256 Verified ({remote_sha256[:8]}... Match)!")
+    else:
+        print(f"   ⚠️ WARNING: Checksum Mismatch! Local: {local_sha256} vs Remote: {remote_sha256}")
 
 print("3. Creating configuration directory /etc/beryl7 on router...")
 ssh.exec_command("mkdir -p /etc/beryl7 /var/log")
@@ -88,7 +110,7 @@ if gemini_key:
         os.remove(tmp_key_file)
 
 tmp_env_file = "tmp_agent.env"
-env_content = f'AUTH_TOKEN="{auth_token}"\nLOG_LEVEL="INFO"\nDISABLE_AUTO_HEALING="false"\n'
+env_content = f'AUTH_TOKEN="{auth_token}"\nAPPROVE_TOKEN="{approve_token}"\nLOG_LEVEL="INFO"\nDISABLE_AUTO_HEALING="false"\n'
 with open(tmp_env_file, "w", encoding="utf-8") as f:
     f.write(env_content)
 safe_upload_file(ssh, tmp_env_file, "/etc/beryl7/agent.env", 0o600)
