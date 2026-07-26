@@ -1,7 +1,8 @@
-import paramiko
-import json
+import os
 import sys
-import time
+import json
+import paramiko
+from dotenv import load_dotenv
 
 sys.stdout.reconfigure(encoding='utf-8')
 
@@ -9,11 +10,18 @@ print("==================================================")
 print(" BERYL 7 CONTINUOUS VERIFICATION FRAMEWORK (v14.0)")
 print("==================================================")
 
+load_dotenv()
+router_ip = os.getenv("ROUTER_IP", "192.168.8.1")
+router_user = os.getenv("ROUTER_USER", "root")
+router_password = os.getenv("ROUTER_PASSWORD", "Kazuku@2k6")
+auth_token = os.getenv("AUTH_TOKEN", "beryl7-secret-health-token")
+
 ssh = paramiko.SSHClient()
+ssh.load_system_host_keys()
 ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
 try:
-    ssh.connect("192.168.8.1", 22, "root", "Kazuku@2k6", timeout=10)
+    ssh.connect(router_ip, 22, router_user, router_password, timeout=10)
     print("✓ SSH Connection to Beryl 7: ESTABLISHED")
 except Exception as e:
     print(f"❌ SSH Connection Failed: {e}")
@@ -28,9 +36,9 @@ if proc_info:
 else:
     print("❌ Daemon Process Not Found!")
 
-# STAGE 2: HTTP Health Endpoint Verification (Port :8888)
-print("\n--- [STAGE 2: HTTP HEALTH ENDPOINT (:8888)] ---")
-stdin, stdout, stderr = ssh.exec_command('curl -s -H "Authorization: Bearer beryl7-secret-health-token" http://127.0.0.1:8888/api/health')
+# STAGE 2: HTTP Health Endpoint Verification (Loopback 127.0.0.1:8888)
+print("\n--- [STAGE 2: HTTP HEALTH ENDPOINT (127.0.0.1:8888)] ---")
+stdin, stdout, stderr = ssh.exec_command(f'curl -s -H "Authorization: Bearer {auth_token}" http://127.0.0.1:8888/api/health')
 health_json_str = stdout.read().decode('utf-8').strip()
 try:
     health_data = json.loads(health_json_str)
