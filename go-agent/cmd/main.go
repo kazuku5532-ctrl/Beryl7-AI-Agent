@@ -187,8 +187,8 @@ func main() {
 				// Ưu tiên 2: Gọi Gemini 2.5 Flash API với log đã được làm sạch
 				aiResp, aiErr := aiClient.AnalyzeAnomaly(ctx, "WAN_DROP", "WAN interface down", cleanLog)
 
-				// Kiểm tra Confidence Threshold (>= 0.50) trước khi tự động thực thi
-				if aiErr == nil && aiResp != nil && aiResp.Confidence >= 0.50 {
+				// Kiểm tra High-Impact Confidence Threshold (>= 0.85) trước khi tự động thực thi
+				if aiErr == nil && aiResp != nil && aiResp.Confidence >= 0.85 {
 					logger.Info("Gemini AI Suggested Action: [%s] (Confidence=%.2f) - Reasoning: %s", aiResp.Action, aiResp.Confidence, aiResp.Reasoning)
 					actReq := &executor.ActionRequest{
 						ActionName: aiResp.Action,
