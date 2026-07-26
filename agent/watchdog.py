@@ -141,3 +141,6 @@ fi
             client.close()
         except Exception:
             pass
+
+# Export alias cho unit tests compatibility
+GuardedWatchdog = RouterWatchdog

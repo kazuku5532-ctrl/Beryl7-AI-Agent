@@ -11,13 +11,17 @@ class TestGuardedWatchdog(unittest.TestCase):
         self.watchdog = GuardedWatchdog(hostname="192.168.8.1")
 
     def test_ping_check_success(self):
-        with patch("socket.create_connection") as mock_conn:
+        with patch("socket.socket") as mock_sock_cls:
             mock_sock = MagicMock()
-            mock_conn.return_value = mock_sock
+            mock_sock.connect_ex.return_value = 0
+            mock_sock_cls.return_value = mock_sock
             self.assertTrue(self.watchdog.ping_check("192.168.8.1", 22))
 
     def test_ping_check_failure(self):
-        with patch("socket.create_connection", side_effect=Exception("Connection Refused")):
+        with patch("socket.socket") as mock_sock_cls:
+            mock_sock = MagicMock()
+            mock_sock.connect_ex.return_value = 111
+            mock_sock_cls.return_value = mock_sock
             self.assertFalse(self.watchdog.ping_check("192.168.8.1", 22))
 
     @patch("agent.watchdog.GuardedWatchdog._cancel_fallback_script")
