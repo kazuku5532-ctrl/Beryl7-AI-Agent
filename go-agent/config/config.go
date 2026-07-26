@@ -1,157 +1,179 @@
 package config
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"beryl7-agent/logger"
 )
 
-// Config chứa toàn bộ tham số cấu hình hệ thống
 type Config struct {
-	GeminiAPIKey       string
-	AuthToken          string
-	SkillStorePath     string
-	CheckpointPath     string
-	KeyFilePath        string
-	HealthPort         int
-	TelemetryInterval  time.Duration
-	EMAAlpha           float64
-	LogLevel           string
-	DryRun             bool
-	DisableAutoHealing bool
-	MaxSkills          int
+	ConfigFilePath    string
+	KeyFilePath       string
+	GeminiAPIKey      string
+	AuthToken         string
+	LogLevel          string
+	HealthPort        int
+	TelemetryInterval time.Duration
+	EMAAlpha          float64
+	DryRun            bool
+	CheckpointPath    string
+	SkillStorePath    string
+	DisableAutoHeal   bool
+	apiKeyAtomic      atomic.Value
 }
 
-// ConfigSnapshot bọc con trỏ Atomic cho Hot-reload key an toàn
-type ConfigSnapshot struct {
-	apiKey atomic.Value // string
-}
-
-func NewSnapshot(key string) *ConfigSnapshot {
-	s := &ConfigSnapshot{}
-	s.apiKey.Store(key)
-	return s
-}
-
-func (s *ConfigSnapshot) GetAPIKey() string {
-	if val := s.apiKey.Load(); val != nil {
-		return val.(string)
-	}
-	return ""
-}
-
-func (s *ConfigSnapshot) UpdateAPIKey(newKey string) {
-	s.apiKey.Store(newKey)
-}
-
-// LoadConfig đọc cấu hình theo thứ tự ưu tiên: CLI Flags > File Key / File Env > Mặc định
 func LoadConfig() (*Config, error) {
-	configPath := flag.String("config", "/etc/beryl7/agent.env", "Path to agent configuration env file")
-	keyPath := flag.String("keyfile", "/etc/beryl7/agent.key", "Path to secure API key file")
-	dryRun := flag.Bool("dry-run", false, "Run agent in dry-run mode without modifying router network settings")
-	debug := flag.Bool("debug", false, "Enable debug log level")
-	port := flag.Int("port", 8888, "HTTP Health Check server port")
+	cfg := &Config{
+		ConfigFilePath:    "/etc/beryl7/agent.env",
+		KeyFilePath:       "/etc/beryl7/agent.key",
+		AuthToken:         "", // Xóa bỏ token mặc định hard-coded
+		LogLevel:          "INFO",
+		HealthPort:        8888,
+		TelemetryInterval: 5 * time.Second,
+		EMAAlpha:          0.3,
+		DryRun:            false,
+		CheckpointPath:    "/root/.agent_checkpoint.uci",
+		SkillStorePath:    "/root/skills.db",
+		DisableAutoHeal:   false,
+	}
+
+	// 1. Đọc cờ dòng lệnh (CLI Flags - Ưu tiên cao nhất)
+	flag.StringVar(&cfg.ConfigFilePath, "config", cfg.ConfigFilePath, "Path to environment config file")
+	flag.StringVar(&cfg.KeyFilePath, "keyfile", cfg.KeyFilePath, "Path to secure API key file")
+	flag.BoolVar(&cfg.DryRun, "dry-run", cfg.DryRun, "Enable dry-run mode (no network modifications)")
 	flag.Parse()
 
-	cfg := &Config{
-		SkillStorePath:    "/root/skills.db",
-		CheckpointPath:    "/root/.agent_checkpoint.uci",
-		KeyFilePath:       *keyPath,
-		HealthPort:        *port,
-		TelemetryInterval: 30 * time.Second,
-		EMAAlpha:          0.3,
-		LogLevel:          "INFO",
-		DryRun:            *dryRun,
-		MaxSkills:         1000,
-		AuthToken:         "beryl7-secret-health-token",
+	// 2. Đọc file cấu hình môi trường /etc/beryl7/agent.env
+	if err := parseEnvFile(cfg.ConfigFilePath, cfg); err != nil {
+		logger.Warn("Could not parse config file %s: %v. Using defaults.", cfg.ConfigFilePath, err)
 	}
 
-	if *debug {
-		cfg.LogLevel = "DEBUG"
+	// 3. Đọc biến môi trường hệ thống OS Environment
+	if val := os.Getenv("GEMINI_API_KEY"); val != "" {
+		cfg.GeminiAPIKey = strings.TrimSpace(val)
+	}
+	if val := os.Getenv("AUTH_TOKEN"); val != "" {
+		cfg.AuthToken = strings.TrimSpace(val)
+	}
+	if val := os.Getenv("LOG_LEVEL"); val != "" {
+		cfg.LogLevel = strings.TrimSpace(val)
+	}
+	if val := os.Getenv("BERYL7_DISABLE_HEALING"); val == "1" || strings.ToLower(val) == "true" {
+		cfg.DisableAutoHeal = true
 	}
 
-	// 1. Đọc API Key từ file an toàn (/etc/beryl7/agent.key - chmod 600)
-	if keyBytes, err := os.ReadFile(*keyPath); err == nil {
-		cfg.GeminiAPIKey = strings.TrimSpace(string(keyBytes))
-	} else {
-		// Fallback: đọc từ file env hoặc biến môi trường GEMINI_API_KEY
-		if envKey := os.Getenv("GEMINI_API_KEY"); envKey != "" {
-			cfg.GeminiAPIKey = envKey
+	// 4. Đọc file khóa bảo mật an toàn /etc/beryl7/agent.key (chmod 0600)
+	if cfg.GeminiAPIKey == "" {
+		key, err := readSecureKeyFile(cfg.KeyFilePath)
+		if err == nil && key != "" {
+			cfg.GeminiAPIKey = key
 		}
 	}
 
-	// 2. Đọc file config env nếu có
-	if envBytes, err := os.ReadFile(*configPath); err == nil {
-		lines := strings.Split(string(envBytes), "\n")
-		for _, line := range lines {
-			line = strings.TrimSpace(line)
-			if line == "" || strings.HasPrefix(line, "#") {
-				continue
-			}
-			parts := strings.SplitN(line, "=", 2)
-			if len(parts) == 2 {
-				k := strings.TrimSpace(parts[0])
-				v := strings.TrimSpace(parts[1])
-				v = strings.Trim(v, `"'`)
-				switch k {
-				case "GEMINI_API_KEY":
-					if cfg.GeminiAPIKey == "" {
-						cfg.GeminiAPIKey = v
-					}
-				case "AUTH_TOKEN":
-					cfg.AuthToken = v
-				case "LOG_LEVEL":
-					if !*debug {
-						cfg.LogLevel = v
-					}
-				case "DISABLE_AUTO_HEALING":
-					cfg.DisableAutoHealing = (v == "true" || v == "1")
-				}
-			}
-		}
+	cfg.apiKeyAtomic.Store(cfg.GeminiAPIKey)
+
+	// Yêu cầu bắt buộc AUTH_TOKEN hoặc tự động đọc từ /etc/beryl7/agent.env
+	if cfg.AuthToken == "" {
+		logger.Warn("AUTH_TOKEN is empty in config! Health check endpoint will require setting AUTH_TOKEN.")
 	}
 
 	return cfg, nil
 }
 
-// IsKillSwitchActive kiểm tra cờ tắt khẩn cấp theo đúng thứ tự ưu tiên:
-// Ưu tiên 1: Biến môi trường BERYL7_DISABLE_HEALING=1
-// Ưu tiên 2: File chạm /tmp/beryl7-disable tồn tại
-// Ưu tiên 3: Cấu hình DisableAutoHealing=true
+func readSecureKeyFile(filePath string) (string, error) {
+	info, err := os.Stat(filePath)
+	if err != nil {
+		return "", err
+	}
+
+	// Kiểm tra quyền file chmod 0600 (Chỉ owner có quyền đọc)
+	if info.Mode().Perm()&0077 != 0 {
+		logger.Warn("SECURITY WARNING: Key file %s has overly permissive permissions (%o). Expected 0600!", filePath, info.Mode().Perm())
+	}
+
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		return "", err
+	}
+
+	return strings.TrimSpace(string(content)), nil
+}
+
+func parseEnvFile(filePath string, cfg *Config) error {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+
+		key := strings.TrimSpace(parts[0])
+		val := strings.Trim(strings.TrimSpace(parts[1]), `"'`)
+
+		switch key {
+		case "GEMINI_API_KEY":
+			cfg.GeminiAPIKey = val
+		case "AUTH_TOKEN":
+			cfg.AuthToken = val
+		case "LOG_LEVEL":
+			cfg.LogLevel = val
+		case "DISABLE_AUTO_HEALING":
+			cfg.DisableAutoHeal = (val == "true" || val == "1")
+		case "HEALTH_PORT":
+			if p, err := strconv.Atoi(val); err == nil {
+				cfg.HealthPort = p
+			}
+		}
+	}
+
+	return scanner.Err()
+}
+
+func (c *Config) GetAPIKeySnapshot() string {
+	if val := c.apiKeyAtomic.Load(); val != nil {
+		return val.(string)
+	}
+	return c.GeminiAPIKey
+}
+
 func IsKillSwitchActive(cfg *Config) bool {
-	if os.Getenv("BERYL7_DISABLE_HEALING") == "1" || os.Getenv("BERYL7_DISABLE_HEALING") == "true" {
+	if cfg.DisableAutoHeal {
 		return true
 	}
 
+	// 1. Kill Switch File Level
 	if _, err := os.Stat("/tmp/beryl7-disable"); err == nil {
 		return true
 	}
 
-	if cfg != nil && cfg.DisableAutoHealing {
+	// 2. Kill Switch Env Level
+	if os.Getenv("BERYL7_DISABLE_HEALING") == "1" {
+		return true
+	}
+
+	// 3. Kill Switch UCI Section Level
+	if _, err := os.Stat(filepath.Join("/etc/config", "beryl7_disable")); err == nil {
 		return true
 	}
 
 	return false
-}
-
-// WriteSecureKeyFile tạo file chứa Key với mặt nạ an toàn 0600 (chỉ root đọc/ghi)
-func WriteSecureKeyFile(path, key string) error {
-	if err := os.MkdirAll("/etc/beryl7", 0700); err != nil {
-		return fmt.Errorf("failed to create config dir: %w", err)
-	}
-
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
-	if err != nil {
-		return fmt.Errorf("failed to open secure key file: %w", err)
-	}
-	defer f.Close()
-
-	if _, err := f.WriteString(strings.TrimSpace(key) + "\n"); err != nil {
-		return fmt.Errorf("failed to write key to file: %w", err)
-	}
-
-	return f.Sync()
 }

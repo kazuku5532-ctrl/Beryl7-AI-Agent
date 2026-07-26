@@ -1,7 +1,8 @@
-import paramiko
-import time
-import json
+import os
 import sys
+import time
+import paramiko
+from dotenv import load_dotenv
 
 sys.stdout.reconfigure(encoding='utf-8')
 
@@ -9,11 +10,21 @@ print("==================================================")
 print(" BERYL 7 AI AGENT EVOLUTION & LEARNING DRILL     ")
 print("==================================================")
 
+load_dotenv()
+router_ip = os.getenv("ROUTER_IP", "192.168.8.1")
+router_user = os.getenv("ROUTER_USER", "root")
+router_password = os.getenv("ROUTER_PASSWORD")
+
+if not router_password:
+    print("❌ ERROR: ROUTER_PASSWORD environment variable not set in .env file!")
+    sys.exit(1)
+
 ssh = paramiko.SSHClient()
+ssh.load_system_host_keys()
 ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
 try:
-    ssh.connect("192.168.8.1", 22, "root", "Kazuku@2k6", timeout=10)
+    ssh.connect(router_ip, 22, router_user, router_password, timeout=10)
     print("✓ SSH Connection: ESTABLISHED")
 except Exception as e:
     print(f"❌ SSH Connection Failed: {e}")
@@ -34,7 +45,6 @@ else:
 print("\n--- [FASE 2: SIMULATING WAN ANOMALY & LEARNING CYCLE 1] ---")
 print("Simulating WAN Drop Event -> Agent executing recovery action 'restart_wan_interface'...")
 
-# Run 1st Simulated Recovery & EMA Update
 cmd_drill1 = """
 sqlite3 /root/skills.db "INSERT INTO skills (id, action, condition_query, confidence, success_count, failure_count, created_at, last_used_at)
 VALUES ('restart_wan_interface', 'restart_wan_interface', 'WAN_DROP', 0.5 + 0.3*(1.0-0.5), 1, 0, strftime('%s','now'), strftime('%s','now'))
@@ -53,7 +63,6 @@ print(f"  {skills_cycle1}")
 print("\n--- [FASE 3: SIMULATING REPEATED ANOMALY & LEARNING CYCLE 2] ---")
 print("Second WAN Drop Event -> System applying learned knowledge & updating EMA Confidence...")
 
-# Run 2nd Simulated Recovery & EMA Update
 cmd_drill2 = """
 sqlite3 /root/skills.db "UPDATE skills SET
 confidence = confidence + 0.3*(1.0 - confidence),

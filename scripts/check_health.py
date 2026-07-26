@@ -8,8 +8,17 @@ sys.stdout.reconfigure(encoding='utf-8')
 load_dotenv()
 router_ip = os.getenv("ROUTER_IP", "192.168.8.1")
 router_user = os.getenv("ROUTER_USER", "root")
-router_password = os.getenv("ROUTER_PASSWORD", "Kazuku@2k6")
-auth_token = os.getenv("AUTH_TOKEN", "beryl7-secret-health-token")
+router_password = os.getenv("ROUTER_PASSWORD")
+auth_token = os.getenv("AUTH_TOKEN")
+
+if not router_password:
+    print("❌ ERROR: ROUTER_PASSWORD environment variable not set in .env file!")
+    print("Please configure ROUTER_PASSWORD in your .env file before running this script.")
+    sys.exit(1)
+
+if not auth_token:
+    print("❌ ERROR: AUTH_TOKEN environment variable not set in .env file!")
+    sys.exit(1)
 
 ssh = paramiko.SSHClient()
 ssh.load_system_host_keys()
