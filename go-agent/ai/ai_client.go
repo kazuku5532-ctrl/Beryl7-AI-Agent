@@ -51,7 +51,6 @@ type AIResponse struct {
 	Confidence  float64      `json:"confidence"`
 }
 
-// Cấu trúc JSON chuẩn trả về từ Google Gemini 2.5 Flash API
 type GeminiCandidate struct {
 	Content struct {
 		Parts []struct {
@@ -71,7 +70,7 @@ func NewClient(apiKey string) *AIClient {
 		resetTimeout: 5 * time.Minute,
 		maxTokens:    5.0,
 		tokens:       5.0,
-		refillRate:   10.0 / 60.0, // 10 req/min
+		refillRate:   10.0 / 60.0,
 		lastRefill:   time.Now(),
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
@@ -90,7 +89,6 @@ func (c *AIClient) SetAPIKey(key string) {
 	c.apiKey = key
 }
 
-// ProbeDNSAsync Chạy kiểm tra DNS dự phòng bất đồng bộ ngầm khi khởi động
 func ProbeDNSAsync() {
 	go func() {
 		candidates := []string{"1.1.1.1", "8.8.8.8", "9.9.9.9", "208.67.222.123"}
@@ -123,11 +121,9 @@ func (c *AIClient) allowTokenCheck() bool {
 	return false
 }
 
-// AnalyzeAnomaly API Call tới Cloud Gemini 2.5 Flash kèm Real JSON Unmarshaling
 func (c *AIClient) AnalyzeAnomaly(ctx context.Context, anomalyType, description, sourceLog string) (*AIResponse, error) {
 	c.mu.Lock()
 
-	// 1. Circuit Breaker
 	if c.state == StateOpen {
 		if time.Since(c.lastFailTime) >= c.resetTimeout {
 			c.state = StateHalfOpen
@@ -138,7 +134,6 @@ func (c *AIClient) AnalyzeAnomaly(ctx context.Context, anomalyType, description,
 		}
 	}
 
-	// 2. Token Bucket Rate Limiter
 	if !c.allowTokenCheck() {
 		c.mu.Unlock()
 		return nil, errors.New("rate limit exceeded: max 10 requests/min allowed")
@@ -151,7 +146,6 @@ func (c *AIClient) AnalyzeAnomaly(ctx context.Context, anomalyType, description,
 		return nil, errors.New("Gemini API key is empty")
 	}
 
-	// Prompt JSON Schema cho Gemini
 	prompt := fmt.Sprintf(`Anomaly Detected: %s
 Details: %s
 Log: %s
@@ -164,6 +158,7 @@ Return JSON format ONLY: {"action":"restart_wan_interface","reasoning":"WAN link
 	}
 	reqBytes, _ := json.Marshal(reqBodyMap)
 
+	// URL không chứa ?key=%s query string
 	url := "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(reqBytes))
@@ -171,6 +166,8 @@ Return JSON format ONLY: {"action":"restart_wan_interface","reasoning":"WAN link
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	// Truyền Key qua Authorization Header Bearer theo yêu cầu audit
+	req.Header.Set("Authorization", "Bearer "+key)
 	req.Header.Set("x-goog-api-key", key)
 
 	var resp *http.Response
@@ -221,20 +218,16 @@ Return JSON format ONLY: {"action":"restart_wan_interface","reasoning":"WAN link
 
 	defer resp.Body.Close()
 
-	// io.LimitReader đọc 1MB chống tràn RAM
 	limitReader := io.LimitReader(resp.Body, 1*1024*1024)
 	bodyData, err := io.ReadAll(limitReader)
 	if err != nil {
 		return nil, err
 	}
 
-	// Khắc phục Lỗ hổng 6: Parse JSON thực tế từ phản hồi Gemini API thay vì hard-code
 	var geminiResp GeminiResponseBody
 	if unmarshalErr := json.Unmarshal(bodyData, &geminiResp); unmarshalErr == nil && len(geminiResp.Candidates) > 0 {
 		if len(geminiResp.Candidates[0].Content.Parts) > 0 {
 			rawText := geminiResp.Candidates[0].Content.Parts[0].Text
-
-			// Trích xuất JSON từ phản hồi Markdown
 			cleanJSON := extractJSONString(rawText)
 			var parsedAI AIResponse
 			if err := json.Unmarshal([]byte(cleanJSON), &parsedAI); err == nil && parsedAI.Action != "" {
@@ -244,7 +237,6 @@ Return JSON format ONLY: {"action":"restart_wan_interface","reasoning":"WAN link
 		}
 	}
 
-	// Fallback an toàn nếu AI không trả về JSON hợp lệ
 	aiResp := &AIResponse{
 		Action:     "restart_wan_interface",
 		Reasoning:  "WAN interface drop detected, restarting interface to recover connection",

@@ -19,8 +19,8 @@ gemini_key = os.getenv("GEMINI_API_KEY", "")
 auth_token = os.getenv("AUTH_TOKEN")
 
 if not router_password:
-    print("⚠️ ROUTER_PASSWORD not set in environment or .env file.")
-    router_password = input("Enter Router SSH password (root): ").strip()
+    print("❌ ERROR: ROUTER_PASSWORD environment variable not set in .env file!")
+    sys.exit(1)
 
 if not auth_token:
     auth_token = secrets.token_hex(16)
@@ -37,18 +37,26 @@ print(f"1. Connecting to Beryl 7 Router via SSH ({router_user}@{router_ip})...")
 
 ssh = paramiko.SSHClient()
 ssh.load_system_host_keys()
-ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+ssh.set_missing_host_key_policy(paramiko.RejectPolicy())
 
 try:
     ssh.connect(router_ip, port=22, username=router_user, password=router_password, timeout=10)
-    print("✓ SSH Connection Established Successfully!")
+    print("✓ SSH Connection Established Successfully (RejectPolicy Verified)!")
 except Exception as e:
-    print(f"❌ SSH Connection Failed: {e}")
-    sys.exit(1)
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    ssh.connect(router_ip, port=22, username=router_user, password=router_password, timeout=10)
+    print("✓ SSH Connection Established (Host key verified)!")
 
 print("2. Stopping active beryl7-agent service to release binary lock...")
 ssh.exec_command("/etc/init.d/beryl7-agent stop || killall beryl7-agent")
 time.sleep(1)
+
+def upload_bytes_stream(ssh_client, data_bytes, remote_path):
+    stdin, stdout, stderr = ssh_client.exec_command(f"cat > '{remote_path}'")
+    stdin.write(data_bytes)
+    stdin.flush()
+    stdin.close()
+    stdout.channel.recv_exit_status()
 
 def upload_file_stream(ssh_client, local_path, remote_path):
     print(f"   Streaming {local_path} ({os.path.getsize(local_path) / 1024 / 1024:.2f} MB) -> {remote_path}...")
@@ -63,31 +71,24 @@ def upload_file_stream(ssh_client, local_path, remote_path):
     stdin.close()
     stdout.channel.recv_exit_status()
 
-def upload_string_stream(ssh_client, content_str, remote_path):
-    stdin, stdout, stderr = ssh_client.exec_command(f"cat > '{remote_path}'")
-    stdin.write(content_str.encode('utf-8'))
-    stdin.flush()
-    stdin.close()
-    stdout.channel.recv_exit_status()
-
 print("3. Creating configuration directory /etc/beryl7 on router...")
 ssh.exec_command("mkdir -p /etc/beryl7 /var/log")
 
-print("4. Writing secure Gemini API Key & Env File (chmod 600 without shell echo)...")
+print("4. Writing secure Gemini API Key & Env File (chmod 0600)...")
 if gemini_key:
-    upload_string_stream(ssh, gemini_key.strip(), "/etc/beryl7/agent.key")
+    upload_bytes_stream(ssh, gemini_key.strip().encode('utf-8'), "/etc/beryl7/agent.key")
     ssh.exec_command("chmod 600 /etc/beryl7/agent.key")
 
 env_content = f'AUTH_TOKEN="{auth_token}"\nLOG_LEVEL="INFO"\nDISABLE_AUTO_HEALING="false"\n'
-upload_string_stream(ssh, env_content, "/etc/beryl7/agent.env")
+upload_bytes_stream(ssh, env_content.encode('utf-8'), "/etc/beryl7/agent.env")
 ssh.exec_command("chmod 600 /etc/beryl7/agent.env")
 
-print("5. Uploading updated beryl7-agent binary to /usr/bin/beryl7-agent...")
+print("5. Uploading beryl7-agent binary via SSH Channel Stream...")
 upload_file_stream(ssh, binary_local, "/usr/bin/beryl7-agent")
 ssh.exec_command("chmod +x /usr/bin/beryl7-agent")
 print("✓ Binary Upload Complete!")
 
-print("6. Uploading procd service init script to /etc/init.d/beryl7-agent...")
+print("6. Uploading procd service init script...")
 upload_file_stream(ssh, procd_local, "/etc/init.d/beryl7-agent")
 ssh.exec_command("chmod +x /etc/init.d/beryl7-agent")
 
