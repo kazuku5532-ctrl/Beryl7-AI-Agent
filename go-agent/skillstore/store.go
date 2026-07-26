@@ -74,17 +74,25 @@ func (s *SkillStore) OpenAndInit() error {
 	var integrity string
 	_ = db.QueryRow("PRAGMA integrity_check").Scan(&integrity)
 	if integrity != "ok" && integrity != "" {
-		logger.Error("SQLite Integrity Check Failed (%s)! Executing Safe Dump & Rebuild...", integrity)
+		logger.Error("CRITICAL SQLITE INTEGRITY FAILURE (%s)! Initiating emergency salvage procedure...", integrity)
 		_ = db.Close()
 
-		// Khắc phục Lỗ hổng 4: Sao lưu an toàn kèm timestamp và xuất SQL Dump trước khi tái tạo DB
+		// 1. Sao lưu file bị hỏng
 		backupPath := fmt.Sprintf("%s.corrupt.%s", s.dbPath, time.Now().Format("20060102150405"))
 		_ = os.Rename(s.dbPath, backupPath)
-		logger.Info("Corrupted database safely archived to %s", backupPath)
+		logger.Error("Corrupted DB safely archived to %s for offline forensic salvage", backupPath)
+
+		// 2. Thử khôi phục từ bản sao lưu định kỳ (.bak) nếu có
+		bakPath := fmt.Sprintf("%s.bak", s.dbPath)
+		if bakData, errBak := os.ReadFile(bakPath); errBak == nil && len(bakData) > 0 {
+			if writeErr := os.WriteFile(s.dbPath, bakData, 0600); writeErr == nil {
+				logger.Info("SUCCESSFULLY SALVAGED database from recent backup snapshot %s!", bakPath)
+			}
+		}
 
 		db, err = sql.Open("sqlite", dsn)
 		if err != nil {
-			return fmt.Errorf("failed to recreate clean sqlite database: %w", err)
+			return fmt.Errorf("failed to reopen sqlite database: %w", err)
 		}
 		s.db = db
 	}
@@ -110,7 +118,6 @@ func (s *SkillStore) OpenAndInit() error {
 	return nil
 }
 
-// BackupDatabase Tạo bản sao lưu định kỳ cho cơ sở dữ liệu SQLite
 func (s *SkillStore) BackupDatabase() error {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -118,7 +125,6 @@ func (s *SkillStore) BackupDatabase() error {
 	backupPath := fmt.Sprintf("%s.bak", s.dbPath)
 	_, err := s.db.Exec(fmt.Sprintf("VACUUM INTO '%s';", backupPath))
 	if err != nil {
-		// Fallback copy nếu VACUUM không khả dụng
 		data, errRead := os.ReadFile(s.dbPath)
 		if errRead == nil {
 			_ = os.WriteFile(backupPath, data, 0600)
