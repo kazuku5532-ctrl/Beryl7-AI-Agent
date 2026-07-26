@@ -165,8 +165,8 @@ Return JSON format ONLY: {"action":"restart_wan_interface","reasoning":"WAN link
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	// Khắc phục Hạng mục A: Sử dụng duy nhất Authorization Bearer Header chuẩn hóa
 	req.Header.Set("Authorization", "Bearer "+key)
-	req.Header.Set("x-goog-api-key", key)
 
 	var resp *http.Response
 	for attempt := 1; attempt <= 3; attempt++ {
@@ -235,8 +235,6 @@ Return JSON format ONLY: {"action":"restart_wan_interface","reasoning":"WAN link
 		}
 	}
 
-	// Khắc phục Lỗ hổng 1: Không trả về High-Confidence Fallback (0.95)!
-	// Trả về lỗi để main loop rơi về Watchdog Rollback Guardrail an toàn.
 	logger.Error("Failed to parse valid AI JSON response from Gemini API response!")
 	return nil, fmt.Errorf("failed to unmarshal valid AI JSON response from Gemini API payload")
 }

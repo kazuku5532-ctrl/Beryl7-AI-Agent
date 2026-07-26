@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"os/exec"
 	"sync"
 	"time"
 
@@ -70,7 +71,6 @@ func (s *SkillStore) OpenAndInit() error {
 		logger.Warn("Failed to set SQLite pragmas: %v", err)
 	}
 
-	// Kiểm tra tính toàn vẹn integrity_check
 	var integrity string
 	_ = db.QueryRow("PRAGMA integrity_check").Scan(&integrity)
 	if integrity != "ok" && integrity != "" {
@@ -82,7 +82,15 @@ func (s *SkillStore) OpenAndInit() error {
 		_ = os.Rename(s.dbPath, backupPath)
 		logger.Error("Corrupted DB safely archived to %s for offline forensic salvage", backupPath)
 
-		// 2. Thử khôi phục từ bản sao lưu định kỳ (.bak) nếu có
+		// 2. Thử xuất SQL Dump khôi phục trực tiếp qua CLI `sqlite3 .dump`
+		dumpPath := backupPath + ".sql"
+		dumpCmd := exec.Command("sqlite3", backupPath, ".dump")
+		if dumpOut, dumpErr := dumpCmd.Output(); dumpErr == nil && len(dumpOut) > 0 {
+			_ = os.WriteFile(dumpPath, dumpOut, 0600)
+			logger.Info("Exported SQLite SQL Dump salvage file to %s (%d bytes)", dumpPath, len(dumpOut))
+		}
+
+		// 3. Khôi phục từ bản sao lưu snapshot (.bak) gần nhất nếu có
 		bakPath := fmt.Sprintf("%s.bak", s.dbPath)
 		if bakData, errBak := os.ReadFile(bakPath); errBak == nil && len(bakData) > 0 {
 			if writeErr := os.WriteFile(s.dbPath, bakData, 0600); writeErr == nil {
@@ -97,7 +105,6 @@ func (s *SkillStore) OpenAndInit() error {
 		s.db = db
 	}
 
-	// Schema Cơ sở dữ liệu
 	schema := `
 	CREATE TABLE IF NOT EXISTS skills (
 		id TEXT PRIMARY KEY,

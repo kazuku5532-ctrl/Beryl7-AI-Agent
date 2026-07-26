@@ -1,22 +1,13 @@
-import sys
+import base64
+import re
 import time
 import socket
 import paramiko
 
-if sys.platform.startswith('win'):
-    try:
-        sys.stdout.reconfigure(encoding='utf-8')
-    except AttributeError:
-        pass
-
-class GuardedWatchdog:
+class RouterWatchdog:
     """
-    Module Watchdog & Auto-Rollback Guardrail (Phao cứu sinh an toàn).
-    Đảm bảo 100% không bị mất mạng vĩnh viễn khi thi hành lệnh mới từ AI.
-    
-    Tích hợp tính năng +1 Evolution Step:
-    Tạo script Fallback tự động đếm ngược trực tiếp TRÊN ROUTER (Local Hardware Watchdog).
-    Dù Laptop có bị ngắt kết nối SSH/Wi-Fi hoàn toàn, Router vẫn tự khôi phục sau 30 giây!
+    Module RouterWatchdog: Quản lý tính năng tự động Rollback (Khôi phục) cấu hình cũ
+    nếu lệnh AI làm rớt mạng hoặc gây sự cố.
     """
     def __init__(self, hostname="192.168.8.1", port=22, username="root", password=None, key_filename=None, timeout=5):
         self.hostname = hostname
@@ -26,24 +17,29 @@ class GuardedWatchdog:
         self.key_filename = key_filename
         self.timeout = timeout
 
-    def _exec_ssh_cmd(self, client, command):
-        stdin, stdout, stderr = client.exec_command(command)
+    def _exec_ssh_cmd(self, client, cmd):
+        stdin, stdout, stderr = client.exec_command(cmd, timeout=10)
         out = stdout.read().decode('utf-8', errors='ignore').strip()
         err = stderr.read().decode('utf-8', errors='ignore').strip()
         return out, err
 
     def ping_check(self, target_host="192.168.8.1", port=22, timeout=2):
-        """Kiểm tra độ trễ và khả năng sống sót của socket kết nối"""
+        """Kiểm tra Socket TCP port 22 tới Beryl 7"""
         try:
-            sock = socket.create_connection((target_host, port), timeout=timeout)
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(timeout)
+            result = sock.connect_ex((target_host, port))
             sock.close()
-            return True
+            if result == 0:
+                return True
+            return False
         except Exception:
             return False
 
     def execute_with_guardrail(self, executor_func, *args, countdown_seconds=30, **kwargs):
         """
         Thực thi hàm Executor với cơ chế bảo vệ Guardrail 30s & Hardened Hardware Rollback.
+        Khắc phục Hạng mục B & E: Base64-encode safe script upload + chmod 700 an toàn.
         """
         checkpoint_file = "/tmp/agent_checkpoint.uci"
         fallback_script = "/tmp/watchdog_fallback.sh"
@@ -65,7 +61,6 @@ class GuardedWatchdog:
             print(f"[WATCHDOG] 1. Khởi tạo điểm sao lưu Checkpoint tại '{checkpoint_file}'...")
             self._exec_ssh_cmd(client, f"uci export > {checkpoint_file}")
 
-            # +1 EVOLUTION STEP: Tạo Local Hardware Fallback Script chạy ngầm trên Router
             print(f"[WATCHDOG] 2. Kích hoạt Local Hardware Watchdog (Tự động Rollback sau {countdown_seconds}s trên Router)...")
             script_content = f"""#!/bin/sh
 sleep {countdown_seconds}
@@ -77,8 +72,10 @@ if [ -f {checkpoint_file} ]; then
     rm -f {checkpoint_file}
 fi
 """
-            self._exec_ssh_cmd(client, f"echo '{script_content}' > {fallback_script} && chmod +x {fallback_script}")
-            # Chạy ngầm fallback script trên Router
+            # Mã hóa Base64 đảm bảo 100% an toàn không bị lỗi shell quoting
+            b64_script = base64.b64encode(script_content.encode('utf-8')).decode('utf-8')
+            self._exec_ssh_cmd(client, f"echo '{b64_script}' | base64 -d > {fallback_script} && chmod 700 {fallback_script}")
+            
             client.exec_command(f"nohup {fallback_script} >/dev/null 2>&1 &")
 
         except Exception as e:
@@ -86,7 +83,6 @@ fi
         finally:
             client.close()
 
-        # 3. Thực thi lệnh thay đổi từ AI
         print(f"[WATCHDOG] 3. Đang thực thi lệnh thay đổi cấu hình mạng từ AI...")
         exec_result = executor_func(*args, **kwargs)
 
@@ -95,7 +91,6 @@ fi
             self._cancel_fallback_script(checkpoint_file, fallback_script)
             return exec_result
 
-        # 4. Vòng lặp đếm ngược 30 giây và kiểm tra sức khỏe mạng (Health Check)
         print(f"[WATCHDOG] 4. Vòng lặp đếm ngược {countdown_seconds}s & Kiểm tra sức khỏe kết nối (PING mỗi 2s)...")
         start_time = time.time()
         health_passed = True
@@ -112,7 +107,6 @@ fi
                 health_passed = False
                 break
 
-        # 5. Đánh giá kết quả
         if health_passed:
             print("[WATCHDOG] Sức khỏe mạng ĐẠT CHUẨN! Hủy đếm ngược Rollback và xác nhận cấu hình mới.")
             self._cancel_fallback_script(checkpoint_file, fallback_script)
@@ -127,7 +121,6 @@ fi
             return exec_result
 
     def _cancel_fallback_script(self, checkpoint_file, fallback_script):
-        """Xóa file checkpoint và dừng script fallback khi lệnh chạy thành công"""
         try:
             client = paramiko.SSHClient()
             client.load_system_host_keys()
@@ -139,7 +132,6 @@ fi
             pass
 
     def _force_rollback_now(self, checkpoint_file):
-        """Khôi phục ngay lập tức cấu hình cũ"""
         try:
             client = paramiko.SSHClient()
             client.load_system_host_keys()
