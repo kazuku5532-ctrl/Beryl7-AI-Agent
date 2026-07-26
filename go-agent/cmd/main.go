@@ -94,7 +94,7 @@ func main() {
 		UptimeSeconds: 0,
 	}
 
-	// 8. Khởi chạy HTTP Health Check Server :8888 với SO_REUSEADDR Socket Listener
+	// 8. Khởi chạy HTTP Health Check Server (Bind 127.0.0.1 Loopback Only)
 	httpServer := startHealthCheckServer(cfg, health)
 
 	// 9. Lập lịch ngầm Shutdown Signal Trap (SIGTERM / SIGINT)
@@ -186,8 +186,10 @@ func main() {
 
 				// Ưu tiên 2: Gọi Gemini 2.5 Flash API với log đã được làm sạch
 				aiResp, aiErr := aiClient.AnalyzeAnomaly(ctx, "WAN_DROP", "WAN interface down", cleanLog)
-				if aiErr == nil && aiResp != nil {
-					logger.Info("Gemini AI Suggested Action: [%s] - Reasoning: %s", aiResp.Action, aiResp.Reasoning)
+
+				// Kiểm tra Confidence Threshold (>= 0.50) trước khi tự động thực thi
+				if aiErr == nil && aiResp != nil && aiResp.Confidence >= 0.50 {
+					logger.Info("Gemini AI Suggested Action: [%s] (Confidence=%.2f) - Reasoning: %s", aiResp.Action, aiResp.Confidence, aiResp.Reasoning)
 					actReq := &executor.ActionRequest{
 						ActionName: aiResp.Action,
 						Target:     "wan",
@@ -199,11 +201,11 @@ func main() {
 						ID:         aiResp.Action,
 						Action:     aiResp.Action,
 						Condition:  "WAN_DROP",
-						Confidence: 0.5,
+						Confidence: aiResp.Confidence,
 					}
 					_ = store.SaveOrUpdateSkill(newSkill, execErr == nil, cfg.EMAAlpha)
 				} else {
-					logger.Error("Cloud AI Call Failed (%v). Falling back to Watchdog Rollback Guardrail!", aiErr)
+					logger.Error("Cloud AI Call Failed or Confidence Low (%v). Falling back to Watchdog Rollback Guardrail!", aiErr)
 					_ = wd.ExecuteRollback()
 				}
 			}
@@ -223,7 +225,6 @@ func acquirePIDLock(pidPath string) error {
 		}
 	}
 
-	// Mode 0600 bảo mật cao tránh đọc trái phép PID
 	return os.WriteFile(pidPath, []byte(strconv.Itoa(os.Getpid())), 0600)
 }
 
@@ -234,7 +235,6 @@ func startHealthCheckServer(cfg *config.Config, health *HealthState) *http.Serve
 		auth := r.Header.Get("Authorization")
 		expectedAuth := "Bearer " + cfg.AuthToken
 
-		// Khắc phục Lỗ hổng 1: Dùng crypto/subtle ConstantTimeCompare chống tấn công timing attack
 		if cfg.AuthToken != "" {
 			if len(auth) == 0 || subtle.ConstantTimeCompare([]byte(auth), []byte(expectedAuth)) != 1 {
 				http.Error(w, `{"error":"Unauthorized"}`, http.StatusUnauthorized)
@@ -250,8 +250,9 @@ func startHealthCheckServer(cfg *config.Config, health *HealthState) *http.Serve
 		_ = json.NewEncoder(w).Encode(snapshot)
 	})
 
+	// Khắc phục theo Đề xuất docx: Bind giao diện loopback 127.0.0.1 thay vì 0.0.0.0
 	server := &http.Server{
-		Addr:         fmt.Sprintf(":%d", cfg.HealthPort),
+		Addr:         fmt.Sprintf("127.0.0.1:%d", cfg.HealthPort),
 		Handler:      mux,
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 5 * time.Second,
@@ -277,7 +278,7 @@ func startHealthCheckServer(cfg *config.Config, health *HealthState) *http.Serve
 			return
 		}
 
-		logger.Info("HTTP Health Server started securely on port %s", server.Addr)
+		logger.Info("HTTP Health Server started securely on loopback %s", server.Addr)
 		_ = server.Serve(listener)
 	}()
 
