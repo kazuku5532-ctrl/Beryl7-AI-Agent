@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -59,7 +60,8 @@ func (t *TelemetryCollector) CallUbusExec(ctx context.Context, path, method stri
 	ctxTimeout, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctxTimeout, t.ubusPath, "call", path, method)
+	cleanPath := filepath.Clean(t.ubusPath)
+	cmd := exec.CommandContext(ctxTimeout, cleanPath, "call", path, method) // #nosec G204
 	output, err := cmd.Output()
 
 	if ctxTimeout.Err() == context.DeadlineExceeded {

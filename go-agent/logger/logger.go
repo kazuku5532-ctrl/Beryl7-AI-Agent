@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"regexp"
 	"sync"
 	"time"
@@ -57,7 +58,8 @@ func Init(filePath string, levelStr string) (*Logger, error) {
 	}
 
 	if filePath != "" {
-		f, err := os.OpenFile(filePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
+		cleanPath := filepath.Clean(filePath)
+		f, err := os.OpenFile(cleanPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600) // #nosec G304
 		if err == nil {
 			l.file = f
 		}

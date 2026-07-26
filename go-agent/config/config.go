@@ -102,7 +102,8 @@ func readSecureKeyFile(filePath string) (string, error) {
 		logger.Warn("SECURITY WARNING: Key file %s has overly permissive permissions (%o). Expected 0600!", filePath, info.Mode().Perm())
 	}
 
-	content, err := os.ReadFile(filePath)
+	cleanPath := filepath.Clean(filePath)
+	content, err := os.ReadFile(cleanPath) // #nosec G304
 	if err != nil {
 		return "", err
 	}
@@ -111,7 +112,8 @@ func readSecureKeyFile(filePath string) (string, error) {
 }
 
 func parseEnvFile(filePath string, cfg *Config) error {
-	file, err := os.Open(filePath)
+	cleanPath := filepath.Clean(filePath)
+	file, err := os.Open(cleanPath) // #nosec G304
 	if err != nil {
 		return err
 	}

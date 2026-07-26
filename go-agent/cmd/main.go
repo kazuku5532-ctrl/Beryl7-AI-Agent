@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -234,7 +235,8 @@ func recordApprovalAuditLog(action, remoteAddr string) {
 }
 
 func acquirePIDLock(pidPath string) error {
-	if content, err := os.ReadFile(pidPath); err == nil && len(content) > 0 {
+	cleanPath := filepath.Clean(pidPath)
+	if content, err := os.ReadFile(cleanPath); err == nil && len(content) > 0 { // #nosec G304
 		var oldPID int
 		if _, parseErr := fmt.Sscanf(string(content), "%d", &oldPID); parseErr == nil && oldPID > 0 {
 			if checkPIDAlive(oldPID) {

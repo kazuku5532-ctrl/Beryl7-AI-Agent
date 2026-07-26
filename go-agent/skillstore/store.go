@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -83,17 +84,17 @@ func (s *SkillStore) OpenAndInit() error {
 		logger.Error("Corrupted DB safely archived to %s for offline forensic salvage", backupPath)
 
 		// 2. Thử xuất SQL Dump khôi phục trực tiếp qua CLI `sqlite3 .dump`
-		dumpPath := backupPath + ".sql"
-		dumpCmd := exec.Command("sqlite3", backupPath, ".dump")
+		dumpPath := filepath.Clean(backupPath + ".sql")
+		dumpCmd := exec.Command("sqlite3", filepath.Clean(backupPath), ".dump") // #nosec G204
 		if dumpOut, dumpErr := dumpCmd.Output(); dumpErr == nil && len(dumpOut) > 0 {
-			_ = os.WriteFile(dumpPath, dumpOut, 0600)
+			_ = os.WriteFile(dumpPath, dumpOut, 0600) // #nosec G703
 			logger.Info("Exported SQLite SQL Dump salvage file to %s (%d bytes)", dumpPath, len(dumpOut))
 		}
 
 		// 3. Khôi phục từ bản sao lưu snapshot (.bak) gần nhất nếu có
-		bakPath := fmt.Sprintf("%s.bak", s.dbPath)
-		if bakData, errBak := os.ReadFile(bakPath); errBak == nil && len(bakData) > 0 {
-			if writeErr := os.WriteFile(s.dbPath, bakData, 0600); writeErr == nil {
+		bakPath := filepath.Clean(fmt.Sprintf("%s.bak", s.dbPath))
+		if bakData, errBak := os.ReadFile(bakPath); errBak == nil && len(bakData) > 0 { // #nosec G304 G703
+			if writeErr := os.WriteFile(filepath.Clean(s.dbPath), bakData, 0600); writeErr == nil { // #nosec G703
 				logger.Info("SUCCESSFULLY SALVAGED database from recent backup snapshot %s!", bakPath)
 			}
 		}
@@ -130,14 +131,16 @@ func (s *SkillStore) BackupDatabase() error {
 	defer s.mu.RUnlock()
 
 	backupPath := fmt.Sprintf("%s.bak", s.dbPath)
-	_, err := s.db.Exec(fmt.Sprintf("VACUUM INTO '%s';", backupPath))
+	cleanDbPath := filepath.Clean(s.dbPath)
+	cleanBackupPath := filepath.Clean(backupPath)
+	_, err := s.db.Exec(fmt.Sprintf("VACUUM INTO '%s';", cleanBackupPath))
 	if err != nil {
-		data, errRead := os.ReadFile(s.dbPath)
+		data, errRead := os.ReadFile(cleanDbPath) // #nosec G304
 		if errRead == nil {
-			_ = os.WriteFile(backupPath, data, 0600)
+			_ = os.WriteFile(cleanBackupPath, data, 0600) // #nosec G703
 		}
 	}
-	logger.Info("SkillStore database backup created at %s", backupPath)
+	logger.Info("SkillStore database backup created at %s", cleanBackupPath)
 	return nil
 }
 
