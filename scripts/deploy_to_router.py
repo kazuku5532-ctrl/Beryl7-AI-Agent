@@ -37,15 +37,16 @@ print(f"1. Connecting to Beryl 7 Router via SSH ({router_user}@{router_ip})...")
 
 ssh = paramiko.SSHClient()
 ssh.load_system_host_keys()
+# Khắc phục Lỗ hổng 2: Chỉ cho phép RejectPolicy. Không có fallback AutoAddPolicy ngầm!
 ssh.set_missing_host_key_policy(paramiko.RejectPolicy())
 
 try:
     ssh.connect(router_ip, port=22, username=router_user, password=router_password, timeout=10)
-    print("✓ SSH Connection Established Successfully (RejectPolicy Verified)!")
+    print("✓ SSH Connection Established Successfully (Strict RejectPolicy Verified)!")
 except Exception as e:
-    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    ssh.connect(router_ip, port=22, username=router_user, password=router_password, timeout=10)
-    print("✓ SSH Connection Established (Host key verified)!")
+    print(f"❌ SSH Connection Error under RejectPolicy: {e}")
+    print("⚠️ If host key is missing, add it to system known_hosts: ssh-keyscan -H 192.168.8.1 >> ~/.ssh/known_hosts")
+    sys.exit(1)
 
 print("2. Stopping active beryl7-agent service to release binary lock...")
 ssh.exec_command("/etc/init.d/beryl7-agent stop || killall beryl7-agent")
@@ -60,7 +61,7 @@ def safe_upload_file(ssh_client, local_path, remote_path, mode=0o644):
         sftp.close()
         print("   ✓ Uploaded via Paramiko SFTPClient.put successfully!")
     except Exception:
-        # Fallback stream cho môi trường OpenWrt Dropbear không hỗ trợ openssh-sftp-server
+        # Stream fallback an toàn cho OpenWrt Dropbear
         stdin, stdout, stderr = ssh_client.exec_command(f"cat > '{remote_path}'")
         with open(local_path, "rb") as f:
             while True:

@@ -158,7 +158,6 @@ Return JSON format ONLY: {"action":"restart_wan_interface","reasoning":"WAN link
 	}
 	reqBytes, _ := json.Marshal(reqBodyMap)
 
-	// URL không chứa ?key=%s query string
 	url := "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(reqBytes))
@@ -166,7 +165,6 @@ Return JSON format ONLY: {"action":"restart_wan_interface","reasoning":"WAN link
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	// Truyền Key qua Authorization Header Bearer theo yêu cầu audit
 	req.Header.Set("Authorization", "Bearer "+key)
 	req.Header.Set("x-goog-api-key", key)
 
@@ -237,17 +235,10 @@ Return JSON format ONLY: {"action":"restart_wan_interface","reasoning":"WAN link
 		}
 	}
 
-	aiResp := &AIResponse{
-		Action:     "restart_wan_interface",
-		Reasoning:  "WAN interface drop detected, restarting interface to recover connection",
-		Confidence: 0.95,
-		Function: FunctionCall{
-			Name:      "restart_wan_interface",
-			Arguments: map[string]interface{}{"interface": "wan"},
-		},
-	}
-
-	return aiResp, nil
+	// Khắc phục Lỗ hổng 1: Không trả về High-Confidence Fallback (0.95)!
+	// Trả về lỗi để main loop rơi về Watchdog Rollback Guardrail an toàn.
+	logger.Error("Failed to parse valid AI JSON response from Gemini API response!")
+	return nil, fmt.Errorf("failed to unmarshal valid AI JSON response from Gemini API payload")
 }
 
 func extractJSONString(text string) string {
