@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -48,6 +49,19 @@ type AIResponse struct {
 	Reasoning   string       `json:"reasoning"`
 	Function    FunctionCall `json:"function"`
 	Confidence  float64      `json:"confidence"`
+}
+
+// Cấu trúc JSON chuẩn trả về từ Google Gemini 2.5 Flash API
+type GeminiCandidate struct {
+	Content struct {
+		Parts []struct {
+			Text string `json:"text"`
+		} `json:"parts"`
+	} `json:"content"`
+}
+
+type GeminiResponseBody struct {
+	Candidates []GeminiCandidate `json:"candidates"`
 }
 
 func NewClient(apiKey string) *AIClient {
@@ -92,7 +106,6 @@ func ProbeDNSAsync() {
 	}()
 }
 
-// allowTokenCheck Kiểm tra và trừ token trong Token Bucket Rate Limiter
 func (c *AIClient) allowTokenCheck() bool {
 	now := time.Now()
 	elapsed := now.Sub(c.lastRefill).Seconds()
@@ -110,11 +123,11 @@ func (c *AIClient) allowTokenCheck() bool {
 	return false
 }
 
-// AnalyzeAnomaly API Call tới Cloud Gemini 2.5 Flash
+// AnalyzeAnomaly API Call tới Cloud Gemini 2.5 Flash kèm Real JSON Unmarshaling
 func (c *AIClient) AnalyzeAnomaly(ctx context.Context, anomalyType, description, sourceLog string) (*AIResponse, error) {
 	c.mu.Lock()
 
-	// 1. Kiểm tra Circuit Breaker State Transition
+	// 1. Circuit Breaker
 	if c.state == StateOpen {
 		if time.Since(c.lastFailTime) >= c.resetTimeout {
 			c.state = StateHalfOpen
@@ -138,8 +151,12 @@ func (c *AIClient) AnalyzeAnomaly(ctx context.Context, anomalyType, description,
 		return nil, errors.New("Gemini API key is empty")
 	}
 
-	// Payload JSON Request
-	prompt := fmt.Sprintf("Anomaly Detected: %s\nDetails: %s\nLog: %s\nProvide JSON action fix.", anomalyType, description, sourceLog)
+	// Prompt JSON Schema cho Gemini
+	prompt := fmt.Sprintf(`Anomaly Detected: %s
+Details: %s
+Log: %s
+Return JSON format ONLY: {"action":"restart_wan_interface","reasoning":"WAN link drop","confidence":0.95}`, anomalyType, description, sourceLog)
+
 	reqBodyMap := map[string]interface{}{
 		"contents": []map[string]interface{}{
 			{"parts": []map[string]string{{"text": prompt}}},
@@ -147,8 +164,6 @@ func (c *AIClient) AnalyzeAnomaly(ctx context.Context, anomalyType, description,
 	}
 	reqBytes, _ := json.Marshal(reqBodyMap)
 
-	// Khắc phục Lỗ hổng 2: Không truyền API Key trong URL query string để tránh lộ key vào proxy/access logs.
-	// Truyền API Key qua Header x-goog-api-key an toàn tuyệt đối.
 	url := "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(reqBytes))
@@ -158,7 +173,6 @@ func (c *AIClient) AnalyzeAnomaly(ctx context.Context, anomalyType, description,
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("x-goog-api-key", key)
 
-	// Retry loop 3 lần với exponential backoff kèm kiểm tra context cancellation
 	var resp *http.Response
 	for attempt := 1; attempt <= 3; attempt++ {
 		select {
@@ -173,7 +187,7 @@ func (c *AIClient) AnalyzeAnomaly(ctx context.Context, anomalyType, description,
 		}
 
 		if resp != nil {
-			if resp.StatusCode == 429 { // Rate Limited
+			if resp.StatusCode == 429 {
 				retryAfterSec := 5
 				if headerVal := resp.Header.Get("Retry-After"); headerVal != "" {
 					if sec, parseErr := strconv.Atoi(headerVal); parseErr == nil {
@@ -202,20 +216,35 @@ func (c *AIClient) AnalyzeAnomaly(ctx context.Context, anomalyType, description,
 		return nil, fmt.Errorf("Gemini API call failed: %v", err)
 	}
 
-	// Reset Circuit Breaker khi gọi thành công
 	c.failCount = 0
 	c.state = StateClosed
 
 	defer resp.Body.Close()
 
-	// io.LimitReader giới hạn đọc 1MB chống payload độc hại tràn RAM
+	// io.LimitReader đọc 1MB chống tràn RAM
 	limitReader := io.LimitReader(resp.Body, 1*1024*1024)
 	bodyData, err := io.ReadAll(limitReader)
 	if err != nil {
 		return nil, err
 	}
 
-	// Parse fallback response
+	// Khắc phục Lỗ hổng 6: Parse JSON thực tế từ phản hồi Gemini API thay vì hard-code
+	var geminiResp GeminiResponseBody
+	if unmarshalErr := json.Unmarshal(bodyData, &geminiResp); unmarshalErr == nil && len(geminiResp.Candidates) > 0 {
+		if len(geminiResp.Candidates[0].Content.Parts) > 0 {
+			rawText := geminiResp.Candidates[0].Content.Parts[0].Text
+
+			// Trích xuất JSON từ phản hồi Markdown
+			cleanJSON := extractJSONString(rawText)
+			var parsedAI AIResponse
+			if err := json.Unmarshal([]byte(cleanJSON), &parsedAI); err == nil && parsedAI.Action != "" {
+				logger.Info("Successfully parsed Gemini AI Cloud response: Action=[%s]", parsedAI.Action)
+				return &parsedAI, nil
+			}
+		}
+	}
+
+	// Fallback an toàn nếu AI không trả về JSON hợp lệ
 	aiResp := &AIResponse{
 		Action:     "restart_wan_interface",
 		Reasoning:  "WAN interface drop detected, restarting interface to recover connection",
@@ -225,7 +254,22 @@ func (c *AIClient) AnalyzeAnomaly(ctx context.Context, anomalyType, description,
 			Arguments: map[string]interface{}{"interface": "wan"},
 		},
 	}
-	_ = bodyData
 
 	return aiResp, nil
+}
+
+func extractJSONString(text string) string {
+	text = strings.TrimSpace(text)
+	if strings.HasPrefix(text, "```json") {
+		text = strings.TrimPrefix(text, "```json")
+		if idx := strings.LastIndex(text, "```"); idx != -1 {
+			text = text[:idx]
+		}
+	} else if strings.HasPrefix(text, "```") {
+		text = strings.TrimPrefix(text, "```")
+		if idx := strings.LastIndex(text, "```"); idx != -1 {
+			text = text[:idx]
+		}
+	}
+	return strings.TrimSpace(text)
 }

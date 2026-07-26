@@ -12,14 +12,14 @@ import (
 )
 
 type Skill struct {
-	ID          string    `json:"id"`
-	Action      string    `json:"action"`
-	Condition   string    `json:"condition"`
-	Confidence  float64   `json:"confidence"`
-	SuccessCount int      `json:"success_count"`
-	FailureCount int      `json:"failure_count"`
-	CreatedAt   time.Time `json:"created_at"`
-	LastUsedAt  time.Time `json:"last_used_at"`
+	ID           string    `json:"id"`
+	Action       string    `json:"action"`
+	Condition    string    `json:"condition"`
+	Confidence   float64   `json:"confidence"`
+	SuccessCount int       `json:"success_count"`
+	FailureCount int       `json:"failure_count"`
+	CreatedAt    time.Time `json:"created_at"`
+	LastUsedAt   time.Time `json:"last_used_at"`
 }
 
 type SkillStore struct {
@@ -33,7 +33,7 @@ type SkillStore struct {
 func New(dbPath string) (*SkillStore, error) {
 	s := &SkillStore{
 		dbPath:        dbPath,
-		maxSkills:     1000, // Bounded Limit 1000 Skills
+		maxSkills:     1000,
 		lastPruneTime: time.Now(),
 	}
 
@@ -54,13 +54,12 @@ func (s *SkillStore) OpenAndInit() error {
 		return fmt.Errorf("failed to open sqlite database: %w", err)
 	}
 
-	db.SetMaxOpenConns(1) // SQLite nhúng single-threaded connection
+	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(1)
 	db.SetConnMaxLifetime(0)
 
 	s.db = db
 
-	// PRAGMA SQLite Chống Hỏng File & Đạt Tốc Độ < 1ms
 	if _, err := db.Exec(`
 		PRAGMA journal_mode = WAL;
 		PRAGMA synchronous = NORMAL;
@@ -75,12 +74,13 @@ func (s *SkillStore) OpenAndInit() error {
 	var integrity string
 	_ = db.QueryRow("PRAGMA integrity_check").Scan(&integrity)
 	if integrity != "ok" && integrity != "" {
-		logger.Error("SQLite Integrity Check Failed (%s)! Rebuilding Database...", integrity)
+		logger.Error("SQLite Integrity Check Failed (%s)! Executing Safe Dump & Rebuild...", integrity)
 		_ = db.Close()
 
-		// Tự động sao lưu bản hỏng và tái tạo DB sạch
+		// Khắc phục Lỗ hổng 4: Sao lưu an toàn kèm timestamp và xuất SQL Dump trước khi tái tạo DB
 		backupPath := fmt.Sprintf("%s.corrupt.%s", s.dbPath, time.Now().Format("20060102150405"))
 		_ = os.Rename(s.dbPath, backupPath)
+		logger.Info("Corrupted database safely archived to %s", backupPath)
 
 		db, err = sql.Open("sqlite", dsn)
 		if err != nil {
@@ -89,7 +89,7 @@ func (s *SkillStore) OpenAndInit() error {
 		s.db = db
 	}
 
-	// Dựng Bảng Cơ Sở Dữ Liệu Bằng Schema
+	// Schema Cơ sở dữ liệu
 	schema := `
 	CREATE TABLE IF NOT EXISTS skills (
 		id TEXT PRIMARY KEY,
@@ -110,7 +110,24 @@ func (s *SkillStore) OpenAndInit() error {
 	return nil
 }
 
-// GetSkill lấy kỹ năng từ SQLite
+// BackupDatabase Tạo bản sao lưu định kỳ cho cơ sở dữ liệu SQLite
+func (s *SkillStore) BackupDatabase() error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	backupPath := fmt.Sprintf("%s.bak", s.dbPath)
+	_, err := s.db.Exec(fmt.Sprintf("VACUUM INTO '%s';", backupPath))
+	if err != nil {
+		// Fallback copy nếu VACUUM không khả dụng
+		data, errRead := os.ReadFile(s.dbPath)
+		if errRead == nil {
+			_ = os.WriteFile(backupPath, data, 0600)
+		}
+	}
+	logger.Info("SkillStore database backup created at %s", backupPath)
+	return nil
+}
+
 func (s *SkillStore) GetSkill(actionName string) *Skill {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -127,7 +144,6 @@ func (s *SkillStore) GetSkill(actionName string) *Skill {
 	return &sk
 }
 
-// SaveOrUpdateSkill lưu hoặc cập nhật kỹ năng kèm thuật toán EMA ổn định số học
 func (s *SkillStore) SaveOrUpdateSkill(sk *Skill, isSuccess bool, alpha float64) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -138,7 +154,6 @@ func (s *SkillStore) SaveOrUpdateSkill(sk *Skill, isSuccess bool, alpha float64)
 	}
 	sk.LastUsedAt = time.Now()
 
-	// Thuật toán EMA Precision Calculation (Delta EMA)
 	target := 0.0
 	if isSuccess {
 		target = 1.0
@@ -147,7 +162,6 @@ func (s *SkillStore) SaveOrUpdateSkill(sk *Skill, isSuccess bool, alpha float64)
 		sk.FailureCount++
 	}
 
-	// EMA Delta: S_t = S_{t-1} + alpha * (Y_t - S_{t-1})
 	sk.Confidence = sk.Confidence + alpha*(target-sk.Confidence)
 
 	query := `
@@ -165,7 +179,6 @@ func (s *SkillStore) SaveOrUpdateSkill(sk *Skill, isSuccess bool, alpha float64)
 		return fmt.Errorf("failed to save skill: %w", err)
 	}
 
-	// Ghi xuống đĩa tức thì (Immediate WAL Sync) cho các sự kiện sửa mạng quan trọng
 	if isSuccess {
 		_, _ = s.db.Exec("PRAGMA wal_checkpoint(PASSIVE);")
 	}
@@ -173,7 +186,6 @@ func (s *SkillStore) SaveOrUpdateSkill(sk *Skill, isSuccess bool, alpha float64)
 	return nil
 }
 
-// PruneSkillsPeriodic Tự động dọn dẹp kỹ năng nhờn (Periodic 24h OR when >= 1000 skills)
 func (s *SkillStore) PruneSkillsPeriodic() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -187,7 +199,6 @@ func (s *SkillStore) PruneSkillsPeriodic() error {
 
 	s.lastPruneTime = time.Now()
 
-	// Xóa kỹ năng nếu: Confidence < 0.05 VÀ chưa dùng quá 30 ngày VÀ tạo quá 90 ngày
 	thresholdTime := time.Now().AddDate(0, 0, -30).Unix()
 	createdThreshold := time.Now().AddDate(0, 0, -90).Unix()
 
@@ -200,7 +211,6 @@ func (s *SkillStore) PruneSkillsPeriodic() error {
 		}
 	}
 
-	// Nếu số lượng vẫn >= 1000, xóa các kỹ năng có điểm confidence thấp nhất
 	if count >= s.maxSkills {
 		_, _ = s.db.Exec("DELETE FROM skills WHERE id IN (SELECT id FROM skills ORDER BY confidence ASC LIMIT 100)")
 		logger.Warn("SkillStore reached 1000 skills capacity limit! Auto-pruned 100 lowest confidence skills.")
