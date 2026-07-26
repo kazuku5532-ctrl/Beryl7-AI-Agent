@@ -19,14 +19,39 @@ type ActionRequest struct {
 	Params     map[string]string `json:"params"`
 }
 
+type ActionFunc func(ctx context.Context, params map[string]string) error
+
 type Executor struct {
-	macRegex *regexp.Regexp
+	macRegex  *regexp.Regexp
+	whitelist map[string]ActionFunc
 }
 
 func New() *Executor {
-	return &Executor{
+	e := &Executor{
 		macRegex: regexp.MustCompile(`^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$`),
 	}
+
+	// Khắc phục Lỗ hổng 4: Khóa Whitelist hành động nghiêm ngặt chống Remote Code Execution
+	e.whitelist = map[string]ActionFunc{
+		"restart_wan_interface": func(ctx context.Context, params map[string]string) error {
+			return e.restartInterface(ctx, "wan")
+		},
+		"restart_interface": func(ctx context.Context, params map[string]string) error {
+			iface := params["interface"]
+			if iface == "" {
+				iface = "wan"
+			}
+			return e.restartInterface(ctx, iface)
+		},
+		"reload_wifi": func(ctx context.Context, params map[string]string) error {
+			return e.reloadWiFi(ctx)
+		},
+		"set_wan_mac": func(ctx context.Context, params map[string]string) error {
+			return e.setWANMac(ctx, params["mac"])
+		},
+	}
+
+	return e
 }
 
 // ExecuteAction thực thi hành động can thiệp mạng không qua shell trung gian (No-Shell Parameterized Exec)
@@ -45,21 +70,18 @@ func (e *Executor) ExecuteAction(ctx context.Context, req *ActionRequest, dryRun
 	ctxTimeout, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 
-	switch req.ActionName {
-	case "restart_wan_interface", "restart_interface":
-		return e.restartInterface(ctxTimeout, "wan")
-	case "reload_wifi":
-		return e.reloadWiFi(ctxTimeout)
-	case "set_wan_mac":
-		mac := req.Params["mac"]
-		return e.setWANMac(ctxTimeout, mac)
-	default:
-		return e.restartInterface(ctxTimeout, "wan")
+	// Khắc phục Lỗ hổng 4: Tra cứu Whitelist, bác bỏ 100% lệnh lạ ngoài danh mục kiểm duyệt
+	actionFn, exists := e.whitelist[req.ActionName]
+	if !exists {
+		return fmt.Errorf("SECURITY ERROR: Action [%s] is NOT in the allowed security whitelist", req.ActionName)
 	}
+
+	return actionFn(ctxTimeout, req.Params)
 }
 
 func (e *Executor) restartInterface(ctx context.Context, iface string) error {
-	if iface == "" {
+	// Whitelist interface name chỉ chấp nhận wan/lan/wwan
+	if iface != "wan" && iface != "lan" && iface != "wwan" {
 		iface = "wan"
 	}
 
@@ -94,7 +116,6 @@ func (e *Executor) setWANMac(ctx context.Context, mac string) error {
 		return fmt.Errorf("invalid MAC address format: %s (must be XX:XX:XX:XX:XX:XX)", mac)
 	}
 
-	// Direct uci set parameter, NOT through shell interpreter
 	cmdSet := exec.CommandContext(ctx, "uci", "set", fmt.Sprintf("network.wan.macaddr=%s", mac))
 	if err := cmdSet.Run(); err != nil {
 		return fmt.Errorf("uci set mac failed: %w", err)

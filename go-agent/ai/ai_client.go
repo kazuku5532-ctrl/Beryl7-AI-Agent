@@ -32,11 +32,10 @@ type AIClient struct {
 	failCount    int
 	lastFailTime time.Time
 	resetTimeout time.Duration
-	// Token Bucket Rate Limiter: 10 req/min, burst capacity = 5
-	tokens     float64
-	maxTokens  float64
-	refillRate float64
-	lastRefill time.Time
+	tokens       float64
+	maxTokens    float64
+	refillRate   float64
+	lastRefill   time.Time
 }
 
 type FunctionCall struct {
@@ -111,7 +110,7 @@ func (c *AIClient) allowTokenCheck() bool {
 	return false
 }
 
-// AnalyzeAnomaly API Call tới Cloud Gemini 2.5 Flash kèm Circuit Breaker & Retry-After 429 Header Parsing
+// AnalyzeAnomaly API Call tới Cloud Gemini 2.5 Flash
 func (c *AIClient) AnalyzeAnomaly(ctx context.Context, anomalyType, description, sourceLog string) (*AIResponse, error) {
 	c.mu.Lock()
 
@@ -148,17 +147,26 @@ func (c *AIClient) AnalyzeAnomaly(ctx context.Context, anomalyType, description,
 	}
 	reqBytes, _ := json.Marshal(reqBodyMap)
 
-	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=%s", key)
+	// Khắc phục Lỗ hổng 2: Không truyền API Key trong URL query string để tránh lộ key vào proxy/access logs.
+	// Truyền API Key qua Header x-goog-api-key an toàn tuyệt đối.
+	url := "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(reqBytes))
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-goog-api-key", key)
 
-	// Retry loop 3 lần với exponential backoff
+	// Retry loop 3 lần với exponential backoff kèm kiểm tra context cancellation
 	var resp *http.Response
 	for attempt := 1; attempt <= 3; attempt++ {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		default:
+		}
+
 		resp, err = c.httpClient.Do(req)
 		if err == nil && resp.StatusCode == 200 {
 			break

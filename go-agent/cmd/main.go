@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -39,17 +40,17 @@ type HealthState struct {
 }
 
 func main() {
-	// 1. Cấu hình điểm OOM Score -500 bảo vệ tiến trình Daemon không bị Linux OOM Killer xóa sổ
+	// 1. OOM Score -500 bảo vệ Daemon không bị Linux Kernel OOM Killer xóa sổ
 	setOOMScore()
 
-	// 2. Nạp Cấu hình Cấp độ Doanh nghiệp
+	// 2. Nạp Cấu hình
 	cfg, err := config.LoadConfig()
 	if err != nil {
 		fmt.Printf("Failed to load config: %v\n", err)
 		os.Exit(1)
 	}
 
-	// 3. Khởi tạo Logger xoay vòng /var/log/beryl7_agent.log (2MB max, Inode Safe)
+	// 3. Khởi tạo Logger xoay vòng /var/log/beryl7_agent.log
 	_, err = logger.Init("/var/log/beryl7_agent.log", cfg.LogLevel)
 	if err != nil {
 		fmt.Printf("Failed to init logger: %v\n", err)
@@ -57,9 +58,9 @@ func main() {
 	}
 	defer logger.Flush()
 
-	logger.Info("Starting Beryl 7 AI Agent v14.0 Master Evolution (Native Go)...")
+	logger.Info("Starting Beryl 7 AI Agent v14.1 Security Hardened Edition (Native Go)...")
 
-	// 4. Khóa File PID Lock (/var/run/beryl7-agent.pid)
+	// 4. Khóa File PID Lock (/var/run/beryl7-agent.pid) với chmod 0600 bảo mật cao
 	pidPath := "/var/run/beryl7-agent.pid"
 	if err := acquirePIDLock(pidPath); err != nil {
 		logger.Fatal("PID Lock Error: %v", err)
@@ -76,14 +77,11 @@ func main() {
 	// 6. Khởi tạo Watchdog Checkpoint Engine
 	wd := watchdog.New(cfg.CheckpointPath)
 
-	// 7. Khởi tạo Telemetry & Parser
+	// 7. Khởi tạo Telemetry, Parser, Executor & AI Client
 	collector := telemetry.NewCollector()
 	logParser := parser.NewParser()
 	execEngine := executor.New()
 	aiClient := ai.NewClient(cfg.GeminiAPIKey)
-
-	// Suppress unused variable
-	_ = logParser
 
 	// Chạy Async DNS Probe ngầm
 	ai.ProbeDNSAsync()
@@ -125,7 +123,7 @@ func main() {
 	}()
 
 	// 10. Vòng lặp chính của Daemon (24/7 Main Daemon Loop)
-	logger.Info("Daemon initialized successfully. Engine listening on 24/7 main loop...")
+	logger.Info("Daemon initialized successfully. Security Hardened Engine listening on 24/7 main loop...")
 
 	ticker := time.NewTicker(cfg.TelemetryInterval)
 	defer ticker.Stop()
@@ -166,7 +164,7 @@ func main() {
 				continue
 			}
 
-			// Mô phỏng phát hiện rớt mạng WAN
+			// Phát hiện rớt mạng WAN
 			if m.WANStatus == "Offline (0/1)" || strings.Contains(m.WANStatus, "Offline") {
 				logger.Warn("WAN Network Drop Detected! Processing Auto-Healing Action...")
 
@@ -183,8 +181,11 @@ func main() {
 					continue
 				}
 
-				// Ưu tiên 2: Gọi Gemini 2.5 Flash API nếu local cache chưa có
-				aiResp, aiErr := aiClient.AnalyzeAnomaly(ctx, "WAN_DROP", "WAN interface down", "link down")
+				// Sanitize log rác và nhạy cảm trước khi gửi tới AI Cloud
+				cleanLog := logParser.SanitizeLog("kernel: eth1 link down (WAN disconnected)")
+
+				// Ưu tiên 2: Gọi Gemini 2.5 Flash API với log đã được làm sạch
+				aiResp, aiErr := aiClient.AnalyzeAnomaly(ctx, "WAN_DROP", "WAN interface down", cleanLog)
 				if aiErr == nil && aiResp != nil {
 					logger.Info("Gemini AI Suggested Action: [%s] - Reasoning: %s", aiResp.Action, aiResp.Reasoning)
 					actReq := &executor.ActionRequest{
@@ -214,7 +215,6 @@ func acquirePIDLock(pidPath string) error {
 	if content, err := os.ReadFile(pidPath); err == nil && len(content) > 0 {
 		var oldPID int
 		if _, parseErr := fmt.Sscanf(string(content), "%d", &oldPID); parseErr == nil && oldPID > 0 {
-			// Kiểm tra tiến trình sống/chết qua checkPIDAlive (build tag cho Linux/Windows)
 			if checkPIDAlive(oldPID) {
 				return fmt.Errorf("beryl7-agent is already running with PID %d", oldPID)
 			}
@@ -223,22 +223,25 @@ func acquirePIDLock(pidPath string) error {
 		}
 	}
 
-	return os.WriteFile(pidPath, []byte(strconv.Itoa(os.Getpid())), 0644)
+	// Mode 0600 bảo mật cao tránh đọc trái phép PID
+	return os.WriteFile(pidPath, []byte(strconv.Itoa(os.Getpid())), 0600)
 }
 
 func startHealthCheckServer(cfg *config.Config, health *HealthState) *http.Server {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/api/health", func(w http.ResponseWriter, r *http.Request) {
-		// Yêu cầu Secret Bearer Token
 		auth := r.Header.Get("Authorization")
 		expectedAuth := "Bearer " + cfg.AuthToken
-		if cfg.AuthToken != "" && auth != expectedAuth {
-			http.Error(w, `{"error":"Unauthorized"}`, http.StatusUnauthorized)
-			return
+
+		// Khắc phục Lỗ hổng 1: Dùng crypto/subtle ConstantTimeCompare chống tấn công timing attack
+		if cfg.AuthToken != "" {
+			if len(auth) == 0 || subtle.ConstantTimeCompare([]byte(auth), []byte(expectedAuth)) != 1 {
+				http.Error(w, `{"error":"Unauthorized"}`, http.StatusUnauthorized)
+				return
+			}
 		}
 
-		// Hàm Handler CHỈ ĐỌC từ snapshot bộ nhớ RLock(), 100% KHÔNG gọi ubus hay telemetry trực tiếp
 		health.mu.RLock()
 		snapshot := *health
 		health.mu.RUnlock()
@@ -254,7 +257,6 @@ func startHealthCheckServer(cfg *config.Config, health *HealthState) *http.Serve
 		WriteTimeout: 5 * time.Second,
 	}
 
-	// Lắng nghe với cờ SO_REUSEADDR chống dính lỗi bind cổng khi restart service
 	go func() {
 		lc := net.ListenConfig{
 			Control: func(network, address string, c syscall.RawConn) error {
@@ -275,7 +277,7 @@ func startHealthCheckServer(cfg *config.Config, health *HealthState) *http.Serve
 			return
 		}
 
-		logger.Info("HTTP Health Server started on port %s", server.Addr)
+		logger.Info("HTTP Health Server started securely on port %s", server.Addr)
 		_ = server.Serve(listener)
 	}()
 
