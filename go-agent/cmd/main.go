@@ -241,7 +241,7 @@ func acquirePIDLock(pidPath string) error {
 func startHealthCheckServer(cfg *config.Config, health *HealthState, execEngine *executor.Executor) *http.Server {
 	mux := http.NewServeMux()
 
-	// Endpoint 1: Health Check
+	// Endpoint 1: Health Check (Dùng AUTH_TOKEN)
 	mux.HandleFunc("/api/health", func(w http.ResponseWriter, r *http.Request) {
 		auth := r.Header.Get("Authorization")
 		expectedAuth := "Bearer " + cfg.AuthToken
@@ -261,7 +261,7 @@ func startHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 		_ = json.NewEncoder(w).Encode(snapshot)
 	})
 
-	// Endpoint 2: Operator Approval Endpoint (/api/approve)
+	// Endpoint 2: Operator Approval Endpoint (/api/approve) (Dùng APPROVE_TOKEN riêng biệt cấp cao)
 	mux.HandleFunc("/api/approve", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" {
 			http.Error(w, `{"error":"Method Not Allowed"}`, http.StatusMethodNotAllowed)
@@ -269,11 +269,11 @@ func startHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 		}
 
 		auth := r.Header.Get("Authorization")
-		expectedAuth := "Bearer " + cfg.AuthToken
+		expectedAuth := "Bearer " + cfg.ApproveToken
 
-		if cfg.AuthToken != "" {
+		if cfg.ApproveToken != "" {
 			if len(auth) == 0 || subtle.ConstantTimeCompare([]byte(auth), []byte(expectedAuth)) != 1 {
-				http.Error(w, `{"error":"Unauthorized"}`, http.StatusUnauthorized)
+				http.Error(w, `{"error":"Unauthorized: Invalid Operator Approval Token"}`, http.StatusUnauthorized)
 				return
 			}
 		}
@@ -291,14 +291,12 @@ func startHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 			return
 		}
 
-		// Thực thi hành động sau khi Operator duyệt
 		actReq := &executor.ActionRequest{
 			ActionName: pending.Action,
 			Target:     "wan",
 		}
 		execErr := execEngine.ExecuteAction(r.Context(), actReq, cfg.DryRun)
 
-		// Xóa file pending approval sau khi đã thi hành
 		_ = os.Remove(pendingFile)
 
 		w.Header().Set("Content-Type", "application/json")
@@ -311,7 +309,7 @@ func startHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 			return
 		}
 
-		logger.Info("OPERATOR APPROVED & EXECUTED Action [%s] successfully!", pending.Action)
+		logger.Info("OPERATOR APPROVED & EXECUTED Action [%s] successfully with APPROVE_TOKEN!", pending.Action)
 		_ = json.NewEncoder(w).Encode(map[string]string{
 			"status":  "approved_and_executed",
 			"action":  pending.Action,
