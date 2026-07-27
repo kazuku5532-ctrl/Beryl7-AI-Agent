@@ -169,7 +169,18 @@ func (e *Executor) actionOptimizeWifiChannel(ctx context.Context, target string,
 		radioSection = "radio1"
 	}
 
-	chStr := fmt.Sprintf("%v", channelVal)
+	chStr := ""
+	if channelVal != nil {
+		chStr = fmt.Sprintf("%v", channelVal)
+	}
+	if chStr == "" || chStr == "<nil>" {
+		if radioSection == "radio1" {
+			chStr = "36"
+		} else {
+			chStr = "6"
+		}
+	}
+
 	if ch, err := strconv.Atoi(chStr); err != nil || ch < 1 || ch > 165 {
 		return fmt.Errorf("invalid Wi-Fi channel: %s", chStr)
 	}

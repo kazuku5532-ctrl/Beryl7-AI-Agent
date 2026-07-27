@@ -180,7 +180,7 @@ func main() {
 				// Quét log hệ thống qua LogParser tìm WIFI_FAILURE / DEAUTH_FLOOD
 				for _, line := range strings.Split(liveLogSample, "\n") {
 					if parsedReport := logParser.ParseLine(line); parsedReport != nil {
-						anomalyType = string(parsedReport.Type)
+						anomalyType = parsedReport.Type
 						anomalyDesc = parsedReport.Description
 						break
 					}
@@ -327,8 +327,33 @@ func acquirePIDLock(pidPath string) error {
 func startHealthCheckServer(cfg *config.Config, health *HealthState, execEngine *executor.Executor) *http.Server {
 	mux := http.NewServeMux()
 
+	var (
+		rateMu    sync.Mutex
+		ipCounts  = make(map[string]int)
+		lastReset = time.Now()
+	)
+
+	rateLimitCheck := func(ip string) bool {
+		rateMu.Lock()
+		defer rateMu.Unlock()
+		if time.Since(lastReset) > time.Minute {
+			ipCounts = make(map[string]int)
+			lastReset = time.Now()
+		}
+		ipCounts[ip]++
+		return ipCounts[ip] <= 30
+	}
+
 	// Endpoint 1: Health Check (AUTH_TOKEN) - D4: Fail-Closed khi AUTH_TOKEN rỗng
 	mux.HandleFunc("/api/health", func(w http.ResponseWriter, r *http.Request) {
+		host, _, _ := net.SplitHostPort(r.RemoteAddr)
+		if host == "" {
+			host = r.RemoteAddr
+		}
+		if !rateLimitCheck(host) {
+			http.Error(w, `{"error":"Too Many Requests: Rate limit exceeded (30 req/min)"}`, http.StatusTooManyRequests)
+			return
+		}
 		if cfg.AuthToken == "" {
 			http.Error(w, `{"error":"Forbidden: AUTH_TOKEN must be configured"}`, http.StatusForbidden)
 			return

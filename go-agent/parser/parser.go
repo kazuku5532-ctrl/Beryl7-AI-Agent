@@ -41,7 +41,7 @@ func NewParser() *LogParser {
 		},
 		wanDropRegex:  regexp.MustCompile(`(?i)(link\s+down|wan\s+disconnected|dhcp\s+failed|carrier\s+lost)`),
 		wifiFailRegex: regexp.MustCompile(`(?i)(beacon\s+loss|hostapd.*failed|wlan.*deauth|auth\s+timeout)`),
-		memLimitRegex: regexp.MustCompile(`(?i)(out\s+of\nmemory|oom-killer|page\s+allocation\s+failure)`),
+		memLimitRegex: regexp.MustCompile(`(?i)(out\s+of\s+memory|oom-killer|page\s+allocation\s+failure)`),
 		metaCharRegex: regexp.MustCompile(`[;&|` + "`" + `$<>\\]`), // Prompt Injection Sanitizer
 	}
 }
