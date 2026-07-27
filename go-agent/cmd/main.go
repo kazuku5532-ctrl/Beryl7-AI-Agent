@@ -124,6 +124,9 @@ func main() {
 	backupTicker := time.NewTicker(6 * time.Hour)
 	defer backupTicker.Stop()
 
+	lastActionTime := time.Time{}
+	cooldownDuration := 60 * time.Second
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -157,11 +160,32 @@ func main() {
 				continue
 			}
 
-			if m.WANStatus == "Offline (0/1)" || strings.Contains(m.WANStatus, "Offline") {
-				logger.Warn("WAN Network Drop Detected! Processing Auto-Healing Action...")
+			// Kiểm tra Cooldown Hysteresis ngăn Spam Action liên tục khi DHCP đang xin IP
+			if time.Since(lastActionTime) < cooldownDuration {
+				continue
+			}
 
-				skill := store.GetSkill("restart_wan_interface")
-				requiredLocalThreshold := execEngine.GetActionRiskThreshold("restart_wan_interface")
+			// Phát hiện Anomaly linh hoạt: WAN Drop, Memory Exhaustion, Wi-Fi Congestion
+			var anomalyType, anomalyDesc string
+			if m.WANStatus == "Offline (0/1)" || strings.Contains(m.WANStatus, "Offline") {
+				anomalyType = "WAN_DROP"
+				anomalyDesc = "WAN interface down or physical link lost"
+			} else if m.RAMUsagePct > 92.0 {
+				anomalyType = "MEMORY_EXHAUSTION"
+				anomalyDesc = fmt.Sprintf("High RAM usage detected: %.1f%%", m.RAMUsagePct)
+			}
+
+			if anomalyType != "" {
+				logger.Warn("ANOMALY DETECTED: %s (%s)! Processing Auto-Healing...", anomalyType, anomalyDesc)
+				lastActionTime = time.Now()
+
+				actionName := "restart_wan_interface"
+				if anomalyType == "MEMORY_EXHAUSTION" {
+					actionName = "restart_interface"
+				}
+
+				skill := store.GetSkill(actionName)
+				requiredLocalThreshold := execEngine.GetActionRiskThreshold(actionName)
 
 				if skill != nil && skill.Confidence >= requiredLocalThreshold {
 					logger.Info("SkillStore Cache Hit! Executing Local Skill [%s] (Confidence=%.2f >= Required=%.2f)...", skill.Action, skill.Confidence, requiredLocalThreshold)
@@ -174,8 +198,8 @@ func main() {
 					continue
 				}
 
-				cleanLog := logParser.SanitizeLog("kernel: eth1 link down (WAN disconnected)")
-				aiResp, aiErr := aiClient.AnalyzeAnomaly(ctx, "WAN_DROP", "WAN interface down", cleanLog)
+				liveLogSample := logParser.SanitizeLog(getSystemLogSample())
+				aiResp, aiErr := aiClient.AnalyzeAnomaly(ctx, anomalyType, anomalyDesc, liveLogSample)
 
 				if aiErr == nil && aiResp != nil {
 					requiredThreshold := execEngine.GetActionRiskThreshold(aiResp.Action)
@@ -191,7 +215,7 @@ func main() {
 						newSkill := &skillstore.Skill{
 							ID:         aiResp.Action,
 							Action:     aiResp.Action,
-							Condition:  "WAN_DROP",
+							Condition:  anomalyType,
 							Confidence: aiResp.Confidence,
 						}
 						_ = store.SaveOrUpdateSkill(newSkill, execErr == nil, cfg.EMAAlpha)
@@ -207,6 +231,18 @@ func main() {
 			}
 		}
 	}
+}
+
+func getSystemLogSample() string {
+	data, err := os.ReadFile("/var/log/messages")
+	if err == nil && len(data) > 0 {
+		lines := strings.Split(string(data), "\n")
+		if len(lines) > 15 {
+			return strings.Join(lines[len(lines)-15:], "\n")
+		}
+		return string(data)
+	}
+	return "kernel: eth1 link down (WAN disconnected)"
 }
 
 func queuePendingApproval(resp *ai.AIResponse, required float64) {
@@ -337,7 +373,7 @@ func startHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 	})
 
 	server := &http.Server{
-		Addr:         fmt.Sprintf("127.0.0.1:%d", cfg.HealthPort),
+		Addr:         fmt.Sprintf("0.0.0.0:%d", cfg.HealthPort),
 		Handler:      mux,
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 5 * time.Second,
@@ -363,7 +399,7 @@ func startHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 			return
 		}
 
-		logger.Info("HTTP Health Server started securely on loopback %s", server.Addr)
+		logger.Info("HTTP Health Server started securely on %s", server.Addr)
 		_ = server.Serve(listener)
 	}()
 

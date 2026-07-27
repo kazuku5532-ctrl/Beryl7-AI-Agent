@@ -157,9 +157,9 @@ func (e *Executor) actionOptimizeWifiChannel(ctx context.Context, target string,
 	band, _ := params["band"].(string)
 	channelVal, _ := params["channel"]
 
-	iface := "ra0"
-	if strings.Contains(strings.ToLower(band), "5g") || target == "rai0" {
-		iface = "rai0"
+	radioSection := "radio0"
+	if strings.Contains(strings.ToLower(band), "5g") || target == "rai0" || target == "radio1" {
+		radioSection = "radio1"
 	}
 
 	chStr := fmt.Sprintf("%v", channelVal)
@@ -167,10 +167,8 @@ func (e *Executor) actionOptimizeWifiChannel(ctx context.Context, target string,
 		return fmt.Errorf("invalid Wi-Fi channel: %s", chStr)
 	}
 
-	logger.Info("Executing UCI Wi-Fi channel optimization: iface=%s, channel=%s...", iface, chStr)
-	if err := runSystemCmd(ctx, "/sbin/uci", "set", fmt.Sprintf("wireless.%s.channel=%s", iface, chStr)); err != nil {
-		return err
-	}
+	logger.Info("Executing OpenWrt UCI Wi-Fi channel optimization: section=%s, channel=%s...", radioSection, chStr)
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", fmt.Sprintf("wireless.%s.channel=%s", radioSection, chStr))
 	_ = runSystemCmd(ctx, "/sbin/uci", "commit", "wireless")
 	return runSystemCmd(ctx, "/sbin/wifi", "reload")
 }
@@ -184,8 +182,10 @@ func (e *Executor) actionSetQOSPriority(ctx context.Context, target string, para
 	}
 
 	logger.Info("Executing UCI SQM QoS Priority tuning for MAC [%s] (Priority=%s)...", mac, priority)
-	if err := runSystemCmd(ctx, "/sbin/uci", "set", "sqm.wan.enabled=1"); err != nil {
-		return err
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "sqm.wan.enabled=1")
+	if strings.ToUpper(priority) == "HIGH" {
+		_ = runSystemCmd(ctx, "/sbin/uci", "set", "sqm.wan.qdisc=fq_codel")
+		_ = runSystemCmd(ctx, "/sbin/uci", "set", "sqm.wan.script=layer7.qos")
 	}
 	_ = runSystemCmd(ctx, "/sbin/uci", "commit", "sqm")
 	return runSystemCmd(ctx, "/etc/init.d/sqm", "reload")
@@ -200,12 +200,22 @@ func (e *Executor) actionBlockDevice(ctx context.Context, target string, params 
 		return fmt.Errorf("invalid MAC address format: %s", mac)
 	}
 
-	logger.Info("Executing OpenWrt Firewall MAC block rule for [%s]...", mac)
+	logger.Info("Executing Idempotent OpenWrt Firewall MAC block rule for [%s]...", mac)
 	ruleName := fmt.Sprintf("block_%s", strings.ReplaceAll(mac, ":", ""))
+
+	// Kiểm tra Idempotent: Nếu rule đã tồn tại thì không add trùng lặp gây rác flash
+	checkErr := runSystemCmd(ctx, "/sbin/uci", "get", fmt.Sprintf("firewall.%s", ruleName))
+	if checkErr == nil && runtime.GOOS == "linux" {
+		logger.Info("Firewall rule [%s] already exists. Skipping duplicate addition.", ruleName)
+		return nil
+	}
+
 	_ = runSystemCmd(ctx, "/sbin/uci", "add", "firewall", "rule")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", fmt.Sprintf("firewall.@rule[-1].name=%s", ruleName))
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "firewall.@rule[-1].src=lan")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "firewall.@rule[-1].dest=wan")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", fmt.Sprintf("firewall.@rule[-1].src_mac=%s", mac))
-	_ = runSystemCmd(ctx, "/sbin/uci", "set", "firewall.@rule[-1].target=REJECT")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "firewall.@rule[-1].target=DROP")
 	_ = runSystemCmd(ctx, "/sbin/uci", "commit", "firewall")
 	return runSystemCmd(ctx, "/etc/init.d/firewall", "reload")
 }

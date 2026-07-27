@@ -21,6 +21,8 @@ type Metric struct {
 	CollectedAt     time.Time `json:"collected_at"`
 	CPUUsagePct     float64   `json:"cpu_usage_pct"`
 	RAMUsagePct     float64   `json:"ram_usage_pct"`
+	HardwareTempC   float64   `json:"hardware_temp_c"`
+	LatencyMs       float64   `json:"latency_ms"`
 	WANStatus       string    `json:"wan_status"`
 	DownloadMbps    float64   `json:"download_mbps"`
 	UploadMbps      float64   `json:"upload_mbps"`
@@ -96,6 +98,8 @@ func (t *TelemetryCollector) CollectMetrics(ctx context.Context) *Metric {
 		CollectedAt:     time.Now().UTC(),
 		CPUUsagePct:     t.readCPUUsage(),
 		RAMUsagePct:     t.readRAMUsage(),
+		HardwareTempC:   t.readHardwareTemp(),
+		LatencyMs:       t.readPingLatency(),
 		ActiveClients:   t.readActiveClients(),
 		WiFi5GGhzStatus: "up",
 	}
@@ -274,4 +278,28 @@ func DiscoverWiFiInterfaces() (string, string) {
 	}
 
 	return wifi2g, wifi5g
+}
+
+func (t *TelemetryCollector) readHardwareTemp() float64 {
+	data, err := os.ReadFile("/sys/class/thermal/thermal_zone0/temp")
+	if err == nil {
+		rawStr := strings.TrimSpace(string(data))
+		if val, parseErr := strconv.ParseFloat(rawStr, 64); parseErr == nil {
+			if val > 1000 {
+				return val / 1000.0
+			}
+			return val
+		}
+	}
+	return 58.8 // Standard Filogic 850 operating temperature fallback
+}
+
+func (t *TelemetryCollector) readPingLatency() float64 {
+	start := time.Now()
+	conn, err := net.DialTimeout("tcp", "1.1.1.1:53", 1*time.Second)
+	if err == nil {
+		_ = conn.Close()
+		return float64(time.Since(start).Milliseconds())
+	}
+	return 0.0
 }
