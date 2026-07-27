@@ -207,7 +207,7 @@ func (t *TelemetryCollector) readMultiWANStats(ctx context.Context) (string, uin
 
 	for _, iface := range ifaces {
 		name := iface.Name
-		if strings.HasPrefix(name, "wan") || strings.HasPrefix(name, "eth1") || strings.HasPrefix(name, "tun") {
+		if strings.HasPrefix(name, "wan") || strings.HasPrefix(name, "eth0") || strings.HasPrefix(name, "eth1") || strings.HasPrefix(name, "tun") || strings.HasPrefix(name, "apclii") {
 			totalWANs++
 			if iface.Flags&net.FlagUp != 0 {
 				activeWANs++

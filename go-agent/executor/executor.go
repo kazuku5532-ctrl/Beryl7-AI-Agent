@@ -166,9 +166,9 @@ func (e *Executor) actionOptimizeWifiChannel(ctx context.Context, target string,
 	band, _ := params["band"].(string)
 	channelVal, _ := params["channel"]
 
-	radioSection := "radio0"
-	if strings.Contains(strings.ToLower(band), "5g") || target == "rai0" || target == "radio1" {
-		radioSection = "radio1"
+	radioSection := "MT7993_1_1"
+	if strings.Contains(strings.ToLower(band), "5g") || target == "rai0" || target == "radio1" || target == "MT7993_1_2" {
+		radioSection = "MT7993_1_2"
 	}
 
 	chStr := ""
@@ -176,7 +176,7 @@ func (e *Executor) actionOptimizeWifiChannel(ctx context.Context, target string,
 		chStr = fmt.Sprintf("%v", channelVal)
 	}
 	if chStr == "" || chStr == "<nil>" {
-		if radioSection == "radio1" {
+		if radioSection == "MT7993_1_2" {
 			chStr = "36"
 		} else {
 			chStr = "6"
@@ -190,7 +190,7 @@ func (e *Executor) actionOptimizeWifiChannel(ctx context.Context, target string,
 	logger.Info("Executing OpenWrt UCI Wi-Fi channel optimization: section=%s, channel=%s...", radioSection, chStr)
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", fmt.Sprintf("wireless.%s.channel=%s", radioSection, chStr))
 	_ = runSystemCmd(ctx, "/sbin/uci", "commit", "wireless")
-	return runSystemCmd(ctx, "/sbin/wifi", "reload")
+	return nil
 }
 
 func (e *Executor) actionSetQOSPriority(ctx context.Context, target string, params map[string]interface{}) error {
@@ -255,15 +255,15 @@ func (e *Executor) actionSetWANMAC(ctx context.Context, target string, params ma
 }
 
 func (e *Executor) actionBoostWifiBandwidth(ctx context.Context, target string, params map[string]interface{}) error {
-	logger.Info("DYNAMIC BOOST TRIGGERED: Preparing 160MHz Max Wi-Fi 7 Bandwidth (EHT160 / HE160)...")
-	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.radio1.htmode=EHT160")
-	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.radio1.noscan=1")
+	logger.Info("DYNAMIC BOOST TRIGGERED: Preparing 160MHz Max Wi-Fi 7 Bandwidth on MT7993_1_2...")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.htmode=EHT160")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.noscan=1")
 	return runSystemCmd(ctx, "/sbin/uci", "commit", "wireless")
 }
 
 func (e *Executor) actionRevertWifiBandwidth(ctx context.Context, target string, params map[string]interface{}) error {
-	logger.Info("DYNAMIC BOOST COMPLETED: Reverting Wi-Fi 7 to Eco 80MHz Mode (HE80)...")
-	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.radio1.htmode=HE80")
-	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.radio1.noscan=0")
+	logger.Info("DYNAMIC BOOST COMPLETED: Reverting Wi-Fi 7 to Eco 80MHz Mode on MT7993_1_2...")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.htmode=HE80")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.noscan=0")
 	return runSystemCmd(ctx, "/sbin/uci", "commit", "wireless")
 }
