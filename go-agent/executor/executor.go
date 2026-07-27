@@ -65,8 +65,9 @@ func New() *Executor {
 		"set_qos_priority":      e.actionSetQOSPriority,
 		"block_device":          e.actionBlockDevice,
 		"set_wan_mac":           e.actionSetWANMAC,
-		"boost_wifi_bandwidth":  e.actionBoostWifiBandwidth,
-		"revert_wifi_bandwidth": e.actionRevertWifiBandwidth,
+		"boost_wifi_bandwidth":     e.actionBoostWifiBandwidth,
+		"revert_wifi_bandwidth":    e.actionRevertWifiBandwidth,
+		"tune_network_performance": e.actionTuneNetworkPerformance,
 	}
 
 	return e
@@ -265,5 +266,17 @@ func (e *Executor) actionRevertWifiBandwidth(ctx context.Context, target string,
 	logger.Info("DYNAMIC BOOST COMPLETED: Reverting Wi-Fi 7 to Eco 80MHz Mode on MT7993_1_2...")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.htmode=HE80")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.noscan=0")
+	return runSystemCmd(ctx, "/sbin/uci", "commit", "wireless")
+}
+
+func (e *Executor) actionTuneNetworkPerformance(ctx context.Context, target string, params map[string]interface{}) error {
+	logger.Info("TUNING NETWORK PERFORMANCE: Maxing TCP Socket Buffers & A-MPDU Aggregation...")
+	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.core.rmem_max=16777216")
+	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.core.wmem_max=16777216")
+	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.tcp_rmem=4096 87380 16777216")
+	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.tcp_wmem=4096 65536 16777216")
+	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.core.netdev_max_backlog=10000")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.ampdu=1")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.wmm=1")
 	return runSystemCmd(ctx, "/sbin/uci", "commit", "wireless")
 }
