@@ -133,6 +133,8 @@ func main() {
 		"WIFI_FAILURE":      60 * time.Second,
 	}
 	lastActionByAnomaly := make(map[string]time.Time)
+	isWifiBoosted := false
+	lowTrafficCycles := 0
 
 	for {
 		select {
@@ -170,6 +172,28 @@ func main() {
 			}
 
 			liveLogSample := logParser.SanitizeLog(getSystemLogSample())
+
+			// Dynamic Adaptive Wi-Fi Boost: Tự động đẩy Max 160MHz khi nạp Buffer / Download nặng, tự hạ 80MHz Eco Mode khi xong
+			if m.DownloadMbps > 80.0 && !isWifiBoosted {
+				logger.Info("SMART BANDWIDTH DETECTED (%.1f Mbps > 80Mbps)! Auto-boosting Wi-Fi 7 to 160MHz Max Speed...", m.DownloadMbps)
+				boostReq := &executor.ActionRequest{ActionName: "boost_wifi_bandwidth", Target: "radio1"}
+				if execErr := execEngine.ExecuteAction(ctx, boostReq, cfg.DryRun); execErr == nil {
+					isWifiBoosted = true
+					lowTrafficCycles = 0
+				}
+			} else if isWifiBoosted && m.DownloadMbps < 20.0 {
+				lowTrafficCycles++
+				if lowTrafficCycles >= 2 {
+					logger.Info("SMART BANDWIDTH STABILIZED (%.1f Mbps < 20Mbps for 2 cycles)! Reverting Wi-Fi 7 to Eco 80MHz Mode...", m.DownloadMbps)
+					revertReq := &executor.ActionRequest{ActionName: "revert_wifi_bandwidth", Target: "radio1"}
+					if execErr := execEngine.ExecuteAction(ctx, revertReq, cfg.DryRun); execErr == nil {
+						isWifiBoosted = false
+						lowTrafficCycles = 0
+					}
+				}
+			} else if isWifiBoosted && m.DownloadMbps >= 20.0 {
+				lowTrafficCycles = 0
+			}
 
 			// Ưu tiên Anomaly: WAN_DROP (Telemetry) > Log Anomaly (Parser) > MEMORY_EXHAUSTION
 			var anomalyType, anomalyDesc string
