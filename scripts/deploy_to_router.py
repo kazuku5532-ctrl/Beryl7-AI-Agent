@@ -82,18 +82,15 @@ def safe_upload_file(ssh_client, local_path, remote_path, mode=0o644):
         sftp.close()
         print("   ✓ Uploaded via Paramiko SFTPClient.put successfully!")
     except Exception:
+        stdin, stdout, stderr = ssh_client.exec_command(f"cat > '{remote_path}'")
         with open(local_path, "rb") as f:
-            file_bytes = f.read()
-        b64_content = base64.b64encode(file_bytes).decode('utf-8')
-        
-        chunk_size = 32768
-        ssh_client.exec_command(f"rm -f '{remote_path}' && touch '{remote_path}'")
-        for i in range(0, len(b64_content), chunk_size):
-            chunk = b64_content[i:i+chunk_size]
-            ssh_client.exec_command(f"echo '{chunk}' | base64 -d >> '{remote_path}'")
-            
+            while chunk := f.read(65536):
+                stdin.write(chunk)
+        stdin.flush()
+        stdin.close()
+        stdout.channel.recv_exit_status()
         ssh_client.exec_command(f"chmod {oct(mode)[2:]} '{remote_path}'")
-        print("   ✓ Uploaded via Safe Base64 Stream (Dropbear Fallback Verified)!")
+        print("   ✓ Uploaded via Direct Raw Stream (Cat Fallback Verified)!")
 
     stdin, stdout, stderr = ssh_client.exec_command(f"sha256sum '{remote_path}' | cut -d' ' -f1")
     remote_sha256 = stdout.read().decode('utf-8').strip()
