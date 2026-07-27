@@ -1,119 +1,120 @@
-# 🚀 GL.iNet Beryl 7 (GL-MT3600BE) Self-Evolving AI Edge Router Agent (v14.0 Master Evolution)
+# 🛡️ OpenWrt Autonomous Remediation Agent for GL.iNet Beryl 7 (GL-MT3600BE)
 
-> **Hệ thống AI Edge Router Tự chữa lành & Tự tiến hóa Tri thức cho GL.iNet Beryl 7 (Wi-Fi 7 / Filogic 850 / OpenWrt 21.02)**
+> **An OpenWrt-Native Daemon for Automated Anomaly Remediation, Health Monitoring, and AI-Assisted Diagnostics**
 
 ![Go Version](https://img.shields.io/badge/Go-1.21%2B-00ADD8?style=flat&logo=go)
 ![OpenWrt Version](https://img.shields.io/badge/OpenWrt-21.02-green)
-![AI Model](https://img.shields.io/badge/AI-Google%20Gemini%202.5%20Flash-orange)
-![Security Guardrail](https://img.shields.io/badge/Watchdog-SHA256%20Auto--Rollback-red)
+![AI Diagnostics](https://img.shields.io/badge/AI--Diagnostics-Google%20Gemini%202.5%20Flash-orange)
+![State Security](https://img.shields.io/badge/State--Safety-UCI%20Checkpoint%20Watchdog-red)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
 ---
 
-## 💡 Tổng quan Kiến trúc (Dual-Architecture System)
+## 💡 System Architecture (Dual-Execution Model)
 
-**Beryl 7 AI Edge Router Agent** là giải pháp quản trị và bảo mật mạng thế hệ mới, biến chiếc Router du lịch cao cấp GL.iNet Beryl 7 thành một **"Siêu Router Tự chữa lành 24/7 (Self-Healing Edge Router)"**.
+**GL.iNet Beryl 7 Autonomous Remediation Agent** is an embedded background daemon designed to monitor network health, detect operational anomalies, and execute automated recovery actions directly on OpenWrt Linux (`aarch64`).
 
-Hệ thống được thiết kế theo mô hình **Đột phá Kiến trúc Kép (Dual Architecture)**:
+The system implements a **Dual-Execution Architecture**:
 
-1. **Native On-Router Daemon 24/7 (Chính - Go Native):** Tiến trình đơn `beryl7-agent` được biên dịch tĩnh tĩnh không phụ thuộc thư viện ngoại (Zero-Dependency Static Binary, 9.38 MB) chạy trực tiếp trên hệ điều hành OpenWrt Linux của Router. **Tắt Laptop hoàn toàn, Router vẫn tự vận hành và tiến hóa 24/7!**
-2. **Python Offloaded Backup System (Dự phòng - Python 3.14):** Kiến trúc điều phối từ xa từ Laptop giúp duy trì khả năng kiểm thử và backup khi cần thiết.
+1. **Native On-Router Daemon (Primary Execution):** A statically compiled Go binary (`beryl7-agent`, 9.44 MB) operating as an OpenWrt `procd` system service. It executes continuously in the background without external controller dependencies.
+2. **Offloaded Controller Pipeline (Secondary / Verification):** A host-side Python controller used for remote deployment, verification drills, and benchmarking.
 
 ```text
        ┌────────────────────────────────────────────────────────┐
        │   GL.iNet Beryl 7 (Filogic 850 / OpenWrt 21.02)         │
-       │   Native Go Daemon (/usr/bin/beryl7-agent) - PID 24/7    │
+       │   Native Go Daemon (/usr/bin/beryl7-agent)             │
        └───────────────────────────┬────────────────────────────┘
-                                   │ Microsecond Local ubus IPC
+                                   │ Local Syscall & ubus IPC
                                    ▼
        ┌────────────────────────────────────────────────────────┐
-       │        Go Self-Evolving Engine (v14.0 Master)          │
+       │        Go Anomaly Remediation Engine                   │
        └─────┬────────────────────────────────────────────┬─────┘
              │                                            │
-   (Local Cache Hit: < 1ms)                     (Cache Miss)
+   (Skill Cache Hit: < 1ms)                    (Cache Miss / Low Confidence)
              ▼                                            ▼
 ┌─────────────────────────┐                  ┌─────────────────────────┐
-│ Pure-Go SQLite Store    │                  │ Google Gemini 2.5 Flash │
+│ Pure-Go SQLite Cache    │                  │ Google Gemini 2.5 Flash │
 │ (WAL Mode & Delta EMA)  │                  │ Function Calling API    │
 └────────────┬────────────┘                  └────────────┬────────────┘
              │                                            │
              └─────────────────────┬──────────────────────┘
                                    ▼
        ┌────────────────────────────────────────────────────────┐
-       │ SHA256 Checkpoint Flash Watchdog Guardrail             │
+       │ UCI Checkpoint Snapshot & Watchdog Guardrail          │
        └────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 🔥 Tính năng Nổi bật (v14.0 Master Evolution Features)
+## 🔬 Core Technical Specifications
 
-1. **Native 24/7 On-Router Execution (Giải phóng Laptop 100%):** 
-   * Đóng gói tĩnh duy nhất **9.44 MB** cho kiến trúc ARM64 MediaTek Filogic 850.
-   * Ngốn **~9.44 MB RAM** và **< 1% CPU**, nhiệt độ hoạt động mát mẻ **~58.8 °C**.
-   * Được quản lý ngầm bởi OpenWrt `procd` (`/etc/init.d/beryl7-agent`) tự khởi động khi cắm nguồn.
+1. **Native Embedded Execution:**
+   - Single static binary (9.44 MB) target compiled for `linux/arm64` (MediaTek Filogic 850 Quad-Core).
+   - Minimal resource footprint (~9.44 MB RSS Memory, < 1% CPU utilization under normal telemetry sampling).
+   - Process lifecycle managed via OpenWrt `procd` init script (`/etc/init.d/beryl7-agent`).
 
-2. **Pure-Go SQLite Self-Evolution Skill Store (`< 1ms` Response):** 
-   * Dùng driver Pure-Go SQLite (`modernc.org/sqlite`) với cờ WAL Mode (`PRAGMA busy_timeout = 5000`) và tự khôi phục dữ liệu (`PRAGMA integrity_check`).
-   * Thuật toán **Delta EMA (Exponential Moving Average)** tự động căn chỉnh điểm tin cậy `confidence_score` theo cặp `(condition:action)`.
-   * **Local Cache Hit ($\ge 0.85$):** Tự rút bài học xử lý sự cố trong **$< 1\text{ms}$ (Nhanh hơn 2500 lần, 0 VNĐ API Cost)** mà không cần gọi Cloud!
+2. **Adaptive Skill Cache (Exponential Moving Average Scoring):**
+   - Embedded Pure-Go SQLite database (`modernc.org/sqlite`) running in WAL mode.
+   - Skill confidence evaluation updated dynamically via Delta EMA formula: $C_{new} = C_{old} + \alpha \cdot (Target - C_{old})$.
+   - Local remediation execution in `< 1ms` upon skill cache hit ($\ge 0.85$ confidence threshold).
 
-3. **Google Gemini 2.5 Flash AI Function Calling:**
-   * Tự động gọi Cloud AI xử lý sự cố mới (WAN_DROP, MEMORY_EXHAUSTION, WIFI_FAILURE) qua Header `x-goog-api-key`.
-   * Hỗ trợ Circuit Breaker (5 lỗi -> Khóa 5 phút) và Token Bucket Rate Limiter (10 req/phút).
+3. **AI-Assisted Diagnostics Engine:**
+   - Cloud diagnostic fallback to Google Gemini 2.5 Flash REST API authenticated via `x-goog-api-key`.
+   - Circuit breaker pattern (opens after 5 consecutive API errors, 5-minute cooldown) and token-bucket rate limiting.
 
-4. **SHA256 Checkpoint Watchdog (Bảo hiểm Phần cứng 100%):** 
-   * Tạo bản sao UCI Checkpoint đầy đủ tại `/tmp/agent_checkpoint.uci`.
-   * Tự động khôi phục cấu hình an toàn sau 30s nếu lệnh mới làm rớt mạng.
-   * Bộ đếm Safe Mode Mutex tự động thoát Safe Mode sau 3 lần Health Check thành công liên tiếp (90s).
+4. **UCI State Integrity Watchdog:**
+   - Pre-execution configuration backup to `/tmp/agent_checkpoint.uci`.
+   - Automatic configuration rollback upon link recovery failure or system state deterioration.
+   - Safe Mode state machine requiring 3 consecutive successful health checks (90s window) prior to normal operation resumption.
 
-5. **Cơ chế Bảo vệ & An toàn Hệ thống (Hardened Guardrails):**
-   * PID Lock `/var/run/beryl7-agent.pid` với `checkPIDAlive` Unix Signal 0.
-   * Linux OOM Score Protection `-500` bảo vệ tiến trình không bị Kernel xóa sổ.
-   * HTTP Health Server `:8888` đòi hỏi Bearer Token, kiểm tra Fail-Closed và Hạn ngạch Expiry Pending 10 phút.
-   * Per-Anomaly Cooldown (WAN 90s, RAM 45s, Wi-Fi 60s) chống Spam Action liên tục.
-   * Lệnh firewall `block_device` chuẩn UCI Named Section `block_<mac>` chống trùng lặp rác đĩa Flash.
-
----
-
-## 🛠️ Hướng dẫn Triển khai 1-Click (Quick Start Deployment)
-
-### 1. Yêu cầu Môi trường (Requirements)
-* Router GL.iNet MT3600BE (Beryl 7) kết nối Wi-Fi/LAN (`192.168.8.1`).
-* Trình biên dịch Go (Phiên bản 1.21 trở lên) hoặc Python 3.10+ trên Laptop.
+5. **Security Gating & System Hardening:**
+   - Atomic PID lock (`/var/run/beryl7-agent.pid`) with Unix signal verification.
+   - Linux Out-Of-Memory score adjustment (`OOM_SCORE_ADJ = -500`) to prevent process termination under memory pressure.
+   - Authenticated HTTP health endpoint (`:8888`) with constant-time Bearer token comparison, 10-minute approval expiration, and per-IP rate limiting (30 req/min).
+   - Per-anomaly cooldown windows (WAN Drop: 90s, RAM Exhaustion: 45s, Wi-Fi Anomaly: 60s) to prevent remediation loops.
+   - Idempotent OpenWrt UCI named section configuration (`firewall.block_<mac_hex>`) to prevent flash memory degradation.
 
 ---
 
-### 2. Triển khai 1-Click lên Router Beryl 7 (1-Click Deployment)
+## 🛠️ Deployment & Operations
 
-Chỉ cần kết nối Laptop vào Wi-Fi của Beryl 7 và chạy duy nhất lệnh nạp 1-Click:
+### 1. System Requirements
+* Target Router: GL.iNet GL-MT3600BE (Beryl 7) running OpenWrt 21.02 (`192.168.8.1`).
+* Build Environment: Go 1.21+ or Python 3.10+ (for automated deployment scripts).
 
-#### 🔹 Qua Python Automator (Khuyên dùng):
+---
+
+### 2. Automated Deployment Pipeline
+
+Connect to the router network and execute the deployment automator:
+
+#### 🔹 Python Automator:
 ```powershell
 .\venv\Scripts\python scripts/deploy_to_router.py
 ```
 
-#### 🔹 Qua PowerShell script:
+#### 🔹 PowerShell Automator:
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\deploy_to_router.ps1
 ```
 
-Script sẽ tự động:
-1. Cross-compile file thực thi tĩnh `beryl7-agent` cho ARM64.
-2. Upload binary và init script `/etc/init.d/beryl7-agent` sang Beryl 7.
-3. Kích hoạt và bật dịch vụ ngầm 24/7. **Bạn có thể gập Laptop và tắt máy hẳn!**
+The script performs the following steps:
+1. Cross-compiles the ARM64 static binary `bin/beryl7-agent`.
+2. Uploads the binary and `procd` service script `/etc/init.d/beryl7-agent` via SSH/SFTP.
+3. Configures OpenWrt firewall rules (`Allow-Beryl7-Health-LAN`) to restrict port 8888 access to the LAN zone.
+4. Starts and verifies the background daemon service.
 
 ---
 
-### 3. Kiểm thử Khung Tiến Hóa (Continuous Verification Scorecard)
+### 3. Verification & Diagnostic Testing
 
-Chạy script kiểm thử 5 Giai đoạn để xác nhận trạng thái live trên Router:
+Run the 5-stage automated verification suite:
 
 ```powershell
 .\venv\Scripts\python scripts/verify_framework.py
 ```
 
-Chạy bài tập trận tiến hóa và tự học EMA:
+Execute adaptive skill evaluation and EMA scoring drills:
 
 ```powershell
 .\venv\Scripts\python scripts/test_evolution_drill.py
@@ -121,40 +122,40 @@ Chạy bài tập trận tiến hóa và tự học EMA:
 
 ---
 
-## 📁 Cấu trúc Thư mục Dự án (Project Structure)
+## 📁 Repository Layout
 
 ```text
 Beryl7-AI-Agent/
 ├── bin/
-│   └── beryl7-agent           # File thực thi Go tĩnh (9.38 MB ARM64)
-├── go-agent/                  # Native Go Daemon Engine (Primary 24/7)
+│   └── beryl7-agent           # ARM64 static Go binary (9.44 MB)
+├── go-agent/                  # Native Go Remediation Daemon (Primary)
 │   ├── cmd/
-│   │   ├── main.go            # Entrypoint Daemon & HTTP Server :8888
-│   │   ├── sys_linux.go       # OpenWrt Linux Build Tags
-│   │   └── sys_windows.go     # Windows Testing Build Tags
-│   ├── config/config.go       # Hot-reload & Secure Key 0600
-│   ├── telemetry/telemetry.go # ubus 5s timeout & Multi-WAN aggregator
-│   ├── parser/parser.go       # ReDoS-safe log parser & Rate Limiter 100/s
-│   ├── ai/ai_client.go        # Gemini 2.5 Flash & Circuit Breaker HALF_OPEN
-│   ├── executor/executor.go   # Parameterized UCI executor & MAC regex check
-│   ├── watchdog/watchdog.go   # SHA256 Checkpoint Watchdog & Safe Mode Exit 3x
-│   ├── skillstore/store.go    # Pure Go SQLite WAL Mode & Delta EMA
-│   ├── logger/logger.go       # Rotating File Logger (2MB max)
-│   ├── tests/                 # 100% PASSED Go Unit Tests
-│   └── procd/beryl7-agent     # OpenWrt init script /etc/init.d/beryl7-agent
-├── agent/                     # Python Backup Engine (Secondary Offloaded)
-├── scripts/                   # Bộ công cụ Tự động hóa & Deployment
-│   ├── deploy_to_router.py    # 1-Click Deploy Automator via SSH
-│   ├── build_go_binary.ps1    # Cross-compiler script cho ARM64
-│   ├── verify_framework.py    # 5-Stage Continuous Verification Framework
-│   ├── test_evolution_drill.py# Tập trận kiểm thử Tiến hóa & EMA
-│   ├── check_health.py        # Kiểm tra live HTTP /api/health endpoint
-│   └── get_temp.py            # Đọc cảm biến nhiệt độ phần cứng real-time
-├── docs/                      # Tài liệu báo cáo nghiên cứu chi tiết
-└── README.md                  # Tài liệu hướng dẫn sử dụng
+│   │   ├── main.go            # Daemon entrypoint & HTTP server (:8888)
+│   │   ├── sys_linux.go       # OpenWrt Linux build tags & OOM score setting
+│   │   └── sys_windows.go     # Windows testing build tags
+│   ├── config/config.go       # Configuration loader & file permissions (0600)
+│   ├── telemetry/telemetry.go # Metric collection & /proc/net/dev bandwidth delta
+│   ├── parser/parser.go       # Syslog parser & rate limiter
+│   ├── ai/ai_client.go        # Gemini 2.5 Flash client & circuit breaker
+│   ├── executor/executor.go   # OpenWrt UCI command executor & fallback channels
+│   ├── watchdog/watchdog.go   # UCI checkpoint export/import & safe mode state
+│   ├── skillstore/store.go    # Pure-Go SQLite store & EMA scoring engine
+│   ├── logger/logger.go       # Rotating log writer
+│   ├── tests/                 # Go unit test suite
+│   └── procd/beryl7-agent     # OpenWrt procd init script
+├── agent/                     # Python offloaded controller (Secondary)
+├── scripts/                   # Deployment and testing tooling
+│   ├── deploy_to_router.py    # Automated SSH deployment script
+│   ├── build_go_binary.ps1    # Cross-compilation script for ARM64
+│   ├── verify_framework.py    # 5-stage verification framework
+│   ├── test_evolution_drill.py# EMA skill scoring drill script
+│   ├── check_health.py        # Health endpoint validation script
+│   └── get_temp.py            # Real-time hardware temperature reader
+├── docs/                      # Technical documentation & benchmark reports
+└── README.md                  # Documentation
 ```
 
 ---
 
 ## 📄 License
-Dự án được phân phối dưới giấy phép [MIT License](LICENSE).
+Distributed under the [MIT License](LICENSE).
