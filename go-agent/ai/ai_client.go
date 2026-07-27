@@ -158,14 +158,14 @@ Return JSON format ONLY: {"action":"restart_wan_interface","reasoning":"WAN link
 	}
 	reqBytes, _ := json.Marshal(reqBodyMap)
 
-	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=%s", key)
+	url := "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(reqBytes))
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	// Chuẩn hóa Gemini REST API Authentication: x-goog-api-key header & ?key= query parameter
+	// Chuẩn hóa Gemini REST API Authentication: Ẩn API Key duy nhất qua Header x-goog-api-key
 	req.Header.Set("x-goog-api-key", key)
 
 	var resp *http.Response

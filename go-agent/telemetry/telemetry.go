@@ -35,6 +35,8 @@ type TelemetryCollector struct {
 	lastCollect    time.Time
 	lastRxBytes    uint64
 	lastTxBytes    uint64
+	prevCPUTotal   float64
+	prevCPUIdle    float64
 	lastFlapTime   time.Time
 	debounceWindow time.Duration
 	ubusPath       string
@@ -137,6 +139,19 @@ func (t *TelemetryCollector) readCPUUsage() float64 {
 			sys, _ := strconv.ParseFloat(fields[3], 64)
 			idle, _ := strconv.ParseFloat(fields[4], 64)
 			total := user + nice + sys + idle
+
+			if t.prevCPUTotal > 0 && total > t.prevCPUTotal {
+				totalDelta := total - t.prevCPUTotal
+				idleDelta := idle - t.prevCPUIdle
+				t.prevCPUTotal = total
+				t.prevCPUIdle = idle
+				if totalDelta > 0 {
+					return ((totalDelta - idleDelta) / totalDelta) * 100.0
+				}
+			}
+
+			t.prevCPUTotal = total
+			t.prevCPUIdle = idle
 			if total > 0 {
 				return ((total - idle) / total) * 100.0
 			}

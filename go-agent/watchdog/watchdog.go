@@ -147,20 +147,33 @@ func UCISyntaxPreCheck() error {
 	return nil
 }
 
-// ExecuteRollback Guardrail 30s khôi phục cấu hình an toàn khi có sự cố
+// ExecuteRollback Guardrail khôi phục 100% cấu hình UCI cũ từ /tmp/agent_checkpoint.uci khi rớt mạng
 func (w *Watchdog) ExecuteRollback() error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	logger.Warn("Watchdog Guardrail Triggered! Rolling back router network settings...")
+	logger.Warn("Watchdog Guardrail Triggered! Rolling back full router UCI configuration from checkpoint...")
 
-	// Khôi phục WAN về mặc định dhcp
-	_ = exec.Command("uci", "set", "network.wan.proto=dhcp").Run()
-
-	if err := UCISyntaxPreCheck(); err == nil {
+	// 1. Thử khôi phục từ full uci export snapshot tại /tmp/agent_checkpoint.uci nếu có
+	uciBackupPath := "/tmp/agent_checkpoint.uci"
+	if _, err := os.Stat(uciBackupPath); err == nil {
+		cmdImport := exec.Command("/bin/sh", "-c", fmt.Sprintf("uci import < %s && uci commit", uciBackupPath)) // #nosec G204
+		if out, errImport := cmdImport.CombinedOutput(); errImport == nil {
+			logger.Info("Successfully imported full UCI snapshot from %s: %s", uciBackupPath, string(out))
+		} else {
+			logger.Warn("UCI import from %s failed (%v), falling back to WAN DHCP default.", uciBackupPath, errImport)
+			_ = exec.Command("uci", "set", "network.wan.proto=dhcp").Run()
+			_ = exec.Command("uci", "commit", "network").Run()
+		}
+	} else {
+		// Fallback chuẩn WAN DHCP nếu không có file snapshot
+		_ = exec.Command("uci", "set", "network.wan.proto=dhcp").Run()
 		_ = exec.Command("uci", "commit", "network").Run()
-		_ = exec.Command("/etc/init.d/network", "reload").Run()
 	}
+
+	// 2. Reload lại các dịch vụ hệ thống mạng & firewall
+	_ = exec.Command("/etc/init.d/firewall", "reload").Run()
+	_ = exec.Command("/etc/init.d/network", "reload").Run()
 
 	w.safeModeActive = true
 	w.successfulChecks = 0

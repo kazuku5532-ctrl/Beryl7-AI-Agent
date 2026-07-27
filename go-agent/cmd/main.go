@@ -35,6 +35,8 @@ type HealthState struct {
 	WANStatus      string    `json:"wan_status"`
 	CPUUsagePct    float64   `json:"cpu_usage_pct"`
 	RAMUsagePct    float64   `json:"ram_usage_pct"`
+	HardwareTempC  float64   `json:"hardware_temp_c"`
+	LatencyMs      float64   `json:"latency_ms"`
 	SafeMode       bool      `json:"safe_mode"`
 	KillSwitch     bool      `json:"kill_switch"`
 	StartTime      time.Time `json:"start_time"`
@@ -144,6 +146,8 @@ func main() {
 			health.mu.Lock()
 			health.CPUUsagePct = m.CPUUsagePct
 			health.RAMUsagePct = m.RAMUsagePct
+			health.HardwareTempC = m.HardwareTempC
+			health.LatencyMs = m.LatencyMs
 			health.WANStatus = m.WANStatus
 			health.UptimeSeconds = int64(time.Since(health.StartTime).Seconds())
 			health.SafeMode = wd.IsSafeMode()
@@ -181,7 +185,7 @@ func main() {
 
 				actionName := "restart_wan_interface"
 				if anomalyType == "MEMORY_EXHAUSTION" {
-					actionName = "restart_interface"
+					actionName = "purge_memory_cache"
 				}
 
 				skill := store.GetSkill(actionName)

@@ -33,11 +33,12 @@ func New() *Executor {
 	e := &Executor{
 		riskMatrix: map[string]float64{
 			"no_action_required":    0.50, // Low Risk
+			"purge_memory_cache":    0.60, // Low-Medium Risk (Free Linux RAM cache)
 			"restart_wan_interface": 0.85, // Medium Risk
 			"restart_interface":     0.85, // Medium Risk
 			"optimize_wifi_channel": 0.85, // Medium Risk
-			"set_qos_priority":      0.95, // High Risk (Requires Approval if < 0.95)
-			"block_device":          0.95, // High Risk (Requires Approval if < 0.95)
+			"set_qos_priority":      0.95, // High Risk
+			"block_device":          0.95, // High Risk
 			"set_wan_mac":           0.98, // Critical Risk
 		},
 		macRegex: regexp.MustCompile(`^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$`),
@@ -57,6 +58,7 @@ func New() *Executor {
 
 	e.whitelist = map[string]ActionFunc{
 		"no_action_required":    e.actionNoActionRequired,
+		"purge_memory_cache":    e.actionPurgeMemoryCache,
 		"restart_wan_interface": e.actionRestartWAN,
 		"restart_interface":     e.actionRestartInterface,
 		"optimize_wifi_channel": e.actionOptimizeWifiChannel,
@@ -103,8 +105,8 @@ func runSystemCmd(ctx context.Context, binPath string, args ...string) error {
 
 	cleanBin := filepath.Clean(binPath)
 	if _, err := exec.LookPath(cleanBin); err != nil {
-		logger.Warn("[SYSTEM WARNING] Executable %s not found on OS. Simulating success.", cleanBin)
-		return nil
+		logger.Error("[SYSTEM ERROR] Required OpenWrt executable %s not found on Linux!", cleanBin)
+		return fmt.Errorf("executable %s not found on system path", cleanBin)
 	}
 
 	ctxTimeout, cancel := context.WithTimeout(ctx, 15*time.Second)
@@ -123,6 +125,11 @@ func runSystemCmd(ctx context.Context, binPath string, args ...string) error {
 func (e *Executor) actionNoActionRequired(ctx context.Context, target string, params map[string]interface{}) error {
 	logger.Info("Action: System healthy. No action required.")
 	return nil
+}
+
+func (e *Executor) actionPurgeMemoryCache(ctx context.Context, target string, params map[string]interface{}) error {
+	logger.Info("Executing Linux Kernel RAM Page Cache Purge (echo 3 > /proc/sys/vm/drop_caches)...")
+	return runSystemCmd(ctx, "/sbin/sysctl", "-w", "vm.drop_caches=3")
 }
 
 func (e *Executor) actionRestartWAN(ctx context.Context, target string, params map[string]interface{}) error {
@@ -200,22 +207,22 @@ func (e *Executor) actionBlockDevice(ctx context.Context, target string, params 
 		return fmt.Errorf("invalid MAC address format: %s", mac)
 	}
 
-	logger.Info("Executing Idempotent OpenWrt Firewall MAC block rule for [%s]...", mac)
-	ruleName := fmt.Sprintf("block_%s", strings.ReplaceAll(mac, ":", ""))
+	ruleSection := fmt.Sprintf("block_%s", strings.ReplaceAll(mac, ":", ""))
+	logger.Info("Executing Idempotent UCI Named Section Firewall MAC block rule [%s] for [%s]...", ruleSection, mac)
 
-	// Kiểm tra Idempotent: Nếu rule đã tồn tại thì không add trùng lặp gây rác flash
-	checkErr := runSystemCmd(ctx, "/sbin/uci", "get", fmt.Sprintf("firewall.%s", ruleName))
+	// Kiểm tra Idempotent chuẩn OpenWrt UCI Named Section: uci get firewall.<ruleSection>
+	checkErr := runSystemCmd(ctx, "/sbin/uci", "get", fmt.Sprintf("firewall.%s", ruleSection))
 	if checkErr == nil && runtime.GOOS == "linux" {
-		logger.Info("Firewall rule [%s] already exists. Skipping duplicate addition.", ruleName)
+		logger.Info("Firewall named section [%s] already exists. Skipping duplicate addition.", ruleSection)
 		return nil
 	}
 
-	_ = runSystemCmd(ctx, "/sbin/uci", "add", "firewall", "rule")
-	_ = runSystemCmd(ctx, "/sbin/uci", "set", fmt.Sprintf("firewall.@rule[-1].name=%s", ruleName))
-	_ = runSystemCmd(ctx, "/sbin/uci", "set", "firewall.@rule[-1].src=lan")
-	_ = runSystemCmd(ctx, "/sbin/uci", "set", "firewall.@rule[-1].dest=wan")
-	_ = runSystemCmd(ctx, "/sbin/uci", "set", fmt.Sprintf("firewall.@rule[-1].src_mac=%s", mac))
-	_ = runSystemCmd(ctx, "/sbin/uci", "set", "firewall.@rule[-1].target=DROP")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", fmt.Sprintf("firewall.%s=rule", ruleSection))
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", fmt.Sprintf("firewall.%s.name=%s", ruleSection, ruleSection))
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", fmt.Sprintf("firewall.%s.src=lan", ruleSection))
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", fmt.Sprintf("firewall.%s.dest=wan", ruleSection))
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", fmt.Sprintf("firewall.%s.src_mac=%s", ruleSection, mac))
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", fmt.Sprintf("firewall.%s.target=DROP", ruleSection))
 	_ = runSystemCmd(ctx, "/sbin/uci", "commit", "firewall")
 	return runSystemCmd(ctx, "/etc/init.d/firewall", "reload")
 }
