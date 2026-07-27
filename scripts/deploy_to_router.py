@@ -37,8 +37,14 @@ binary_local = os.path.join("bin", "beryl7-agent")
 procd_local = os.path.join("go-agent", "procd", "beryl7-agent")
 
 if not os.path.exists(binary_local):
-    print(f"Error: Binary file not found at {binary_local}")
-    sys.exit(1)
+    print(f"⚠️ Binary file not found at {binary_local}! Initiating Auto-Cross-Compilation (GOOS=linux, GOARCH=arm64)...")
+    import subprocess
+    env = dict(os.environ, GOOS="linux", GOARCH="arm64", CGO_ENABLED="0")
+    res = subprocess.run(["go", "build", "-ldflags=-s -w", "-o", binary_local, "./cmd"], cwd="go-agent", env=env)
+    if res.returncode != 0:
+        print("❌ ERROR: Auto-Cross-Compilation failed!")
+        sys.exit(1)
+    print("✓ Auto-Cross-Compilation Succeeded!")
 
 print(f"1. Connecting to Beryl 7 Router via SSH ({router_user}@{router_ip})...")
 
@@ -123,7 +129,17 @@ safe_upload_file(ssh, binary_local, "/usr/bin/beryl7-agent", 0o755)
 print("6. Uploading procd service init script...")
 safe_upload_file(ssh, procd_local, "/etc/init.d/beryl7-agent", 0o755)
 
-print("7. Enabling and restarting beryl7-agent 24/7 procd service...")
+print("7. Configuring OpenWrt firewall rule (Allow-Beryl7-Health-LAN) & restarting procd service...")
+fw_cmds = (
+    "uci set firewall.beryl7_health=rule && "
+    "uci set firewall.beryl7_health.name='Allow-Beryl7-Health-LAN' && "
+    "uci set firewall.beryl7_health.src='lan' && "
+    "uci set firewall.beryl7_health.dest_port='8888' && "
+    "uci set firewall.beryl7_health.proto='tcp' && "
+    "uci set firewall.beryl7_health.target='ACCEPT' && "
+    "uci commit firewall && /etc/init.d/firewall reload >/dev/null 2>&1"
+)
+ssh.exec_command(fw_cmds)
 stdin, stdout, stderr = ssh.exec_command("/etc/init.d/beryl7-agent enable && /etc/init.d/beryl7-agent restart")
 stdout.channel.recv_exit_status()
 

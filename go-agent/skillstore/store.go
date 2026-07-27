@@ -144,11 +144,16 @@ func (s *SkillStore) BackupDatabase() error {
 	return nil
 }
 
-func (s *SkillStore) GetSkill(actionName string) *Skill {
+func (s *SkillStore) GetSkill(condition, actionName string) *Skill {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	row := s.db.QueryRow("SELECT id, action, condition_query, confidence, success_count, failure_count, created_at, last_used_at FROM skills WHERE action = ?", actionName)
+	var row *sql.Row
+	if condition != "" {
+		row = s.db.QueryRow("SELECT id, action, condition_query, confidence, success_count, failure_count, created_at, last_used_at FROM skills WHERE condition_query = ? AND action = ?", condition, actionName)
+	} else {
+		row = s.db.QueryRow("SELECT id, action, condition_query, confidence, success_count, failure_count, created_at, last_used_at FROM skills WHERE action = ?", actionName)
+	}
 
 	var sk Skill
 	var created, lastUsed int64

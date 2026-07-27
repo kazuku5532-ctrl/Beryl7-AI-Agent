@@ -91,17 +91,18 @@ func (t *TelemetryCollector) CollectMetrics(ctx context.Context) *Metric {
 	defer t.mu.Unlock()
 
 	// 10s WAN Flap Debounce
-	if time.Since(t.lastCollect) < 2*time.Second {
+	prevTime := t.lastCollect
+	now := time.Now()
+	if !prevTime.IsZero() && now.Sub(prevTime) < 2*time.Second {
 		return nil
 	}
-	t.lastCollect = time.Now()
+	t.lastCollect = now
 
 	m := &Metric{
-		CollectedAt:     time.Now().UTC(),
+		CollectedAt:     now.UTC(),
 		CPUUsagePct:     t.readCPUUsage(),
 		RAMUsagePct:     t.readRAMUsage(),
 		HardwareTempC:   t.readHardwareTemp(),
-		LatencyMs:       t.readPingLatency(),
 		ActiveClients:   t.readActiveClients(),
 		WiFi5GGhzStatus: "up",
 	}
@@ -110,10 +111,16 @@ func (t *TelemetryCollector) CollectMetrics(ctx context.Context) *Metric {
 	status, rxBytes, txBytes := t.readMultiWANStats(ctx)
 	m.WANStatus = status
 
-	// 2. Tính toán băng thông thụ động qua /proc/net/dev delta (100% không tốn dung lượng speedtest)
-	now := time.Now()
-	if !t.lastCollect.IsZero() && t.lastRxBytes > 0 {
-		durationSec := now.Sub(t.lastCollect).Seconds()
+	// C2: Bỏ qua readPingLatency khi WAN Offline để tránh tốn CPU + timeout 1s
+	if !strings.Contains(status, "Offline") {
+		m.LatencyMs = t.readPingLatency()
+	} else {
+		m.LatencyMs = 0.0
+	}
+
+	// 2. C1: Tính toán băng thông thụ động qua /proc/net/dev delta sử dụng prevTime chuẩn xác
+	if !prevTime.IsZero() && t.lastRxBytes > 0 {
+		durationSec := now.Sub(prevTime).Seconds()
 		if durationSec > 0 && rxBytes >= t.lastRxBytes {
 			m.DownloadMbps = float64(rxBytes-t.lastRxBytes) * 8 / (durationSec * 1000000)
 			m.UploadMbps = float64(txBytes-t.lastTxBytes) * 8 / (durationSec * 1000000)

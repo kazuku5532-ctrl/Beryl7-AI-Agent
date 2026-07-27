@@ -148,8 +148,15 @@ func (c *AIClient) AnalyzeAnomaly(ctx context.Context, anomalyType, description,
 
 	prompt := fmt.Sprintf(`Anomaly Detected: %s
 Details: %s
-Log: %s
-Return JSON format ONLY: {"action":"restart_wan_interface","reasoning":"WAN link drop","confidence":0.95}`, anomalyType, description, sourceLog)
+System Log: %s
+
+Allowed actions ONLY: no_action_required, purge_memory_cache, restart_wan_interface, restart_interface, optimize_wifi_channel, block_device, set_qos_priority, set_wan_mac
+Guidance:
+- For MEMORY_EXHAUSTION: prefer purge_memory_cache
+- For WAN_DROP: prefer restart_wan_interface
+- For WIFI_FAILURE: prefer optimize_wifi_channel or restart_interface
+
+Return JSON format ONLY: {"action":"action_name","reasoning":"clear explanation","confidence":0.0-1.0}`, anomalyType, description, sourceLog)
 
 	reqBodyMap := map[string]interface{}{
 		"contents": []map[string]interface{}{

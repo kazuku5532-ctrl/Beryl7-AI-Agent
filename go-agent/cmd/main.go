@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strconv"
@@ -126,8 +127,12 @@ func main() {
 	backupTicker := time.NewTicker(6 * time.Hour)
 	defer backupTicker.Stop()
 
-	lastActionTime := time.Time{}
-	cooldownDuration := 60 * time.Second
+	cooldowns := map[string]time.Duration{
+		"WAN_DROP":          90 * time.Second,
+		"MEMORY_EXHAUSTION": 45 * time.Second,
+		"WIFI_FAILURE":      60 * time.Second,
+	}
+	lastActionByAnomaly := make(map[string]time.Time)
 
 	for {
 		select {
@@ -164,31 +169,48 @@ func main() {
 				continue
 			}
 
-			// Kiểm tra Cooldown Hysteresis ngăn Spam Action liên tục khi DHCP đang xin IP
-			if time.Since(lastActionTime) < cooldownDuration {
-				continue
-			}
+			liveLogSample := logParser.SanitizeLog(getSystemLogSample())
 
-			// Phát hiện Anomaly linh hoạt: WAN Drop, Memory Exhaustion, Wi-Fi Congestion
+			// Ưu tiên Anomaly: WAN_DROP (Telemetry) > Log Anomaly (Parser) > MEMORY_EXHAUSTION
 			var anomalyType, anomalyDesc string
 			if m.WANStatus == "Offline (0/1)" || strings.Contains(m.WANStatus, "Offline") {
 				anomalyType = "WAN_DROP"
 				anomalyDesc = "WAN interface down or physical link lost"
-			} else if m.RAMUsagePct > 92.0 {
-				anomalyType = "MEMORY_EXHAUSTION"
-				anomalyDesc = fmt.Sprintf("High RAM usage detected: %.1f%%", m.RAMUsagePct)
+			} else {
+				// Quét log hệ thống qua LogParser tìm WIFI_FAILURE / DEAUTH_FLOOD
+				for _, line := range strings.Split(liveLogSample, "\n") {
+					if parsedReport := logParser.ParseLine(line); parsedReport != nil {
+						anomalyType = string(parsedReport.Type)
+						anomalyDesc = parsedReport.Description
+						break
+					}
+				}
+				if anomalyType == "" && m.RAMUsagePct > 92.0 {
+					anomalyType = "MEMORY_EXHAUSTION"
+					anomalyDesc = fmt.Sprintf("High RAM usage detected: %.1f%%", m.RAMUsagePct)
+				}
 			}
 
 			if anomalyType != "" {
+				coolWindow := cooldowns[anomalyType]
+				if coolWindow == 0 {
+					coolWindow = 60 * time.Second
+				}
+				if time.Since(lastActionByAnomaly[anomalyType]) < coolWindow {
+					continue
+				}
+
 				logger.Warn("ANOMALY DETECTED: %s (%s)! Processing Auto-Healing...", anomalyType, anomalyDesc)
-				lastActionTime = time.Now()
+				lastActionByAnomaly[anomalyType] = time.Now()
 
 				actionName := "restart_wan_interface"
 				if anomalyType == "MEMORY_EXHAUSTION" {
 					actionName = "purge_memory_cache"
+				} else if anomalyType == "WIFI_FAILURE" {
+					actionName = "optimize_wifi_channel"
 				}
 
-				skill := store.GetSkill(actionName)
+				skill := store.GetSkill(anomalyType, actionName)
 				requiredLocalThreshold := execEngine.GetActionRiskThreshold(actionName)
 
 				if skill != nil && skill.Confidence >= requiredLocalThreshold {
@@ -197,12 +219,15 @@ func main() {
 						ActionName: skill.Action,
 						Target:     "wan",
 					}
+					// A1: Tạo UCI Snapshot trước khi thực thi lệnh High Risk
+					if requiredLocalThreshold >= 0.85 {
+						_ = exec.Command("/bin/sh", "-c", "uci export > /tmp/agent_checkpoint.uci").Run()
+					}
 					execErr := execEngine.ExecuteAction(ctx, actReq, cfg.DryRun)
 					_ = store.SaveOrUpdateSkill(skill, execErr == nil, cfg.EMAAlpha)
 					continue
 				}
 
-				liveLogSample := logParser.SanitizeLog(getSystemLogSample())
 				aiResp, aiErr := aiClient.AnalyzeAnomaly(ctx, anomalyType, anomalyDesc, liveLogSample)
 
 				if aiErr == nil && aiResp != nil {
@@ -214,10 +239,14 @@ func main() {
 							ActionName: aiResp.Action,
 							Target:     "wan",
 						}
+						// A1: Tạo UCI Snapshot trước khi thực thi lệnh High Risk
+						if requiredThreshold >= 0.85 {
+							_ = exec.Command("/bin/sh", "-c", "uci export > /tmp/agent_checkpoint.uci").Run()
+						}
 						execErr := execEngine.ExecuteAction(ctx, actReq, cfg.DryRun)
 
 						newSkill := &skillstore.Skill{
-							ID:         aiResp.Action,
+							ID:         fmt.Sprintf("%s:%s", anomalyType, aiResp.Action),
 							Action:     aiResp.Action,
 							Condition:  anomalyType,
 							Confidence: aiResp.Confidence,
@@ -226,11 +255,16 @@ func main() {
 					} else {
 						logger.Warn("SECURITY GATING TRIGGERED: AI Action [%s] Confidence (%.2f) below Required Risk Threshold (%.2f)! Queued for Operator Approval.", aiResp.Action, aiResp.Confidence, requiredThreshold)
 						queuePendingApproval(aiResp, requiredThreshold)
-						_ = wd.ExecuteRollback()
+						// A2: Selective Rollback - Chỉ rollback khi là WAN_DROP hoặc High Risk action
+						if anomalyType == "WAN_DROP" || requiredThreshold >= 0.85 {
+							_ = wd.ExecuteRollback()
+						}
 					}
 				} else {
-					logger.Error("Cloud AI Call Failed (%v). Falling back to Watchdog Rollback Guardrail!", aiErr)
-					_ = wd.ExecuteRollback()
+					logger.Error("Cloud AI Call Failed (%v). Processing Selective Fallback Guardrail!", aiErr)
+					if anomalyType == "WAN_DROP" {
+						_ = wd.ExecuteRollback()
+					}
 				}
 			}
 		}
@@ -293,16 +327,19 @@ func acquirePIDLock(pidPath string) error {
 func startHealthCheckServer(cfg *config.Config, health *HealthState, execEngine *executor.Executor) *http.Server {
 	mux := http.NewServeMux()
 
-	// Endpoint 1: Health Check (AUTH_TOKEN)
+	// Endpoint 1: Health Check (AUTH_TOKEN) - D4: Fail-Closed khi AUTH_TOKEN rỗng
 	mux.HandleFunc("/api/health", func(w http.ResponseWriter, r *http.Request) {
+		if cfg.AuthToken == "" {
+			http.Error(w, `{"error":"Forbidden: AUTH_TOKEN must be configured"}`, http.StatusForbidden)
+			return
+		}
+
 		auth := r.Header.Get("Authorization")
 		expectedAuth := "Bearer " + cfg.AuthToken
 
-		if cfg.AuthToken != "" {
-			if len(auth) == 0 || subtle.ConstantTimeCompare([]byte(auth), []byte(expectedAuth)) != 1 {
-				http.Error(w, `{"error":"Unauthorized"}`, http.StatusUnauthorized)
-				return
-			}
+		if len(auth) == 0 || subtle.ConstantTimeCompare([]byte(auth), []byte(expectedAuth)) != 1 {
+			http.Error(w, `{"error":"Unauthorized"}`, http.StatusUnauthorized)
+			return
 		}
 
 		health.mu.RLock()
@@ -344,6 +381,13 @@ func startHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 		var pending PendingApproval
 		if err := json.Unmarshal(data, &pending); err != nil {
 			http.Error(w, `{"error":"Failed to parse pending approval file"}`, http.StatusInternalServerError)
+			return
+		}
+
+		// D3: Hạn ngạch Expiry - Nếu yêu cầu đã quá 10 phút thì reject và xóa file
+		if time.Since(pending.Timestamp) > 10*time.Minute {
+			_ = os.Remove(pendingFile)
+			http.Error(w, `{"error":"Pending approval request expired (> 10 minutes)"}`, http.StatusGone)
 			return
 		}
 

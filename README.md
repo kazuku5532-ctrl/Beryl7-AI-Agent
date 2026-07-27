@@ -49,29 +49,30 @@ Hệ thống được thiết kế theo mô hình **Đột phá Kiến trúc Ké
 ## 🔥 Tính năng Nổi bật (v14.0 Master Evolution Features)
 
 1. **Native 24/7 On-Router Execution (Giải phóng Laptop 100%):** 
-   * Đóng gói tĩnh duy nhất **9.38 MB** cho kiến trúc ARM64 MediaTek Filogic 850.
-   * Ngốn **< 10MB RAM** và **< 1% CPU**, nhiệt độ hoạt động mát mẻ **~58.8 °C**.
+   * Đóng gói tĩnh duy nhất **9.44 MB** cho kiến trúc ARM64 MediaTek Filogic 850.
+   * Ngốn **~9.44 MB RAM** và **< 1% CPU**, nhiệt độ hoạt động mát mẻ **~58.8 °C**.
    * Được quản lý ngầm bởi OpenWrt `procd` (`/etc/init.d/beryl7-agent`) tự khởi động khi cắm nguồn.
 
 2. **Pure-Go SQLite Self-Evolution Skill Store (`< 1ms` Response):** 
    * Dùng driver Pure-Go SQLite (`modernc.org/sqlite`) với cờ WAL Mode (`PRAGMA busy_timeout = 5000`) và tự khôi phục dữ liệu (`PRAGMA integrity_check`).
-   * Thuật toán **Delta EMA (Exponential Moving Average)** tự động căn chỉnh điểm tin cậy `confidence_score`. 
-   * **Local Cache Hit ($\ge 0.60$):** Tự rút bài học xử lý rớt mạng trong **$< 1\text{ms}$ (Nhanh hơn 2500 lần, 0 VNĐ API Cost)** mà không cần gọi Cloud!
+   * Thuật toán **Delta EMA (Exponential Moving Average)** tự động căn chỉnh điểm tin cậy `confidence_score` theo cặp `(condition:action)`.
+   * **Local Cache Hit ($\ge 0.85$):** Tự rút bài học xử lý sự cố trong **$< 1\text{ms}$ (Nhanh hơn 2500 lần, 0 VNĐ API Cost)** mà không cần gọi Cloud!
 
 3. **Google Gemini 2.5 Flash AI Function Calling:**
-   * Tự động gọi Cloud AI xử lý sự cố mới, chuyển đổi log an toàn qua bộ lọc ReDoS-safe & Prompt Injection filter.
+   * Tự động gọi Cloud AI xử lý sự cố mới (WAN_DROP, MEMORY_EXHAUSTION, WIFI_FAILURE) qua Header `x-goog-api-key`.
+   * Hỗ trợ Circuit Breaker (5 lỗi -> Khóa 5 phút) và Token Bucket Rate Limiter (10 req/phút).
 
 4. **SHA256 Checkpoint Watchdog (Bảo hiểm Phần cứng 100%):** 
-   * Tạo bản sao SHA256 Checkpoint tại `/root/.agent_checkpoint.uci`.
-   * Tự động khôi phục cấu hình an toàn sau 30s nếu có sự cố mạng.
+   * Tạo bản sao UCI Checkpoint đầy đủ tại `/tmp/agent_checkpoint.uci`.
+   * Tự động khôi phục cấu hình an toàn sau 30s nếu lệnh mới làm rớt mạng.
    * Bộ đếm Safe Mode Mutex tự động thoát Safe Mode sau 3 lần Health Check thành công liên tiếp (90s).
 
-5. **235+ Lớp Bảo vệ Kính Chống Đạn (Bulletproof Guardrails):**
+5. **Cơ chế Bảo vệ & An toàn Hệ thống (Hardened Guardrails):**
    * PID Lock `/var/run/beryl7-agent.pid` với `checkPIDAlive` Unix Signal 0.
    * Linux OOM Score Protection `-500` bảo vệ tiến trình không bị Kernel xóa sổ.
-   * Cổng Auth HTTP Health Check Server `:8888` đòi hỏi Bearer Token và cờ `SO_REUSEADDR`.
-   * Monotonic Clock Guard (`time.Since`) chống nhảy lùi giờ 1970 khi cắm điện offline.
-   * Kill Switch khẩn cấp `/tmp/beryl7-disable`.
+   * HTTP Health Server `:8888` đòi hỏi Bearer Token, kiểm tra Fail-Closed và Hạn ngạch Expiry Pending 10 phút.
+   * Per-Anomaly Cooldown (WAN 90s, RAM 45s, Wi-Fi 60s) chống Spam Action liên tục.
+   * Lệnh firewall `block_device` chuẩn UCI Named Section `block_<mac>` chống trùng lặp rác đĩa Flash.
 
 ---
 

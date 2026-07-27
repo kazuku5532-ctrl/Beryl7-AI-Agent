@@ -31,7 +31,7 @@ func TestSkillStoreSaveAndRetrieve(t *testing.T) {
 		t.Fatalf("Failed to save skill: %v", err)
 	}
 
-	retrieved := store.GetSkill("restart_wan_interface")
+	retrieved := store.GetSkill("WAN_DROP", "restart_wan_interface")
 	if retrieved == nil {
 		t.Fatalf("Retrieved skill is nil")
 	}
