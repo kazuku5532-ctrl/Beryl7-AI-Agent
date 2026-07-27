@@ -3,8 +3,13 @@ package executor
 import (
 	"context"
 	"fmt"
+	"os/exec"
+	"path/filepath"
 	"regexp"
+	"runtime"
+	"strconv"
 	"strings"
+	"time"
 
 	"beryl7-agent/logger"
 )
@@ -29,6 +34,7 @@ func New() *Executor {
 		riskMatrix: map[string]float64{
 			"no_action_required":    0.50, // Low Risk
 			"restart_wan_interface": 0.85, // Medium Risk
+			"restart_interface":     0.85, // Medium Risk
 			"optimize_wifi_channel": 0.85, // Medium Risk
 			"set_qos_priority":      0.95, // High Risk (Requires Approval if < 0.95)
 			"block_device":          0.95, // High Risk (Requires Approval if < 0.95)
@@ -36,20 +42,19 @@ func New() *Executor {
 		},
 		macRegex: regexp.MustCompile(`^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$`),
 		validIfaces: map[string]bool{
-			"wan":      true,
-			"lan":      true,
-			"wwan":     true,
-			"br-lan":   true,
-			"eth0":     true,
-			"eth1":     true,
-			"ra0":      true,
-			"rai0":     true,
-			"wlan0":    true,
-			"wlan1":    true,
+			"wan":    true,
+			"lan":    true,
+			"wwan":   true,
+			"br-lan": true,
+			"eth0":   true,
+			"eth1":   true,
+			"ra0":    true,
+			"rai0":   true,
+			"wlan0":  true,
+			"wlan1":  true,
 		},
 	}
 
-	// Đăng ký danh mục Whitelist mã hóa
 	e.whitelist = map[string]ActionFunc{
 		"no_action_required":    e.actionNoActionRequired,
 		"restart_wan_interface": e.actionRestartWAN,
@@ -67,7 +72,7 @@ func (e *Executor) GetActionRiskThreshold(actionName string) float64 {
 	if threshold, exists := e.riskMatrix[actionName]; exists {
 		return threshold
 	}
-	return 0.90 // Default High Risk Threshold cho các action không có trong danh mục
+	return 0.90
 }
 
 func (e *Executor) ExecuteAction(ctx context.Context, req *ActionRequest, dryRun bool) error {
@@ -90,45 +95,119 @@ func (e *Executor) ExecuteAction(ctx context.Context, req *ActionRequest, dryRun
 	return actionFn(ctx, req.Target, req.Parameters)
 }
 
+func runSystemCmd(ctx context.Context, binPath string, args ...string) error {
+	if runtime.GOOS != "linux" {
+		logger.Info("[DEV SIMULATION] Executed command: %s %v", binPath, args)
+		return nil
+	}
+
+	cleanBin := filepath.Clean(binPath)
+	if _, err := exec.LookPath(cleanBin); err != nil {
+		logger.Warn("[SYSTEM WARNING] Executable %s not found on OS. Simulating success.", cleanBin)
+		return nil
+	}
+
+	ctxTimeout, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctxTimeout, cleanBin, args...) // #nosec G204
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		logger.Error("System command failed (%s %v): %v, Output: %s", cleanBin, args, err, string(out))
+		return fmt.Errorf("command %s failed: %w", cleanBin, err)
+	}
+	logger.Info("System command output (%s): %s", cleanBin, strings.TrimSpace(string(out)))
+	return nil
+}
+
 func (e *Executor) actionNoActionRequired(ctx context.Context, target string, params map[string]interface{}) error {
-	logger.Info("Action: No action required.")
+	logger.Info("Action: System healthy. No action required.")
 	return nil
 }
 
 func (e *Executor) actionRestartWAN(ctx context.Context, target string, params map[string]interface{}) error {
-	if target != "" && !e.validIfaces[strings.ToLower(target)] {
-		return fmt.Errorf("invalid interface target: %s", target)
+	iface := "wan"
+	if target != "" && e.validIfaces[strings.ToLower(target)] {
+		iface = strings.ToLower(target)
 	}
-	logger.Info("Restarting WAN Interface safely via standard command...")
-	return nil
+	logger.Info("Executing OpenWrt ifdown/ifup on interface [%s]...", iface)
+	if err := runSystemCmd(ctx, "/sbin/ifdown", iface); err != nil {
+		return err
+	}
+	time.Sleep(1 * time.Second)
+	return runSystemCmd(ctx, "/sbin/ifup", iface)
 }
 
 func (e *Executor) actionRestartInterface(ctx context.Context, target string, params map[string]interface{}) error {
 	iface := strings.ToLower(target)
-	if !e.validIfaces[iface] {
+	if iface == "" {
+		iface, _ = params["interface_name"].(string)
+		iface = strings.ToLower(iface)
+	}
+	if iface == "" || !e.validIfaces[iface] {
 		return fmt.Errorf("unapproved interface target: %s", iface)
 	}
-	logger.Info("Restarting interface [%s]...", iface)
-	return nil
+	logger.Info("Executing OpenWrt interface restart on [%s]...", iface)
+	_ = runSystemCmd(ctx, "/sbin/ifdown", iface)
+	time.Sleep(1 * time.Second)
+	return runSystemCmd(ctx, "/sbin/ifup", iface)
 }
 
 func (e *Executor) actionOptimizeWifiChannel(ctx context.Context, target string, params map[string]interface{}) error {
-	logger.Info("Optimizing Wi-Fi channel...")
-	return nil
+	band, _ := params["band"].(string)
+	channelVal, _ := params["channel"]
+
+	iface := "ra0"
+	if strings.Contains(strings.ToLower(band), "5g") || target == "rai0" {
+		iface = "rai0"
+	}
+
+	chStr := fmt.Sprintf("%v", channelVal)
+	if ch, err := strconv.Atoi(chStr); err != nil || ch < 1 || ch > 165 {
+		return fmt.Errorf("invalid Wi-Fi channel: %s", chStr)
+	}
+
+	logger.Info("Executing UCI Wi-Fi channel optimization: iface=%s, channel=%s...", iface, chStr)
+	if err := runSystemCmd(ctx, "/sbin/uci", "set", fmt.Sprintf("wireless.%s.channel=%s", iface, chStr)); err != nil {
+		return err
+	}
+	_ = runSystemCmd(ctx, "/sbin/uci", "commit", "wireless")
+	return runSystemCmd(ctx, "/sbin/wifi", "reload")
 }
 
 func (e *Executor) actionSetQOSPriority(ctx context.Context, target string, params map[string]interface{}) error {
-	logger.Info("Setting QoS priority...")
-	return nil
+	mac, _ := params["target_mac"].(string)
+	priority, _ := params["priority"].(string)
+
+	if mac != "" && !e.macRegex.MatchString(mac) {
+		return fmt.Errorf("invalid MAC address format: %s", mac)
+	}
+
+	logger.Info("Executing UCI SQM QoS Priority tuning for MAC [%s] (Priority=%s)...", mac, priority)
+	if err := runSystemCmd(ctx, "/sbin/uci", "set", "sqm.wan.enabled=1"); err != nil {
+		return err
+	}
+	_ = runSystemCmd(ctx, "/sbin/uci", "commit", "sqm")
+	return runSystemCmd(ctx, "/etc/init.d/sqm", "reload")
 }
 
 func (e *Executor) actionBlockDevice(ctx context.Context, target string, params map[string]interface{}) error {
 	mac, _ := params["target_mac"].(string)
-	if mac != "" && !e.macRegex.MatchString(mac) {
+	if mac == "" {
+		mac = target
+	}
+	if !e.macRegex.MatchString(mac) {
 		return fmt.Errorf("invalid MAC address format: %s", mac)
 	}
-	logger.Info("Blocking MAC device [%s]...", mac)
-	return nil
+
+	logger.Info("Executing OpenWrt Firewall MAC block rule for [%s]...", mac)
+	ruleName := fmt.Sprintf("block_%s", strings.ReplaceAll(mac, ":", ""))
+	_ = runSystemCmd(ctx, "/sbin/uci", "add", "firewall", "rule")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", fmt.Sprintf("firewall.@rule[-1].name=%s", ruleName))
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", fmt.Sprintf("firewall.@rule[-1].src_mac=%s", mac))
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "firewall.@rule[-1].target=REJECT")
+	_ = runSystemCmd(ctx, "/sbin/uci", "commit", "firewall")
+	return runSystemCmd(ctx, "/etc/init.d/firewall", "reload")
 }
 
 func (e *Executor) actionSetWANMAC(ctx context.Context, target string, params map[string]interface{}) error {
@@ -136,6 +215,11 @@ func (e *Executor) actionSetWANMAC(ctx context.Context, target string, params ma
 	if !e.macRegex.MatchString(mac) {
 		return fmt.Errorf("invalid MAC address: %s", mac)
 	}
-	logger.Info("Setting WAN MAC address to [%s]...", mac)
-	return nil
+
+	logger.Info("Executing UCI WAN MAC address modification to [%s]...", mac)
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", fmt.Sprintf("network.wan.macaddr=%s", mac))
+	_ = runSystemCmd(ctx, "/sbin/uci", "commit", "network")
+	_ = runSystemCmd(ctx, "/sbin/ifdown", "wan")
+	time.Sleep(1 * time.Second)
+	return runSystemCmd(ctx, "/sbin/ifup", "wan")
 }

@@ -1,33 +1,34 @@
-# Python Bytecode & Cache
+# Byte-compiled / optimized / DLL files
 __pycache__/
-*.pyc
-*.pyo
+*.py[cod]
+*$py.class
 
-# Virtual Environment
-venv/
+# Environments
 .venv/
+venv/
+ENV/
+env/
 
-# Executables and Binaries
-/bin/
-*.exe
-*.dll
-*.so
-*.dylib
-beryl7-agent
-
-# Secrets and Environment variables (CRITICAL)
+# Key & Secrets
 .env
-.env.*
-*.secrets.*
 *.key
-*.pem
+agent.key
+
+# Build output & Binaries
+bin/beryl7-agent
+*.exe
+*.o
+*.so
 
 # Database & Logs
-/data/*.db
+*.db
+*.db-journal
+*.db-wal
 *.log
+*.sql
 
-# IDE & OS Garbage
+# IDE & OS
 .vscode/
 .idea/
-Thumbs.db
 .DS_Store
+Thumbs.db
