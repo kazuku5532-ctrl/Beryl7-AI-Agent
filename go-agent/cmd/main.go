@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -296,6 +297,12 @@ func main() {
 }
 
 func getSystemLogSample() string {
+	if runtime.GOOS == "linux" {
+		out, err := exec.Command("/sbin/logread", "-l", "15").Output()
+		if err == nil && len(out) > 0 {
+			return string(out)
+		}
+	}
 	data, err := os.ReadFile("/var/log/messages")
 	if err == nil && len(data) > 0 {
 		lines := strings.Split(string(data), "\n")
@@ -304,7 +311,7 @@ func getSystemLogSample() string {
 		}
 		return string(data)
 	}
-	return "kernel: eth1 link down (WAN disconnected)"
+	return ""
 }
 
 func queuePendingApproval(resp *ai.AIResponse, required float64) {
