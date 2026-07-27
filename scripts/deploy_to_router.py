@@ -7,6 +7,9 @@ import hashlib
 import paramiko
 from dotenv import load_dotenv
 
+sys.path.insert(0, os.path.abspath("."))
+from agent.ssh_auth import SSHAuthenticator
+
 sys.stdout.reconfigure(encoding='utf-8')
 
 print("==================================================")
@@ -17,13 +20,10 @@ load_dotenv()
 router_ip = os.getenv("ROUTER_IP", "192.168.8.1")
 router_user = os.getenv("ROUTER_USER", "root")
 router_password = os.getenv("ROUTER_PASSWORD")
+ssh_key_path = os.getenv("SSH_KEY_PATH")
 gemini_key = os.getenv("GEMINI_API_KEY", "")
 auth_token = os.getenv("AUTH_TOKEN")
 approve_token = os.getenv("APPROVE_TOKEN")
-
-if not router_password:
-    print("❌ ERROR: ROUTER_PASSWORD environment variable not set in .env file!")
-    sys.exit(1)
 
 if not auth_token:
     auth_token = secrets.token_hex(16)
@@ -50,14 +50,14 @@ print(f"1. Connecting to Beryl 7 Router via SSH ({router_user}@{router_ip})...")
 
 ssh = paramiko.SSHClient()
 ssh.load_system_host_keys()
-ssh.set_missing_host_key_policy(paramiko.RejectPolicy())
 
 try:
-    ssh.connect(router_ip, port=22, username=router_user, password=router_password, timeout=10)
-    print("✓ SSH Connection Established Successfully (Strict RejectPolicy Verified)!")
+    authenticator = SSHAuthenticator(router_host=router_ip, key_path=ssh_key_path)
+    authenticator.configure_client(ssh, username=router_user, timeout=10)
+    print("✓ SSH Connection Established Successfully (SSH Key / Password Authenticated)!")
 except Exception as e:
-    print(f"❌ SSH Connection Error under RejectPolicy: {e}")
-    print("⚠️ If host key is missing, add it to system known_hosts: ssh-keyscan -H 192.168.8.1 >> ~/.ssh/known_hosts")
+    print(f"❌ SSH Connection Failed: {e}")
+    print("⚠️ Please ensure router is reachable at 192.168.8.1 and SSH credentials or ~/.ssh/beryl7_rsa key are configured.")
     sys.exit(1)
 
 print("2. Stopping active beryl7-agent service to release binary lock...")
@@ -95,7 +95,6 @@ def safe_upload_file(ssh_client, local_path, remote_path, mode=0o644):
         ssh_client.exec_command(f"chmod {oct(mode)[2:]} '{remote_path}'")
         print("   ✓ Uploaded via Safe Base64 Stream (Dropbear Fallback Verified)!")
 
-    # Khắc phục Hạng mục 5: Xác minh Checksum SHA256 sau khi upload
     stdin, stdout, stderr = ssh_client.exec_command(f"sha256sum '{remote_path}' | cut -d' ' -f1")
     remote_sha256 = stdout.read().decode('utf-8').strip()
     if remote_sha256.lower() == local_sha256.lower():
