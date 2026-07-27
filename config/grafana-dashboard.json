@@ -1,0 +1,51 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": 1,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "title": "Cache Hit Rate (%)",
+      "type": "stat",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "rate(beryl7_cache_hits_total[1h]) / (rate(beryl7_cache_hits_total[1h]) + rate(beryl7_cache_misses_total[1h])) * 100",
+          "legendFormat": "Hit Rate %"
+        }
+      ]
+    },
+    {
+      "title": "System RAM Usage (%)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 0 },
+      "targets": [
+        {
+          "expr": "beryl7_system_ram_usage_percent",
+          "legendFormat": "RAM %"
+        }
+      ]
+    },
+    {
+      "title": "Skills in Store",
+      "type": "stat",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 0 },
+      "targets": [
+        {
+          "expr": "beryl7_skills_in_store",
+          "legendFormat": "Total Skills"
+        }
+      ]
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["openwrt", "beryl7", "ai-agent"],
+  "time": { "from": "now-6h", "to": "now" },
+  "title": "Beryl 7 AI Agent Operations Dashboard",
+  "version": 1
+}

@@ -1,0 +1,30 @@
+# Prometheus Alert Rules for Beryl 7 AI Agent
+groups:
+  - name: beryl7_alerts
+    rules:
+      - alert: RouterUnreachable
+        expr: beryl7_router_reachable == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "GL.iNet Beryl 7 Router Unreachable via SSH"
+          description: "SSH connectivity to router 192.168.8.1 has been down for more than 5 minutes."
+
+      - alert: LowCacheHitRate
+        expr: (rate(beryl7_cache_hits_total[30m]) / (rate(beryl7_cache_hits_total[30m]) + rate(beryl7_cache_misses_total[30m]))) < 0.70
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Low Skill Store Cache Hit Rate"
+          description: "SQLite Cache Hit Rate dropped below 70% in the last 30 minutes."
+
+      - alert: HighRAMConsumption
+        expr: beryl7_system_ram_usage_percent > 90
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Router Memory Usage Above 90%"
+          description: "RAM usage on Beryl 7 exceeds 90% threshold."
