@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Beryl 7 AI Agent - Enterprise Operations Dashboard (Standalone Preview)</title>
+    <title>Beryl 7 AI Agent - Enterprise Operations Dashboard (5-Star Standalone Edition)</title>
     
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -49,21 +49,45 @@
     --radius-xl: 24px;
 }
 
+body.light-theme {
+    --bg-dark: #f1f5f9;
+    --bg-card: rgba(255, 255, 255, 0.9);
+    --bg-card-hover: rgba(241, 245, 249, 0.95);
+    --border-color: rgba(0, 0, 0, 0.08);
+    --border-glow: rgba(2, 132, 199, 0.2);
+
+    --text-primary: #0f172a;
+    --text-secondary: #334155;
+    --text-subtle: #64748b;
+
+    --emerald: #059669;
+    --cyan: #0284c7;
+    --purple: #7c3aed;
+    --gold: #d97706;
+    --rose: #e11d48;
+}
+
 * {
     box-sizing: border-box;
     margin: 0;
     padding: 0;
 }
 
-body.dark-theme {
+body {
     background-color: var(--bg-dark);
     background-image: 
-        radial-gradient(circle at 15% 15%, rgba(56, 189, 248, 0.08) 0%, transparent 45%),
-        radial-gradient(circle at 85% 85%, rgba(168, 85, 247, 0.08) 0%, transparent 45%);
+        radial-gradient(circle at 15% 15%, rgba(56, 189, 248, 0.06) 0%, transparent 45%),
+        radial-gradient(circle at 85% 85%, rgba(168, 85, 247, 0.06) 0%, transparent 45%);
     color: var(--text-primary);
     font-family: var(--font-body);
     min-height: 100vh;
     overflow-x: hidden;
+    transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+:focus-visible {
+    outline: 2px solid var(--cyan);
+    outline-offset: 3px;
 }
 
 .top-navbar {
@@ -77,6 +101,10 @@ body.dark-theme {
     position: sticky;
     top: 0;
     z-index: 100;
+}
+
+body.light-theme .top-navbar {
+    background: rgba(255, 255, 255, 0.88);
 }
 
 .brand-logo {
@@ -164,7 +192,19 @@ body.dark-theme {
 .nav-controls {
     align-items: center;
     display: flex;
-    gap: 14px;
+    gap: 12px;
+}
+
+.staleness-badge {
+    color: var(--text-subtle);
+    font-size: 12px;
+    font-weight: 500;
+    padding: 4px 8px;
+}
+
+.staleness-badge.stale {
+    color: var(--gold);
+    font-weight: 700;
 }
 
 .connection-status {
@@ -179,7 +219,6 @@ body.dark-theme {
     gap: 8px;
     min-height: 44px;
     padding: 8px 16px;
-    transition: all 0.3s ease;
 }
 
 .connection-status.offline {
@@ -210,7 +249,7 @@ body.dark-theme {
     100% { transform: scale(0.95); opacity: 0.8; }
 }
 
-.time-range-selector select {
+.dropdown-selector select {
     background: rgba(255, 255, 255, 0.05);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-sm);
@@ -220,6 +259,10 @@ body.dark-theme {
     font-size: 13px;
     min-height: 48px;
     padding: 10px 14px;
+}
+
+body.light-theme .dropdown-selector select {
+    background: #fff;
 }
 
 .btn-icon {
@@ -233,12 +276,25 @@ body.dark-theme {
     font-size: 16px;
     height: 48px;
     justify-content: center;
+    position: relative;
     transition: all 0.2s ease;
     width: 48px;
 }
 
 .btn-icon:hover {
     color: var(--cyan);
+}
+
+.badge-unread-count {
+    background: var(--rose);
+    border-radius: 10px;
+    color: #fff;
+    font-size: 10px;
+    font-weight: 800;
+    padding: 2px 6px;
+    position: absolute;
+    right: 4px;
+    top: 4px;
 }
 
 .btn-action {
@@ -596,6 +652,24 @@ body.dark-theme {
     margin-bottom: 24px;
 }
 
+.metric-search-wrapper {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 20px;
+}
+
+.metric-search-wrapper input {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    color: var(--text-primary);
+    font-family: var(--font-body);
+    font-size: 13.5px;
+    min-height: 48px;
+    padding: 10px 18px;
+    width: 100%;
+}
+
 .module-grid-6 {
     display: grid;
     grid-template-columns: repeat(6, 1fr);
@@ -715,6 +789,10 @@ body.dark-theme {
     padding: 16px;
 }
 
+body.light-theme .log-terminal-window {
+    background: #0f172a;
+}
+
 .log-line {
     display: flex;
     gap: 12px;
@@ -725,7 +803,7 @@ body.dark-theme {
 .log-level-INFO { color: var(--cyan); font-weight: 700; min-width: 50px; }
 .log-level-WARN { color: var(--gold); font-weight: 700; min-width: 50px; }
 .log-level-ERROR { color: var(--rose); font-weight: 700; min-width: 50px; }
-.log-msg { color: var(--text-primary); word-break: break-word; }
+.log-msg { color: #f8fafc; word-break: break-word; }
 
 .log-pagination {
     align-items: center;
@@ -893,6 +971,35 @@ body.dark-theme {
     line-height: 1.6;
 }
 
+.notification-drawer {
+    background: var(--bg-dark);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+    display: none;
+    max-width: 380px;
+    padding: 20px;
+    position: absolute;
+    right: 28px;
+    top: 70px;
+    width: 100%;
+    z-index: 200;
+}
+
+.notification-drawer.active {
+    animation: fadeIn 0.3s ease;
+    display: block;
+}
+
+.notification-item {
+    border-bottom: 1px solid var(--border-color);
+    padding: 10px 0;
+}
+
+.notification-item:last-child {
+    border-bottom: none;
+}
+
 @media (max-width: 1024px) {
     .kpi-grid-4, .grid-4-cols, .module-grid-6 {
         grid-template-columns: repeat(2, 1fr);
@@ -937,7 +1044,7 @@ body.dark-theme {
                 <div class="logo-icon"><i class="fa-solid fa-shield-halved"></i></div>
                 <div class="brand-text">
                     <span class="brand-title">BERYL 7 <span class="badge-ai">AI AGENT</span></span>
-                    <span class="brand-subtitle">Autonomous Network Remediation & Skill Engine</span>
+                    <span class="brand-subtitle">Autonomous Network Remediation &amp; Skill Engine</span>
                 </div>
             </div>
             
@@ -956,13 +1063,25 @@ body.dark-theme {
             
             <!-- CONTROLS & STATUS -->
             <div class="nav-controls">
+                <span id="stalenessIndicator" class="staleness-badge">Last updated: 0s ago</span>
+
                 <div class="connection-status online" id="connection-indicator">
                     <span class="status-dot"></span>
                     <span id="connection-text">ROUTER LIVE</span>
                 </div>
+
+                <div class="dropdown-selector">
+                    <select id="refreshIntervalSelect" onchange="onRefreshIntervalChange()" title="Custom Polling Refresh Interval">
+                        <option value="1000">1s Refresh</option>
+                        <option value="5000" selected>5s Refresh</option>
+                        <option value="10000">10s Refresh</option>
+                        <option value="30000">30s Refresh</option>
+                        <option value="0">Manual Only</option>
+                    </select>
+                </div>
                 
-                <div class="time-range-selector">
-                    <select id="timeRangeSelect" onchange="onTimeRangeChange()">
+                <div class="dropdown-selector">
+                    <select id="timeRangeSelect" onchange="onTimeRangeChange()" title="Historical Data Range">
                         <option value="1h">Last 1 Hour</option>
                         <option value="24h" selected>Last 24 Hours</option>
                         <option value="7d">Last 7 Days</option>
@@ -970,16 +1089,47 @@ body.dark-theme {
                     </select>
                 </div>
                 
+                <!-- Notification Bell Drawer Button -->
+                <button class="btn-icon" title="Notifications & System Alerts" onclick="toggleNotificationDrawer()">
+                    <i class="fa-solid fa-bell"></i>
+                    <span class="badge-unread-count" id="notifBadge">0</span>
+                </button>
+
+                <!-- Theme Toggle Button -->
+                <button class="btn-icon" title="Toggle Dark / Light Theme (Key: D)" onclick="toggleTheme()">
+                    <i class="fa-solid fa-moon" id="themeIcon"></i>
+                </button>
+
+                <!-- Keyboard Shortcuts Help -->
+                <button class="btn-icon" title="Keyboard Shortcuts Help (Key: ?)" onclick="openKeyboardHelp()">
+                    <i class="fa-solid fa-keyboard"></i>
+                </button>
+
+                <!-- Mode Toggle -->
                 <button class="btn-icon" title="Toggle Live / Simulation Data Mode" onclick="toggleDataMode()">
                     <i class="fa-solid fa-sliders" id="dataModeIcon"></i>
                 </button>
 
-                <button class="btn-action btn-export" onclick="exportCSVReport()">
+                <button class="btn-action btn-export" onclick="exportCSVReport()" title="Export Metric Report (Key: E)">
                     <i class="fa-solid fa-download"></i> Export CSV
                 </button>
             </div>
         </header>
         
+        <!-- NOTIFICATIONS DRAWER -->
+        <div id="notificationDrawer" class="notification-drawer">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-bell text-gold"></i> System Alerts &amp; Notifications</h3>
+                <button class="modal-close" onclick="toggleNotificationDrawer()">&times;</button>
+            </div>
+            <div class="notification-list" id="notificationList">
+                <div class="notification-item">
+                    <p><strong>System Initialization:</strong> Go Daemon PID 6146 connected via WebSocket telemetry.</p>
+                    <span class="text-subtle">Just now</span>
+                </div>
+            </div>
+        </div>
+
         <!-- MAIN DASHBOARD CONTENT AREA -->
         <main class="main-content">
             
@@ -997,7 +1147,7 @@ body.dark-theme {
                 <div class="hero-status-banner healthy">
                     <div class="hero-icon"><i class="fa-solid fa-circle-check"></i></div>
                     <div class="hero-info">
-                        <h2>SYSTEM STATUS: OPERATIONAL & HEALTHY</h2>
+                        <h2>SYSTEM STATUS: OPERATIONAL &amp; HEALTHY</h2>
                         <p>GL.iNet Beryl 7 (GL-MT3600BE) OpenWrt Native Go Daemon is running with 0 unhandled anomalies.</p>
                     </div>
                     <div class="hero-stats">
@@ -1075,7 +1225,7 @@ body.dark-theme {
                                     <span class="slo-score" id="slo-avail-score">99.8%</span>
                                 </div>
                                 <div class="progress-bar-bg">
-                                    <div class="progress-bar-fill emerald" style="width: 99.8%;"></div>
+                                    <div class="progress-bar-fill emerald" id="slo-bar-avail" style="width: 99.8%;"></div>
                                 </div>
                             </div>
                             
@@ -1085,7 +1235,7 @@ body.dark-theme {
                                     <span class="slo-score" id="slo-cache-score">91.4%</span>
                                 </div>
                                 <div class="progress-bar-bg">
-                                    <div class="progress-bar-fill cyan" style="width: 91.4%;"></div>
+                                    <div class="progress-bar-fill cyan" id="slo-bar-cache" style="width: 91.4%;"></div>
                                 </div>
                             </div>
                             
@@ -1105,7 +1255,7 @@ body.dark-theme {
                                     <span class="slo-score" id="slo-ram-score">34.2%</span>
                                 </div>
                                 <div class="progress-bar-bg">
-                                    <div class="progress-bar-fill emerald" style="width: 34.2%;"></div>
+                                    <div class="progress-bar-fill emerald" id="slo-bar-ram" style="width: 34.2%;"></div>
                                 </div>
                             </div>
                         </div>
@@ -1133,7 +1283,7 @@ body.dark-theme {
                         <div class="action-feed-badge success"><i class="fa-solid fa-wand-magic-sparkles"></i></div>
                         <div class="action-feed-details">
                             <div class="action-feed-title" id="exec-feed-title">tune_network_performance</div>
-                            <div class="action-feed-desc" id="exec-feed-desc">Maxed TCP Socket Buffers to 16MB & Enabled A-MPDU Wi-Fi Aggregation without association drops.</div>
+                            <div class="action-feed-desc" id="exec-feed-desc">Maxed TCP Socket Buffers to 16MB &amp; Enabled A-MPDU Wi-Fi Aggregation without association drops.</div>
                         </div>
                         <div class="action-feed-meta">
                             <span class="badge-confidence">Confidence: 98.5%</span>
@@ -1146,15 +1296,20 @@ body.dark-theme {
             <!-- ================= TECHNICAL VIEW (TAB 2) ================= -->
             <section id="view-technical" class="view-section">
                 
+                <!-- INTERACTIVE METRIC SEARCH BAR -->
+                <div class="metric-search-wrapper">
+                    <input type="text" id="metricSearchInput" placeholder="Search architecture modules, gauges, and system metrics in real-time..." oninput="onMetricSearchChange()">
+                </div>
+
                 <!-- MODULE HEALTH STATUS GRID (6 MODULES) -->
-                <div class="panel-card margin-bottom-lg">
+                <div class="panel-card margin-bottom-lg" id="moduleHealthSection">
                     <div class="panel-header">
                         <h3><i class="fa-solid fa-cubes text-cyan"></i> Beryl 7 Core Architecture Module Status</h3>
                         <span class="tag-status tag-pass">6/6 MODULES HEALTHY</span>
                     </div>
                     
                     <div class="module-grid-6">
-                        <div class="module-card healthy" onclick="openModuleDetail('orchestrator')">
+                        <div class="module-card healthy" onclick="openModuleDetail('orchestrator')" data-search="orchestrator priority loop">
                             <div class="module-header">
                                 <span class="module-name">Orchestrator Loop</span>
                                 <span class="badge-status-dot"></span>
@@ -1163,7 +1318,7 @@ body.dark-theme {
                             <div class="module-stat">Main Loop: <strong>5s Interval</strong></div>
                         </div>
                         
-                        <div class="module-card healthy" onclick="openModuleDetail('executor')">
+                        <div class="module-card healthy" onclick="openModuleDetail('executor')" data-search="executor uci mt7993 whitelist">
                             <div class="module-header">
                                 <span class="module-name">Executor Engine</span>
                                 <span class="badge-status-dot"></span>
@@ -1172,7 +1327,7 @@ body.dark-theme {
                             <div class="module-stat">UCI Sections: <strong>MT7993 Match</strong></div>
                         </div>
                         
-                        <div class="module-card healthy" onclick="openModuleDetail('ai')">
+                        <div class="module-card healthy" onclick="openModuleDetail('ai')" data-search="cloud ai gemini model flash">
                             <div class="module-header">
                                 <span class="module-name">Cloud AI (Gemini)</span>
                                 <span class="badge-status-dot"></span>
@@ -1181,7 +1336,7 @@ body.dark-theme {
                             <div class="module-stat">Model: <strong>2.5 Flash</strong></div>
                         </div>
                         
-                        <div class="module-card healthy" onclick="openModuleDetail('watchdog')">
+                        <div class="module-card healthy" onclick="openModuleDetail('watchdog')" data-search="watchdog checkpoint rollback safe">
                             <div class="module-header">
                                 <span class="module-name">Watchdog Engine</span>
                                 <span class="badge-status-dot"></span>
@@ -1190,7 +1345,7 @@ body.dark-theme {
                             <div class="module-stat">Rollback: <strong>Selective</strong></div>
                         </div>
 
-                        <div class="module-card healthy" onclick="openModuleDetail('parser')">
+                        <div class="module-card healthy" onclick="openModuleDetail('parser')" data-search="log parser logread regex">
                             <div class="module-header">
                                 <span class="module-name">Log Parser</span>
                                 <span class="badge-status-dot"></span>
@@ -1199,7 +1354,7 @@ body.dark-theme {
                             <div class="module-stat">Patterns: <strong>Regex Match</strong></div>
                         </div>
 
-                        <div class="module-card healthy" onclick="openModuleDetail('skillstore')">
+                        <div class="module-card healthy" onclick="openModuleDetail('skillstore')" data-search="skill store sqlite wal ema">
                             <div class="module-header">
                                 <span class="module-name">Skill Store (EMA)</span>
                                 <span class="badge-status-dot"></span>
@@ -1211,23 +1366,23 @@ body.dark-theme {
                 </div>
                 
                 <!-- LIVE TELEMETRY METRICS GRID -->
-                <div class="grid-4-cols margin-bottom-lg">
-                    <div class="metric-gauge-card">
+                <div class="grid-4-cols margin-bottom-lg" id="telemetryGaugesSection">
+                    <div class="metric-gauge-card" data-search="cpu load filogic quad-core">
                         <div class="gauge-title">CPU Load</div>
                         <div class="gauge-val" id="tech-cpu">0.8%</div>
                         <div class="gauge-sub">Quad-Core Filogic 2.0GHz</div>
                     </div>
-                    <div class="metric-gauge-card">
+                    <div class="metric-gauge-card" data-search="ram usage ddr4 memory">
                         <div class="gauge-title">RAM Usage</div>
                         <div class="gauge-val" id="tech-ram">34.2%</div>
                         <div class="gauge-sub">175 MB / 512 MB DDR4</div>
                     </div>
-                    <div class="metric-gauge-card">
+                    <div class="metric-gauge-card" data-search="hardware temp thermal zone">
                         <div class="gauge-title">Hardware Temp</div>
                         <div class="gauge-val" id="tech-temp">58.8°C</div>
                         <div class="gauge-sub">Thermal Zone Safe (&lt; 80°C)</div>
                     </div>
-                    <div class="metric-gauge-card">
+                    <div class="metric-gauge-card" data-search="ping latency dns probe">
                         <div class="gauge-title">Ping Latency</div>
                         <div class="gauge-val" id="tech-latency">34.2ms</div>
                         <div class="gauge-sub">1.1.1.1 TCP DNS Probe</div>
@@ -1318,7 +1473,7 @@ body.dark-theme {
             </section>
         </main>
         
-        <!-- DRILLDOWN MODAL -->
+        <!-- DRILLDOWN / MODULE DETAIL MODAL -->
         <div id="modalBackdrop" class="modal-backdrop" onclick="closeDrilldown()">
             <div class="modal-card" onclick="event.stopPropagation()">
                 <div class="modal-header">
@@ -1327,6 +1482,29 @@ body.dark-theme {
                 </div>
                 <div class="modal-body" id="modalBody">
                     <!-- Modal contents generated dynamically -->
+                </div>
+            </div>
+        </div>
+
+        <!-- KEYBOARD HELP MODAL -->
+        <div id="keyboardHelpBackdrop" class="modal-backdrop" onclick="closeKeyboardHelp()">
+            <div class="modal-card" onclick="event.stopPropagation()">
+                <div class="modal-header">
+                    <h3><i class="fa-solid fa-keyboard text-cyan"></i> Keyboard Navigation &amp; Shortcuts</h3>
+                    <button class="modal-close" onclick="closeKeyboardHelp()">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <p>Press any of the following hotkeys to instantly control the dashboard:</p>
+                    <br>
+                    <ul style="list-style: none; display: flex; flex-direction: column; gap: 8px;">
+                        <li><kbd style="background:rgba(255,255,255,0.1); padding:2px 8px; border-radius:4px;">1</kbd> : Switch to <strong>Executive View</strong></li>
+                        <li><kbd style="background:rgba(255,255,255,0.1); padding:2px 8px; border-radius:4px;">2</kbd> : Switch to <strong>Technical View</strong></li>
+                        <li><kbd style="background:rgba(255,255,255,0.1); padding:2px 8px; border-radius:4px;">3</kbd> : Switch to <strong>Status Board</strong></li>
+                        <li><kbd style="background:rgba(255,255,255,0.1); padding:2px 8px; border-radius:4px;">R</kbd> : <strong>Refresh Telemetry Data</strong> now</li>
+                        <li><kbd style="background:rgba(255,255,255,0.1); padding:2px 8px; border-radius:4px;">D</kbd> : Toggle <strong>Dark / Light Mode</strong></li>
+                        <li><kbd style="background:rgba(255,255,255,0.1); padding:2px 8px; border-radius:4px;">E</kbd> : <strong>Export CSV Report</strong></li>
+                        <li><kbd style="background:rgba(255,255,255,0.1); padding:2px 8px; border-radius:4px;">?</kbd> : Show / Hide this <strong>Keyboard Shortcuts Help</strong></li>
+                    </ul>
                 </div>
             </div>
         </div>
@@ -1341,6 +1519,7 @@ let routerHost = 'http://192.168.8.1:8888';
 let pollInterval = 5000;
 let pollTimer = null;
 let consecutiveFailures = 0;
+let lastUpdateTimestamp = Date.now();
 
 let telemetryHistory = {
     timestamps: [],
@@ -1359,15 +1538,87 @@ let currentPage = 1;
 const pageSize = 50;
 
 document.addEventListener('DOMContentLoaded', () => {
+    initTheme();
     generateInitialLogStream();
     initCharts();
     switchView('executive');
+    initKeyboardShortcuts();
     startDataPolling();
+    startStalenessTimer();
 });
+
+function initTheme() {
+    const savedTheme = localStorage.getItem('beryl7_theme') || 'dark';
+    document.body.className = `${savedTheme}-theme`;
+    updateThemeIcon(savedTheme);
+}
+
+function toggleTheme() {
+    const isDark = document.body.classList.contains('dark-theme');
+    const newTheme = isDark ? 'light' : 'dark';
+    document.body.className = `${newTheme}-theme`;
+    localStorage.setItem('beryl7_theme', newTheme);
+    updateThemeIcon(newTheme);
+}
+
+function updateThemeIcon(theme) {
+    const icon = document.getElementById('themeIcon');
+    if (icon) {
+        icon.className = theme === 'dark' ? 'fa-solid fa-moon' : 'fa-solid fa-sun text-gold';
+    }
+}
+
+function initKeyboardShortcuts() {
+    document.addEventListener('keydown', (e) => {
+        if (['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
+        
+        const key = e.key.toLowerCase();
+        if (key === '1') switchView('executive');
+        else if (key === '2') switchView('technical');
+        else if (key === '3') switchView('public');
+        else if (key === 'r') fetchTelemetryData();
+        else if (key === 'd') toggleTheme();
+        else if (key === 'e') exportCSVReport();
+        else if (key === '?') toggleKeyboardHelp();
+    });
+}
+
+function openKeyboardHelp() {
+    document.getElementById('keyboardHelpBackdrop').classList.add('active');
+}
+
+function closeKeyboardHelp() {
+    document.getElementById('keyboardHelpBackdrop').classList.remove('active');
+}
+
+function toggleKeyboardHelp() {
+    const modal = document.getElementById('keyboardHelpBackdrop');
+    modal.classList.toggle('active');
+}
+
+function startStalenessTimer() {
+    setInterval(() => {
+        const elapsedSec = Math.floor((Date.now() - lastUpdateTimestamp) / 1000);
+        const badge = document.getElementById('stalenessIndicator');
+        if (badge) {
+            badge.innerText = `Last updated: ${elapsedSec}s ago`;
+            if (elapsedSec > 30) badge.classList.add('stale');
+            else badge.classList.remove('stale');
+        }
+    }, 1000);
+}
+
+function onRefreshIntervalChange() {
+    const val = parseInt(document.getElementById('refreshIntervalSelect').value, 10);
+    pollInterval = val;
+    if (pollTimer) clearInterval(pollTimer);
+    if (pollInterval > 0) {
+        pollTimer = setInterval(fetchTelemetryData, pollInterval);
+    }
+}
 
 function switchView(viewName) {
     currentView = viewName;
-    
     document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
     document.querySelectorAll('.view-section').forEach(sec => sec.classList.remove('active'));
     
@@ -1387,7 +1638,9 @@ function switchView(viewName) {
 function startDataPolling() {
     fetchTelemetryData();
     if (pollTimer) clearInterval(pollTimer);
-    pollTimer = setInterval(fetchTelemetryData, pollInterval);
+    if (pollInterval > 0) {
+        pollTimer = setInterval(fetchTelemetryData, pollInterval);
+    }
 }
 
 async function fetchTelemetryData() {
@@ -1409,6 +1662,7 @@ async function fetchTelemetryData() {
             if (res.ok) {
                 const data = await res.json();
                 consecutiveFailures = 0;
+                lastUpdateTimestamp = Date.now();
                 errorBanner.classList.remove('active');
                 connIndicator.className = 'connection-status online';
                 connText.innerText = 'ROUTER LIVE';
@@ -1416,18 +1670,17 @@ async function fetchTelemetryData() {
                 updateDashboardWithRealData(data);
                 return;
             } else {
-                throw new Error(`HTTP Error Status ${res.status}`);
+                throw new Error(`HTTP Status ${res.status}`);
             }
         } catch (err) {
             consecutiveFailures++;
-            console.warn(`Router Telemetry Fetch Error (Attempt ${consecutiveFailures}):`, err);
-            
+            console.warn(`Router API Fetch Error (Attempt ${consecutiveFailures}):`, err);
             connIndicator.className = 'connection-status offline';
             connText.innerText = 'ROUTER OFFLINE';
             
             if (consecutiveFailures >= 2) {
                 document.getElementById('errorBannerText').innerText = 
-                    `Connection Warning: Unable to reach Router API at ${routerHost}. System is displaying simulated fallback stream.`;
+                    `Connection Warning: Unable to reach Router API at ${routerHost}. System displaying simulated fallback stream.`;
                 errorBanner.classList.add('active');
             }
         }
@@ -1463,6 +1716,7 @@ function toggleDataMode() {
 
 function updateDashboardWithRealData(data) {
     const timeStr = new Date().toLocaleTimeString();
+    lastUpdateTimestamp = Date.now();
     
     const cpu = data.cpu_usage_pct !== undefined ? data.cpu_usage_pct : 0.8;
     const ram = data.ram_usage_pct !== undefined ? data.ram_usage_pct : 34.2;
@@ -1489,6 +1743,8 @@ function updateDashboardWithRealData(data) {
 
 function updateDashboardWithSimulatedData() {
     const timeStr = new Date().toLocaleTimeString();
+    lastUpdateTimestamp = Date.now();
+    
     const cpu = 0.6 + Math.random() * 0.4;
     const ram = 34.0 + Math.random() * 0.6;
     const temp = 58.4 + Math.random() * 0.8;
@@ -1554,9 +1810,7 @@ function initCharts() {
         options: {
             responsive: true,
             maintainAspectRatio: false,
-            plugins: {
-                legend: { labels: { color: '#94a3b8', font: { family: 'Inter' } } }
-            },
+            plugins: { legend: { labels: { color: '#94a3b8', font: { family: 'Inter' } } } },
             scales: {
                 x: { ticks: { color: '#64748b' }, grid: { color: 'rgba(255,255,255,0.04)' } },
                 y: { min: 95, max: 100, ticks: { color: '#64748b' }, grid: { color: 'rgba(255,255,255,0.04)' } }
@@ -1663,15 +1917,32 @@ function renderLogPage() {
     const pageItems = filtered.slice(startIndex, startIndex + pageSize);
     
     const term = document.getElementById('logTerminal');
-    term.innerHTML = pageItems.map(l => `
-        <div class="log-line">
-            <span class="log-time">[${l.time}]</span>
-            <span class="log-level-${l.level}">[${l.level}]</span>
-            <span class="log-msg">${l.msg}</span>
-        </div>
-    `).join('');
+    term.innerHTML = '';
     
-    document.getElementById('paginationInfo').innerText = `Showing ${startIndex + 1}-${Math.min(startIndex + pageSize, filtered.length)} of ${filtered.length} logs (Page ${currentPage}/${totalPages})`;
+    pageItems.forEach(l => {
+        const lineDiv = document.createElement('div');
+        lineDiv.className = 'log-line';
+        
+        const timeSpan = document.createElement('span');
+        timeSpan.className = 'log-time';
+        timeSpan.textContent = `[${l.time}]`;
+        
+        const levelSpan = document.createElement('span');
+        levelSpan.className = `log-level-${l.level}`;
+        levelSpan.textContent = `[${l.level}]`;
+        
+        const msgSpan = document.createElement('span');
+        msgSpan.className = 'log-msg';
+        msgSpan.textContent = l.msg;
+        
+        lineDiv.appendChild(timeSpan);
+        lineDiv.appendChild(levelSpan);
+        lineDiv.appendChild(msgSpan);
+        term.appendChild(lineDiv);
+    });
+    
+    document.getElementById('paginationInfo').innerText = 
+        `Showing ${startIndex + 1}-${Math.min(startIndex + pageSize, filtered.length)} of ${filtered.length} logs (Page ${currentPage}/${totalPages})`;
     document.getElementById('prevPageBtn').disabled = currentPage === 1;
     document.getElementById('nextPageBtn').disabled = currentPage === totalPages;
 }
@@ -1684,6 +1955,25 @@ function changeLogPage(delta) {
 function onLogFilterChange() {
     currentPage = 1;
     renderLogPage();
+}
+
+function onMetricSearchChange() {
+    const q = document.getElementById('metricSearchInput').value.toLowerCase();
+    
+    document.querySelectorAll('#moduleHealthSection .module-card').forEach(card => {
+        const text = (card.getAttribute('data-search') || '' + card.innerText).toLowerCase();
+        card.style.display = text.includes(q) ? 'block' : 'none';
+    });
+    
+    document.querySelectorAll('#telemetryGaugesSection .metric-gauge-card').forEach(card => {
+        const text = (card.getAttribute('data-search') || '' + card.innerText).toLowerCase();
+        card.style.display = text.includes(q) ? 'block' : 'none';
+    });
+}
+
+function toggleNotificationDrawer() {
+    const drawer = document.getElementById('notificationDrawer');
+    drawer.classList.toggle('active');
 }
 
 function openModuleDetail(modName) {
@@ -1762,35 +2052,19 @@ function openDrilldown(metricKey) {
     const details = {
         uptime: {
             title: 'System Uptime & Availability Analysis',
-            content: `
-                <p><strong>Target SLA/SLO:</strong> 99.0% | <strong>Actual:</strong> 99.8%</p>
-                <br>
-                <p>The native Go daemon running on OpenWrt (PID 6146) has operated continuously without unhandled crashes. All PID file locks and Watchdog health checks have passed 100% of telemetry loops.</p>
-            `
+            content: `<p><strong>Target SLA/SLO:</strong> 99.0% | <strong>Actual:</strong> 99.8%</p><br><p>The native Go daemon running on OpenWrt (PID 6146) has operated continuously without unhandled crashes.</p>`
         },
         success_rate: {
             title: 'Autonomous AI Remediation Success',
-            content: `
-                <p><strong>Target Success Rate:</strong> 98.0% | <strong>Actual:</strong> 98.9%</p>
-                <br>
-                <p>Learned skills stored in SQLite WAL database are updated via Exponential Moving Average (EMA). High-confidence decisions (&ge; 85%) execute instantly in &lt; 1 ms without cloud latency.</p>
-            `
+            content: `<p><strong>Target Success Rate:</strong> 98.0% | <strong>Actual:</strong> 98.9%</p><br><p>Learned skills stored in SQLite WAL database execute instantly in &lt; 1 ms.</p>`
         },
         mttr: {
             title: 'Mean Time to Resolution (MTTR)',
-            content: `
-                <p><strong>Local Hit Latency:</strong> &lt; 1 ms | <strong>Cloud AI Latency:</strong> ~ 280 ms</p>
-                <br>
-                <p>When an anomaly matches a learned skill in SkillStore, execution occurs instantaneously. Cloud Gemini 2.5 Flash API calls are only triggered for unknown zero-day anomaly patterns.</p>
-            `
+            content: `<p><strong>Local Hit Latency:</strong> &lt; 1 ms | <strong>Cloud AI Latency:</strong> ~ 280 ms</p><br><p>When an anomaly matches a learned skill, execution occurs instantaneously.</p>`
         },
         slo: {
             title: 'SLO Compliance Audit Matrix',
-            content: `
-                <p><strong>Overall SLO Score:</strong> 100.0% (Grade A++)</p>
-                <br>
-                <p>Passes all 35-point security & system audit criteria, including non-shell command execution, UCI section matching on MT7993 Filogic hardware, and constant-time API authentication.</p>
-            `
+            content: `<p><strong>Overall SLO Score:</strong> 100.0% (Grade A++)</p><br><p>Passes all 35-point security & system audit criteria.</p>`
         }
     };
     

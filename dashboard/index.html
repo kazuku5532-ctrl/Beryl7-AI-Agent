@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Beryl 7 AI Agent - Enterprise Operations Dashboard</title>
+    <title>Beryl 7 AI Agent - Enterprise Operations Dashboard (5-Star Edition)</title>
     
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -28,7 +28,7 @@
                 <div class="logo-icon"><i class="fa-solid fa-shield-halved"></i></div>
                 <div class="brand-text">
                     <span class="brand-title">BERYL 7 <span class="badge-ai">AI AGENT</span></span>
-                    <span class="brand-subtitle">Autonomous Network Remediation & Skill Engine</span>
+                    <span class="brand-subtitle">Autonomous Network Remediation &amp; Skill Engine</span>
                 </div>
             </div>
             
@@ -47,13 +47,25 @@
             
             <!-- CONTROLS & STATUS -->
             <div class="nav-controls">
+                <span id="stalenessIndicator" class="staleness-badge">Last updated: 0s ago</span>
+
                 <div class="connection-status online" id="connection-indicator">
                     <span class="status-dot"></span>
                     <span id="connection-text">ROUTER LIVE</span>
                 </div>
+
+                <div class="dropdown-selector">
+                    <select id="refreshIntervalSelect" onchange="onRefreshIntervalChange()" title="Custom Polling Refresh Interval">
+                        <option value="1000">1s Refresh</option>
+                        <option value="5000" selected>5s Refresh</option>
+                        <option value="10000">10s Refresh</option>
+                        <option value="30000">30s Refresh</option>
+                        <option value="0">Manual Only</option>
+                    </select>
+                </div>
                 
-                <div class="time-range-selector">
-                    <select id="timeRangeSelect" onchange="onTimeRangeChange()">
+                <div class="dropdown-selector">
+                    <select id="timeRangeSelect" onchange="onTimeRangeChange()" title="Historical Data Range">
                         <option value="1h">Last 1 Hour</option>
                         <option value="24h" selected>Last 24 Hours</option>
                         <option value="7d">Last 7 Days</option>
@@ -61,16 +73,47 @@
                     </select>
                 </div>
                 
+                <!-- Notification Bell Drawer Button -->
+                <button class="btn-icon" title="Notifications & System Alerts" onclick="toggleNotificationDrawer()">
+                    <i class="fa-solid fa-bell"></i>
+                    <span class="badge-unread-count" id="notifBadge">0</span>
+                </button>
+
+                <!-- Theme Toggle Button -->
+                <button class="btn-icon" title="Toggle Dark / Light Theme (Key: D)" onclick="toggleTheme()">
+                    <i class="fa-solid fa-moon" id="themeIcon"></i>
+                </button>
+
+                <!-- Keyboard Shortcuts Help -->
+                <button class="btn-icon" title="Keyboard Shortcuts Help (Key: ?)" onclick="openKeyboardHelp()">
+                    <i class="fa-solid fa-keyboard"></i>
+                </button>
+
+                <!-- Mode Toggle -->
                 <button class="btn-icon" title="Toggle Live / Simulation Data Mode" onclick="toggleDataMode()">
                     <i class="fa-solid fa-sliders" id="dataModeIcon"></i>
                 </button>
 
-                <button class="btn-action btn-export" onclick="exportCSVReport()">
+                <button class="btn-action btn-export" onclick="exportCSVReport()" title="Export Metric Report (Key: E)">
                     <i class="fa-solid fa-download"></i> Export CSV
                 </button>
             </div>
         </header>
         
+        <!-- NOTIFICATIONS DRAWER -->
+        <div id="notificationDrawer" class="notification-drawer">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-bell text-gold"></i> System Alerts &amp; Notifications</h3>
+                <button class="modal-close" onclick="toggleNotificationDrawer()">&times;</button>
+            </div>
+            <div class="notification-list" id="notificationList">
+                <div class="notification-item">
+                    <p><strong>System Initialization:</strong> Go Daemon PID 6146 connected via WebSocket telemetry.</p>
+                    <span class="text-subtle">Just now</span>
+                </div>
+            </div>
+        </div>
+
         <!-- MAIN DASHBOARD CONTENT AREA -->
         <main class="main-content">
             
@@ -88,7 +131,7 @@
                 <div class="hero-status-banner healthy">
                     <div class="hero-icon"><i class="fa-solid fa-circle-check"></i></div>
                     <div class="hero-info">
-                        <h2>SYSTEM STATUS: OPERATIONAL & HEALTHY</h2>
+                        <h2>SYSTEM STATUS: OPERATIONAL &amp; HEALTHY</h2>
                         <p>GL.iNet Beryl 7 (GL-MT3600BE) OpenWrt Native Go Daemon is running with 0 unhandled anomalies.</p>
                     </div>
                     <div class="hero-stats">
@@ -166,7 +209,7 @@
                                     <span class="slo-score" id="slo-avail-score">99.8%</span>
                                 </div>
                                 <div class="progress-bar-bg">
-                                    <div class="progress-bar-fill emerald" style="width: 99.8%;"></div>
+                                    <div class="progress-bar-fill emerald" id="slo-bar-avail" style="width: 99.8%;"></div>
                                 </div>
                             </div>
                             
@@ -176,7 +219,7 @@
                                     <span class="slo-score" id="slo-cache-score">91.4%</span>
                                 </div>
                                 <div class="progress-bar-bg">
-                                    <div class="progress-bar-fill cyan" style="width: 91.4%;"></div>
+                                    <div class="progress-bar-fill cyan" id="slo-bar-cache" style="width: 91.4%;"></div>
                                 </div>
                             </div>
                             
@@ -196,7 +239,7 @@
                                     <span class="slo-score" id="slo-ram-score">34.2%</span>
                                 </div>
                                 <div class="progress-bar-bg">
-                                    <div class="progress-bar-fill emerald" style="width: 34.2%;"></div>
+                                    <div class="progress-bar-fill emerald" id="slo-bar-ram" style="width: 34.2%;"></div>
                                 </div>
                             </div>
                         </div>
@@ -224,7 +267,7 @@
                         <div class="action-feed-badge success"><i class="fa-solid fa-wand-magic-sparkles"></i></div>
                         <div class="action-feed-details">
                             <div class="action-feed-title" id="exec-feed-title">tune_network_performance</div>
-                            <div class="action-feed-desc" id="exec-feed-desc">Maxed TCP Socket Buffers to 16MB & Enabled A-MPDU Wi-Fi Aggregation without association drops.</div>
+                            <div class="action-feed-desc" id="exec-feed-desc">Maxed TCP Socket Buffers to 16MB &amp; Enabled A-MPDU Wi-Fi Aggregation without association drops.</div>
                         </div>
                         <div class="action-feed-meta">
                             <span class="badge-confidence">Confidence: 98.5%</span>
@@ -237,15 +280,20 @@
             <!-- ================= TECHNICAL VIEW (TAB 2) ================= -->
             <section id="view-technical" class="view-section">
                 
+                <!-- INTERACTIVE METRIC SEARCH BAR -->
+                <div class="metric-search-wrapper">
+                    <input type="text" id="metricSearchInput" placeholder="Search architecture modules, gauges, and system metrics in real-time..." oninput="onMetricSearchChange()">
+                </div>
+
                 <!-- MODULE HEALTH STATUS GRID (6 MODULES) -->
-                <div class="panel-card margin-bottom-lg">
+                <div class="panel-card margin-bottom-lg" id="moduleHealthSection">
                     <div class="panel-header">
                         <h3><i class="fa-solid fa-cubes text-cyan"></i> Beryl 7 Core Architecture Module Status</h3>
                         <span class="tag-status tag-pass">6/6 MODULES HEALTHY</span>
                     </div>
                     
                     <div class="module-grid-6">
-                        <div class="module-card healthy" onclick="openModuleDetail('orchestrator')">
+                        <div class="module-card healthy" onclick="openModuleDetail('orchestrator')" data-search="orchestrator priority loop">
                             <div class="module-header">
                                 <span class="module-name">Orchestrator Loop</span>
                                 <span class="badge-status-dot"></span>
@@ -254,7 +302,7 @@
                             <div class="module-stat">Main Loop: <strong>5s Interval</strong></div>
                         </div>
                         
-                        <div class="module-card healthy" onclick="openModuleDetail('executor')">
+                        <div class="module-card healthy" onclick="openModuleDetail('executor')" data-search="executor uci mt7993 whitelist">
                             <div class="module-header">
                                 <span class="module-name">Executor Engine</span>
                                 <span class="badge-status-dot"></span>
@@ -263,7 +311,7 @@
                             <div class="module-stat">UCI Sections: <strong>MT7993 Match</strong></div>
                         </div>
                         
-                        <div class="module-card healthy" onclick="openModuleDetail('ai')">
+                        <div class="module-card healthy" onclick="openModuleDetail('ai')" data-search="cloud ai gemini model flash">
                             <div class="module-header">
                                 <span class="module-name">Cloud AI (Gemini)</span>
                                 <span class="badge-status-dot"></span>
@@ -272,7 +320,7 @@
                             <div class="module-stat">Model: <strong>2.5 Flash</strong></div>
                         </div>
                         
-                        <div class="module-card healthy" onclick="openModuleDetail('watchdog')">
+                        <div class="module-card healthy" onclick="openModuleDetail('watchdog')" data-search="watchdog checkpoint rollback safe">
                             <div class="module-header">
                                 <span class="module-name">Watchdog Engine</span>
                                 <span class="badge-status-dot"></span>
@@ -281,7 +329,7 @@
                             <div class="module-stat">Rollback: <strong>Selective</strong></div>
                         </div>
 
-                        <div class="module-card healthy" onclick="openModuleDetail('parser')">
+                        <div class="module-card healthy" onclick="openModuleDetail('parser')" data-search="log parser logread regex">
                             <div class="module-header">
                                 <span class="module-name">Log Parser</span>
                                 <span class="badge-status-dot"></span>
@@ -290,7 +338,7 @@
                             <div class="module-stat">Patterns: <strong>Regex Match</strong></div>
                         </div>
 
-                        <div class="module-card healthy" onclick="openModuleDetail('skillstore')">
+                        <div class="module-card healthy" onclick="openModuleDetail('skillstore')" data-search="skill store sqlite wal ema">
                             <div class="module-header">
                                 <span class="module-name">Skill Store (EMA)</span>
                                 <span class="badge-status-dot"></span>
@@ -302,23 +350,23 @@
                 </div>
                 
                 <!-- LIVE TELEMETRY METRICS GRID -->
-                <div class="grid-4-cols margin-bottom-lg">
-                    <div class="metric-gauge-card">
+                <div class="grid-4-cols margin-bottom-lg" id="telemetryGaugesSection">
+                    <div class="metric-gauge-card" data-search="cpu load filogic quad-core">
                         <div class="gauge-title">CPU Load</div>
                         <div class="gauge-val" id="tech-cpu">0.8%</div>
                         <div class="gauge-sub">Quad-Core Filogic 2.0GHz</div>
                     </div>
-                    <div class="metric-gauge-card">
+                    <div class="metric-gauge-card" data-search="ram usage ddr4 memory">
                         <div class="gauge-title">RAM Usage</div>
                         <div class="gauge-val" id="tech-ram">34.2%</div>
                         <div class="gauge-sub">175 MB / 512 MB DDR4</div>
                     </div>
-                    <div class="metric-gauge-card">
+                    <div class="metric-gauge-card" data-search="hardware temp thermal zone">
                         <div class="gauge-title">Hardware Temp</div>
                         <div class="gauge-val" id="tech-temp">58.8°C</div>
                         <div class="gauge-sub">Thermal Zone Safe (&lt; 80°C)</div>
                     </div>
-                    <div class="metric-gauge-card">
+                    <div class="metric-gauge-card" data-search="ping latency dns probe">
                         <div class="gauge-title">Ping Latency</div>
                         <div class="gauge-val" id="tech-latency">34.2ms</div>
                         <div class="gauge-sub">1.1.1.1 TCP DNS Probe</div>
@@ -409,7 +457,7 @@
             </section>
         </main>
         
-        <!-- DRILLDOWN MODAL -->
+        <!-- DRILLDOWN / MODULE DETAIL MODAL -->
         <div id="modalBackdrop" class="modal-backdrop" onclick="closeDrilldown()">
             <div class="modal-card" onclick="event.stopPropagation()">
                 <div class="modal-header">
@@ -418,6 +466,29 @@
                 </div>
                 <div class="modal-body" id="modalBody">
                     <!-- Modal contents generated dynamically -->
+                </div>
+            </div>
+        </div>
+
+        <!-- KEYBOARD HELP MODAL -->
+        <div id="keyboardHelpBackdrop" class="modal-backdrop" onclick="closeKeyboardHelp()">
+            <div class="modal-card" onclick="event.stopPropagation()">
+                <div class="modal-header">
+                    <h3><i class="fa-solid fa-keyboard text-cyan"></i> Keyboard Navigation &amp; Shortcuts</h3>
+                    <button class="modal-close" onclick="closeKeyboardHelp()">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <p>Press any of the following hotkeys to instantly control the dashboard:</p>
+                    <br>
+                    <ul style="list-style: none; display: flex; flex-direction: column; gap: 8px;">
+                        <li><kbd style="background:rgba(255,255,255,0.1); padding:2px 8px; border-radius:4px;">1</kbd> : Switch to <strong>Executive View</strong></li>
+                        <li><kbd style="background:rgba(255,255,255,0.1); padding:2px 8px; border-radius:4px;">2</kbd> : Switch to <strong>Technical View</strong></li>
+                        <li><kbd style="background:rgba(255,255,255,0.1); padding:2px 8px; border-radius:4px;">3</kbd> : Switch to <strong>Status Board</strong></li>
+                        <li><kbd style="background:rgba(255,255,255,0.1); padding:2px 8px; border-radius:4px;">R</kbd> : <strong>Refresh Telemetry Data</strong> now</li>
+                        <li><kbd style="background:rgba(255,255,255,0.1); padding:2px 8px; border-radius:4px;">D</kbd> : Toggle <strong>Dark / Light Mode</strong></li>
+                        <li><kbd style="background:rgba(255,255,255,0.1); padding:2px 8px; border-radius:4px;">E</kbd> : <strong>Export CSV Report</strong></li>
+                        <li><kbd style="background:rgba(255,255,255,0.1); padding:2px 8px; border-radius:4px;">?</kbd> : Show / Hide this <strong>Keyboard Shortcuts Help</strong></li>
+                    </ul>
                 </div>
             </div>
         </div>
