@@ -74,6 +74,13 @@
         <!-- MAIN DASHBOARD CONTENT AREA -->
         <main class="main-content">
             
+            <!-- ERROR / DEGRADATION NOTIFICATION BANNER -->
+            <div id="errorBanner" class="error-degradation-banner">
+                <i class="fa-solid fa-triangle-exclamation"></i>
+                <span id="errorBannerText">Connection Warning: Unable to reach Router API. Retrying in 5 seconds...</span>
+                <button onclick="switchToSimulationFallback()">Switch to Simulation Stream</button>
+            </div>
+
             <!-- ================= EXECUTIVE VIEW (TAB 1) ================= -->
             <section id="view-executive" class="view-section active">
                 
@@ -198,7 +205,7 @@
                     <!-- 7-DAY TREND CHART -->
                     <div class="panel-card">
                         <div class="panel-header">
-                            <h3><i class="fa-solid fa-chart-line text-emerald"></i> 7-Day Performance & Reliability Trend</h3>
+                            <h3><i class="fa-solid fa-chart-line text-emerald"></i> Performance &amp; Reliability Trend</h3>
                             <span class="tag-status">Live Metric Stream</span>
                         </div>
                         <div class="chart-wrapper">
@@ -238,7 +245,7 @@
                     </div>
                     
                     <div class="module-grid-6">
-                        <div class="module-card healthy">
+                        <div class="module-card healthy" onclick="openModuleDetail('orchestrator')">
                             <div class="module-header">
                                 <span class="module-name">Orchestrator Loop</span>
                                 <span class="badge-status-dot"></span>
@@ -247,7 +254,7 @@
                             <div class="module-stat">Main Loop: <strong>5s Interval</strong></div>
                         </div>
                         
-                        <div class="module-card healthy">
+                        <div class="module-card healthy" onclick="openModuleDetail('executor')">
                             <div class="module-header">
                                 <span class="module-name">Executor Engine</span>
                                 <span class="badge-status-dot"></span>
@@ -256,7 +263,7 @@
                             <div class="module-stat">UCI Sections: <strong>MT7993 Match</strong></div>
                         </div>
                         
-                        <div class="module-card healthy">
+                        <div class="module-card healthy" onclick="openModuleDetail('ai')">
                             <div class="module-header">
                                 <span class="module-name">Cloud AI (Gemini)</span>
                                 <span class="badge-status-dot"></span>
@@ -265,7 +272,7 @@
                             <div class="module-stat">Model: <strong>2.5 Flash</strong></div>
                         </div>
                         
-                        <div class="module-card healthy">
+                        <div class="module-card healthy" onclick="openModuleDetail('watchdog')">
                             <div class="module-header">
                                 <span class="module-name">Watchdog Engine</span>
                                 <span class="badge-status-dot"></span>
@@ -274,7 +281,7 @@
                             <div class="module-stat">Rollback: <strong>Selective</strong></div>
                         </div>
 
-                        <div class="module-card healthy">
+                        <div class="module-card healthy" onclick="openModuleDetail('parser')">
                             <div class="module-header">
                                 <span class="module-name">Log Parser</span>
                                 <span class="badge-status-dot"></span>
@@ -283,7 +290,7 @@
                             <div class="module-stat">Patterns: <strong>Regex Match</strong></div>
                         </div>
 
-                        <div class="module-card healthy">
+                        <div class="module-card healthy" onclick="openModuleDetail('skillstore')">
                             <div class="module-header">
                                 <span class="module-name">Skill Store (EMA)</span>
                                 <span class="badge-status-dot"></span>
@@ -322,7 +329,7 @@
                 <div class="grid-2-cols margin-bottom-lg">
                     <div class="panel-card">
                         <div class="panel-header">
-                            <h3><i class="fa-solid fa-chart-area text-blue"></i> Real-time Network Throughput & Latency</h3>
+                            <h3><i class="fa-solid fa-chart-area text-blue"></i> Real-time Network Throughput &amp; Latency</h3>
                         </div>
                         <div class="chart-wrapper">
                             <canvas id="techLatencyChart"></canvas>
@@ -342,10 +349,10 @@
                 <!-- REAL-TIME LOG STREAM & SEARCH FILTER -->
                 <div class="panel-card">
                     <div class="panel-header">
-                        <h3><i class="fa-solid fa-terminal text-purple"></i> Live OpenWrt Logread & Agent Event Stream</h3>
+                        <h3><i class="fa-solid fa-terminal text-purple"></i> Live OpenWrt Logread Stream</h3>
                         <div class="log-controls">
-                            <input type="text" id="logSearchInput" placeholder="Filter logs by keyword..." oninput="filterLogs()">
-                            <select id="logLevelSelect" onchange="filterLogs()">
+                            <input type="text" id="logSearchInput" placeholder="Filter logs..." oninput="onLogFilterChange()">
+                            <select id="logLevelSelect" onchange="onLogFilterChange()">
                                 <option value="ALL">All Levels</option>
                                 <option value="ERROR">ERROR only</option>
                                 <option value="WARN">WARN &amp; ERROR</option>
@@ -354,7 +361,16 @@
                         </div>
                     </div>
                     <div class="log-terminal-window" id="logTerminal">
-                        <!-- Log lines rendered by app.js -->
+                        <!-- Log lines rendered dynamically -->
+                    </div>
+                    
+                    <!-- PAGINATION CONTROLS -->
+                    <div class="log-pagination">
+                        <span id="paginationInfo" class="text-subtle">Showing 1-50 of 50 logs</span>
+                        <div>
+                            <button id="prevPageBtn" class="pagination-btn" onclick="changeLogPage(-1)" disabled>&laquo; Previous</button>
+                            <button id="nextPageBtn" class="pagination-btn" onclick="changeLogPage(1)" disabled>Next &raquo;</button>
+                        </div>
                     </div>
                 </div>
             </section>
@@ -367,15 +383,15 @@
                             <i class="fa-solid fa-circle-check"></i> SYSTEM OPERATIONAL
                         </div>
                         <h1 class="public-title">GL.iNet Beryl 7 Network Agent</h1>
-                        <p class="public-subtitle">Autonomous Health & Remediation Control Center</p>
+                        <p class="public-subtitle">Autonomous Health &amp; Remediation Control Center</p>
                         
                         <div class="public-metrics-grid">
                             <div class="public-metric">
-                                <span class="pub-val">99.8%</span>
+                                <span class="pub-val" id="pub-uptime-val">99.8%</span>
                                 <span class="pub-lbl">Uptime (24h)</span>
                             </div>
                             <div class="public-metric">
-                                <span class="pub-val">34 ms</span>
+                                <span class="pub-val" id="pub-lat-val">34 ms</span>
                                 <span class="pub-lbl">Network Latency</span>
                             </div>
                             <div class="public-metric">

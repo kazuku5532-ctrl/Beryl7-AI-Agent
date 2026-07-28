@@ -1,6 +1,7 @@
 /* ==========================================================================
    BERYL 7 AI AGENT - ENTERPRISE DASHBOARD STYLESHEET
    Design System: Glassmorphism Dark Mode with Vibrant HSL Color Tokens
+   v14.2 Production Edition with Mobile 48px Touch Targets & Error State UI
    ========================================================================== */
 
 :root {
@@ -25,6 +26,7 @@
     --gold: #f59e0b;
     --gold-glow: rgba(245, 158, 11, 0.25);
     --rose: #f43f5e;
+    --rose-glow: rgba(244, 63, 94, 0.25);
 
     /* Typography */
     --font-heading: 'Outfit', sans-serif;
@@ -84,9 +86,9 @@ body.dark-theme {
     color: #fff;
     display: flex;
     font-size: 20px;
-    height: 42px;
+    height: 44px;
     justify-content: center;
-    width: 42px;
+    width: 44px;
 }
 
 .brand-text {
@@ -115,7 +117,7 @@ body.dark-theme {
     font-size: 12px;
 }
 
-/* View Tabs Switcher */
+/* View Tabs Switcher - 48px Touch Target Optimized */
 
 .view-tabs {
     background: rgba(255, 255, 255, 0.04);
@@ -135,10 +137,11 @@ body.dark-theme {
     cursor: pointer;
     display: flex;
     font-family: var(--font-body);
-    font-size: 13px;
+    font-size: 13.5px;
     font-weight: 600;
     gap: 8px;
-    padding: 8px 18px;
+    min-height: 48px; /* Mobile WCAG 48px Touch Target */
+    padding: 10px 22px;
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
@@ -149,11 +152,11 @@ body.dark-theme {
 .tab-btn.active {
     background: linear-gradient(135deg, rgba(56, 189, 248, 0.2), rgba(16, 185, 129, 0.2));
     border: 1px solid rgba(56, 189, 248, 0.3);
-    box-shadow: 0 0 12px var(--cyan-glow);
+    box-shadow: 0 0 14px var(--cyan-glow);
     color: var(--cyan);
 }
 
-/* Nav Controls */
+/* Nav Controls - 48px Touch Target Optimized */
 
 .nav-controls {
     align-items: center;
@@ -171,7 +174,16 @@ body.dark-theme {
     font-size: 12px;
     font-weight: 700;
     gap: 8px;
-    padding: 6px 14px;
+    min-height: 44px;
+    padding: 8px 16px;
+    transition: all 0.3s ease;
+}
+
+.connection-status.offline {
+    background: rgba(244, 63, 94, 0.15);
+    border-color: rgba(244, 63, 94, 0.4);
+    box-shadow: 0 0 12px var(--rose-glow);
+    color: var(--rose);
 }
 
 .status-dot {
@@ -182,6 +194,11 @@ body.dark-theme {
     display: inline-block;
     height: 8px;
     width: 8px;
+}
+
+.connection-status.offline .status-dot {
+    background-color: var(--rose);
+    box-shadow: 0 0 8px var(--rose);
 }
 
 @keyframes pulse {
@@ -198,7 +215,8 @@ body.dark-theme {
     cursor: pointer;
     font-family: var(--font-body);
     font-size: 13px;
-    padding: 7px 12px;
+    min-height: 48px; /* Mobile WCAG 48px Touch Target */
+    padding: 10px 14px;
 }
 
 .btn-icon {
@@ -209,11 +227,11 @@ body.dark-theme {
     color: var(--text-secondary);
     cursor: pointer;
     display: flex;
-    font-size: 15px;
-    height: 34px;
+    font-size: 16px;
+    height: 48px; /* Mobile WCAG 48px Touch Target */
     justify-content: center;
     transition: all 0.2s ease;
-    width: 34px;
+    width: 48px;
 }
 
 .btn-icon:hover {
@@ -230,10 +248,11 @@ body.dark-theme {
     cursor: pointer;
     display: flex;
     font-family: var(--font-body);
-    font-size: 13px;
+    font-size: 13.5px;
     font-weight: 600;
     gap: 8px;
-    padding: 8px 16px;
+    min-height: 48px; /* Mobile WCAG 48px Touch Target */
+    padding: 10px 20px;
     transition: all 0.2s ease;
 }
 
@@ -241,7 +260,37 @@ body.dark-theme {
     transform: translateY(-1px);
 }
 
-/* ================= MAIN CONTENT & SECTIONS ================= */
+/* ERROR DEGRADATION BANNER */
+
+.error-degradation-banner {
+    align-items: center;
+    background: rgba(244, 63, 94, 0.12);
+    border: 1px solid rgba(244, 63, 94, 0.3);
+    border-radius: var(--radius-md);
+    color: var(--rose);
+    display: none;
+    gap: 14px;
+    margin-bottom: 20px;
+    padding: 14px 20px;
+}
+
+.error-degradation-banner.active {
+    animation: fadeIn 0.3s ease;
+    display: flex;
+}
+
+.error-degradation-banner button {
+    background: var(--rose);
+    border: none;
+    border-radius: var(--radius-sm);
+    color: #fff;
+    cursor: pointer;
+    font-weight: 700;
+    margin-left: auto;
+    padding: 8px 16px;
+}
+
+/* MAIN CONTENT & SECTIONS */
 
 .main-content {
     max-width: 1440px;
@@ -263,7 +312,7 @@ body.dark-theme {
     to { opacity: 1; transform: translateY(0); }
 }
 
-/* ================= HERO STATUS BANNER ================= */
+/* HERO STATUS BANNER */
 
 .hero-status-banner {
     align-items: center;
@@ -284,7 +333,6 @@ body.dark-theme {
     color: var(--emerald);
     display: flex;
     font-size: 36px;
-
 }
 
 .hero-info h2 {
@@ -318,7 +366,6 @@ body.dark-theme {
 .stat-label {
     color: var(--text-subtle);
     font-size: 11px;
-
     text-transform: uppercase;
 }
 
@@ -331,7 +378,7 @@ body.dark-theme {
 .stat-val.emerald { color: var(--emerald); }
 .stat-val.cyan { color: var(--cyan); }
 
-/* ================= KPI CARDS GRID ================= */
+/* KPI CARDS GRID */
 
 .kpi-grid-4 {
     display: grid;
@@ -401,7 +448,7 @@ body.dark-theme {
 .text-purple { color: var(--purple); }
 .text-subtle { color: var(--text-subtle); }
 
-/* ================= PANEL CARDS & GRIDS ================= */
+/* PANEL CARDS & GRIDS */
 
 .grid-2-cols {
     display: grid;
@@ -437,12 +484,17 @@ body.dark-theme {
     font-weight: 700;
 }
 
+.chart-wrapper {
+    height: 240px;
+    position: relative;
+    width: 100%;
+}
+
 .tag-status {
     background: rgba(255, 255, 255, 0.05);
     border-radius: 20px;
     color: var(--text-secondary);
     font-size: 11px;
-
     padding: 4px 12px;
 }
 
@@ -551,7 +603,7 @@ body.dark-theme {
     font-size: 11px;
 }
 
-/* ================= TECHNICAL VIEW STYLES ================= */
+/* TECHNICAL VIEW STYLES */
 
 .margin-bottom-lg {
     margin-bottom: 24px;
@@ -567,7 +619,15 @@ body.dark-theme {
     background: rgba(255, 255, 255, 0.03);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
+    cursor: pointer;
     padding: 14px 16px;
+    transition: all 0.2s ease;
+}
+
+.module-card:hover {
+    background: rgba(56, 189, 248, 0.08);
+    border-color: var(--border-glow);
+    transform: translateY(-2px);
 }
 
 .module-card.healthy {
@@ -617,7 +677,6 @@ body.dark-theme {
 .gauge-title {
     color: var(--text-subtle);
     font-size: 12px;
-
     text-transform: uppercase;
 }
 
@@ -633,9 +692,10 @@ body.dark-theme {
     font-size: 11px;
 }
 
-/* Log Terminal Window */
+/* Log Terminal Window & Pagination */
 
 .log-controls {
+    align-items: center;
     display: flex;
     gap: 10px;
 }
@@ -675,15 +735,43 @@ body.dark-theme {
 .log-line {
     display: flex;
     gap: 12px;
+    padding: 2px 0;
 }
 
-.log-time { color: var(--text-subtle); }
-.log-level-INFO { color: var(--cyan); }
-.log-level-WARN { color: var(--gold); }
-.log-level-ERROR { color: var(--rose); }
-.log-msg { color: var(--text-primary); }
+.log-time { color: var(--text-subtle); min-width: 65px; }
+.log-level-INFO { color: var(--cyan); font-weight: 700; min-width: 50px; }
+.log-level-WARN { color: var(--gold); font-weight: 700; min-width: 50px; }
+.log-level-ERROR { color: var(--rose); font-weight: 700; min-width: 50px; }
+.log-msg { color: var(--text-primary); word-break: break-word; }
 
-/* ================= PUBLIC STATUS BOARD STYLES ================= */
+.log-pagination {
+    align-items: center;
+    display: flex;
+    justify-content: space-between;
+    margin-top: 12px;
+}
+
+.pagination-btn {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 12px;
+    min-height: 36px;
+    padding: 6px 14px;
+}
+
+.pagination-btn:hover:not(:disabled) {
+    color: var(--cyan);
+}
+
+.pagination-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+/* PUBLIC STATUS BOARD STYLES */
 
 .public-status-wrapper {
     align-items: center;
@@ -773,7 +861,7 @@ body.dark-theme {
     font-size: 12px;
 }
 
-/* ================= MODAL STYLES ================= */
+/* MODAL STYLES */
 
 .modal-backdrop {
     align-items: center;
@@ -826,7 +914,7 @@ body.dark-theme {
     line-height: 1.6;
 }
 
-/* Responsive Breakpoints */
+/* Responsive Breakpoints & WCAG Touch Targets */
 
 @media (max-width: 1024px) {
     .kpi-grid-4, .grid-4-cols, .module-grid-6 {
@@ -844,5 +932,20 @@ body.dark-theme {
     .top-navbar {
         flex-direction: column;
         gap: 12px;
+        padding: 14px 16px;
+    }
+    .view-tabs {
+        width: 100%;
+        justify-content: space-between;
+    }
+    .tab-btn {
+        flex: 1;
+        justify-content: center;
+        padding: 10px 8px;
+        font-size: 12px;
+    }
+    .nav-controls {
+        width: 100%;
+        justify-content: space-between;
     }
 }
