@@ -14,6 +14,13 @@ class DashboardHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=DASHBOARD_DIR, **kwargs)
 
+    def do_OPTIONS(self):
+        self.send_response(200)
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Authorization, Content-Type, x-goog-api-key")
+        self.end_headers()
+
     def do_GET(self):
         if self.path == "/api/health" or self.path == "/api/v1/health":
             self.handle_api_health()

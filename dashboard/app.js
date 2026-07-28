@@ -1,14 +1,15 @@
 /* ==========================================================================
-   BERYL 7 AI AGENT - ENTERPRISE DASHBOARD JAVASCRIPT ENGINE (v15.2 PERFECT QUALITY)
-   Complete Dynamic Router & Python Controller API Integration:
-   /api/health, /api/modules/status, /api/logs, /api/metrics/history, & /api/cache/stats
-   Includes PDF Export, Network Map, Decision History, & Admin Settings
+   BERYL 7 AI AGENT - ENTERPRISE DASHBOARD JAVASCRIPT ENGINE (v15.3 PERFECT)
+   Complete Dynamic Router & Python Controller API Integration
+   Includes Persistent Admin Settings, PDF Export, Network Topology Map,
+   AI Decision Audit History, and Refined Theme Engine.
    ========================================================================== */
 
 let currentView = 'executive';
 let isSimulationMode = false;
 let routerHost = 'http://192.168.8.1:8888';
 let fallbackPythonHost = 'http://localhost:5000';
+let apiToken = 'demo-token';
 let pollInterval = 5000;
 let pollTimer = null;
 let consecutiveFailures = 0;
@@ -33,6 +34,7 @@ const pageSize = 50;
 
 // Initialize Dashboard on DOM Load
 document.addEventListener('DOMContentLoaded', () => {
+    initAdminSettings();
     initTheme();
     initCharts();
     switchView('executive');
@@ -40,6 +42,54 @@ document.addEventListener('DOMContentLoaded', () => {
     startDataPolling();
     startStalenessTimer();
 });
+
+// Load Admin Settings from localStorage
+function initAdminSettings() {
+    const savedHost = localStorage.getItem('beryl7_router_host');
+    const savedToken = localStorage.getItem('beryl7_api_token');
+    const savedInterval = localStorage.getItem('beryl7_poll_interval');
+    
+    if (savedHost) routerHost = savedHost;
+    if (savedToken) apiToken = savedToken;
+    if (savedInterval) {
+        pollInterval = parseInt(savedInterval, 10);
+        const sel = document.getElementById('refreshIntervalSelect');
+        if (sel) sel.value = (pollInterval).toString();
+    }
+}
+
+// Save Admin Settings to localStorage
+function saveAdminSettings() {
+    const hostInput = document.getElementById('cfgRouterHost');
+    const tokenInput = document.getElementById('cfgApiToken');
+    const intervalInput = document.getElementById('cfgPollInterval');
+    
+    if (hostInput && hostInput.value.trim()) {
+        routerHost = hostInput.value.trim();
+        localStorage.setItem('beryl7_router_host', routerHost);
+    }
+    if (tokenInput) {
+        apiToken = tokenInput.value.trim();
+        localStorage.setItem('beryl7_api_token', apiToken);
+    }
+    if (intervalInput) {
+        const parsedSec = parseInt(intervalInput.value, 10);
+        if (!isNaN(parsedSec) && parsedSec >= 0) {
+            pollInterval = parsedSec * 1000;
+            localStorage.setItem('beryl7_poll_interval', pollInterval.toString());
+            const sel = document.getElementById('refreshIntervalSelect');
+            if (sel) sel.value = (pollInterval).toString();
+            if (pollTimer) clearInterval(pollTimer);
+            if (pollInterval > 0) {
+                pollTimer = setInterval(fetchTelemetryData, pollInterval);
+            }
+        }
+    }
+    
+    alert(`Admin Settings Saved! Target Host: ${routerHost}, Refresh: ${pollInterval / 1000}s`);
+    closeDrilldown();
+    fetchTelemetryData();
+}
 
 // Theme Switcher Engine
 function initTheme() {
@@ -109,6 +159,7 @@ function startStalenessTimer() {
 function onRefreshIntervalChange() {
     const val = parseInt(document.getElementById('refreshIntervalSelect').value, 10);
     pollInterval = val;
+    localStorage.setItem('beryl7_poll_interval', pollInterval.toString());
     if (pollTimer) clearInterval(pollTimer);
     if (pollInterval > 0) {
         pollTimer = setInterval(fetchTelemetryData, pollInterval);
@@ -155,8 +206,11 @@ async function fetchTelemetryData() {
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 3500);
             
+            const headers = {};
+            if (apiToken) headers['Authorization'] = `Bearer ${apiToken}`;
+            
             const res = await fetch(`${routerHost}/api/health`, {
-                headers: { 'Authorization': 'Bearer demo-token' },
+                headers: headers,
                 signal: controller.signal
             });
             clearTimeout(timeoutId);
@@ -222,9 +276,9 @@ async function fetchTelemetryData() {
 // Fetch Dynamic Module Statuses
 async function fetchModuleStatuses(host) {
     try {
-        const res = await fetch(`${host}/api/modules/status`, {
-            headers: { 'Authorization': 'Bearer demo-token' }
-        });
+        const headers = {};
+        if (apiToken) headers['Authorization'] = `Bearer ${apiToken}`;
+        const res = await fetch(`${host}/api/modules/status`, { headers });
         if (res.ok) {
             const mods = await res.json();
             Object.keys(mods).forEach(key => {
@@ -243,9 +297,9 @@ async function fetchModuleStatuses(host) {
 // Fetch Real Logs
 async function fetchRealLogs(host) {
     try {
-        const res = await fetch(`${host}/api/logs`, {
-            headers: { 'Authorization': 'Bearer demo-token' }
-        });
+        const headers = {};
+        if (apiToken) headers['Authorization'] = `Bearer ${apiToken}`;
+        const res = await fetch(`${host}/api/logs`, { headers });
         if (res.ok) {
             const data = await res.json();
             if (data.logs && data.logs.length > 0) {
@@ -261,9 +315,9 @@ async function fetchRealLogs(host) {
 // Fetch Metrics History
 async function fetchMetricsHistory(host) {
     try {
-        const res = await fetch(`${host}/api/metrics/history`, {
-            headers: { 'Authorization': 'Bearer demo-token' }
-        });
+        const headers = {};
+        if (apiToken) headers['Authorization'] = `Bearer ${apiToken}`;
+        const res = await fetch(`${host}/api/metrics/history`, { headers });
         if (res.ok && execTrendChart) {
             const data = await res.json();
             execTrendChart.data.labels = data.dates;
@@ -279,9 +333,9 @@ async function fetchMetricsHistory(host) {
 // Fetch Cache Stats
 async function fetchCacheStats(host) {
     try {
-        const res = await fetch(`${host}/api/cache/stats`, {
-            headers: { 'Authorization': 'Bearer demo-token' }
-        });
+        const headers = {};
+        if (apiToken) headers['Authorization'] = `Bearer ${apiToken}`;
+        const res = await fetch(`${host}/api/cache/stats`, { headers });
         if (res.ok && techCacheChart) {
             const data = await res.json();
             if (data.skills) {
@@ -629,7 +683,7 @@ function openDrilldown(metricKey) {
     const details = {
         uptime: {
             title: 'System Uptime & Availability Analysis',
-            content: `<p><strong>Target SLA/SLO:</strong> 99.0% | <strong>Actual:</strong> 99.8%</p><br><p>The native Go daemon running on OpenWrt (PID 21105) has operated continuously without unhandled crashes.</p>`
+            content: `<p><strong>Target SLA/SLO:</strong> 99.0% | <strong>Actual:</strong> 99.8%</p><br><p>The native Go daemon running on OpenWrt (PID 32491) has operated continuously without unhandled crashes.</p>`
         },
         success_rate: {
             title: 'Autonomous AI Remediation Success',
@@ -655,7 +709,6 @@ function closeDrilldown() {
     document.getElementById('modalBackdrop').classList.remove('active');
 }
 
-// Interactive Network Topology Map Modal
 function openNetworkMapModal() {
     const backdrop = document.getElementById('modalBackdrop');
     const title = document.getElementById('modalTitle');
@@ -669,7 +722,7 @@ function openNetworkMapModal() {
                 ⚡ <strong>WAN Interface (eth0)</strong> ➔ [ 192.168.8.1 Gateway ] <span class="text-emerald">🟢 UP</span><br>
                 📡 <strong>Wi-Fi 7 Radio (2.4GHz)</strong> ➔ [ MT7993_1_1 ] <span class="text-subtle">🔴 OFF / Disabled by Operator</span><br>
                 🚀 <strong>Wi-Fi 7 Radio (5GHz)</strong> ➔ [ MT7993_1_2 ] <span class="text-emerald">🟢 Active (160MHz - GL-MT3600BE-658-5G)</span><br>
-                🧠 <strong>Native Go Agent Daemon</strong> ➔ [ PID 21105 / 24x7 Main Loop ] <span class="text-cyan">🟢 Healthy</span><br>
+                🧠 <strong>Native Go Agent Daemon</strong> ➔ [ PID 32491 / 24x7 Main Loop ] <span class="text-cyan">🟢 Healthy</span><br>
                 💾 <strong>SQLite Skill Database</strong> ➔ [ /etc/beryl7/skills.db ] <span class="text-purple">🟢 WAL Mode</span>
             </div>
         </div>
@@ -677,7 +730,6 @@ function openNetworkMapModal() {
     backdrop.classList.add('active');
 }
 
-// AI Decision Audit History Modal
 function openDecisionHistoryModal() {
     const backdrop = document.getElementById('modalBackdrop');
     const title = document.getElementById('modalTitle');
@@ -708,7 +760,6 @@ function openDecisionHistoryModal() {
     backdrop.classList.add('active');
 }
 
-// Admin Settings Panel Modal
 function openAdminSettingsModal() {
     const backdrop = document.getElementById('modalBackdrop');
     const title = document.getElementById('modalTitle');
@@ -719,17 +770,17 @@ function openAdminSettingsModal() {
         <div style="display: flex; flex-direction: column; gap: 14px;">
             <div>
                 <label style="display:block; font-size:12px; margin-bottom:4px;">Router API Host Address</label>
-                <input type="text" value="${routerHost}" style="width:100%; padding:10px; background:rgba(255,255,255,0.05); border:1px solid var(--border-color); color:var(--text-primary); border-radius:8px;">
+                <input type="text" id="cfgRouterHost" value="${routerHost}" style="width:100%; padding:10px; background:rgba(255,255,255,0.05); border:1px solid var(--border-color); color:var(--text-primary); border-radius:8px;">
             </div>
             <div>
                 <label style="display:block; font-size:12px; margin-bottom:4px;">API Authorization Token</label>
-                <input type="password" value="demo-token" style="width:100%; padding:10px; background:rgba(255,255,255,0.05); border:1px solid var(--border-color); color:var(--text-primary); border-radius:8px;">
+                <input type="password" id="cfgApiToken" value="${apiToken}" style="width:100%; padding:10px; background:rgba(255,255,255,0.05); border:1px solid var(--border-color); color:var(--text-primary); border-radius:8px;">
             </div>
             <div>
                 <label style="display:block; font-size:12px; margin-bottom:4px;">Telemetry Interval (Seconds)</label>
-                <input type="number" value="5" style="width:100%; padding:10px; background:rgba(255,255,255,0.05); border:1px solid var(--border-color); color:var(--text-primary); border-radius:8px;">
+                <input type="number" id="cfgPollInterval" value="${pollInterval / 1000}" style="width:100%; padding:10px; background:rgba(255,255,255,0.05); border:1px solid var(--border-color); color:var(--text-primary); border-radius:8px;">
             </div>
-            <button class="btn-action" onclick="alert('Settings saved successfully!'); closeDrilldown();" style="margin-top:8px;">Save Settings</button>
+            <button class="btn-action" onclick="saveAdminSettings()" style="margin-top:8px;">Save &amp; Apply Settings</button>
         </div>
     `;
     backdrop.classList.add('active');

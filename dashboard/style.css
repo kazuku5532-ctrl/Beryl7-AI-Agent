@@ -1,12 +1,9 @@
 /* ==========================================================================
-   BERYL 7 AI AGENT - ENTERPRISE DASHBOARD STYLESHEET (v15.2 PERFECT QUALITY)
-   Design System: Dual Theme (Dark Glassmorphism / Refined Light Mode)
-   Supports WCAG 48px Touch Targets, Keyboard Focus, Notification Drawer,
-   Data Staleness Badges, Mobile Responsiveness, and Print PDF Styling
+   BERYL 7 AI AGENT - ENTERPRISE OPERATIONS DASHBOARD STYLESHEET (v15.3 PERFECT)
+   Includes Dark & Crisp Light Themes, WCAG Touch Targets, & Print Styles
    ========================================================================== */
 
 :root {
-    /* Color Palette - Dark Theme Default */
     --bg-dark: #0a0e17;
     --bg-card: rgba(18, 26, 42, 0.75);
     --bg-card-hover: rgba(26, 38, 62, 0.85);
@@ -17,7 +14,6 @@
     --text-secondary: #94a3b8;
     --text-subtle: #64748b;
 
-    /* Accent Colors */
     --emerald: #10b981;
     --emerald-glow: rgba(16, 185, 129, 0.25);
     --cyan: #38bdf8;
@@ -29,24 +25,22 @@
     --rose: #f43f5e;
     --rose-glow: rgba(244, 63, 94, 0.25);
 
-    /* Typography */
     --font-heading: 'Outfit', sans-serif;
     --font-body: 'Inter', sans-serif;
     --font-mono: 'Courier New', monospace;
 
-    /* Spacing & Radii */
     --radius-sm: 8px;
     --radius-md: 12px;
     --radius-lg: 18px;
     --radius-xl: 24px;
 }
 
-/* Crisp & Refined Light Theme Override */
+/* ================= CRISP REFINED LIGHT THEME ================= */
 body.light-theme {
     --bg-dark: #f8fafc;
     --bg-card: #ffffff;
     --bg-card-hover: #f1f5f9;
-    --border-color: #e2e8f0;
+    --border-color: #cbd5e1;
     --border-glow: rgba(2, 132, 199, 0.3);
 
     --text-primary: #0f172a;
@@ -61,8 +55,45 @@ body.light-theme {
 }
 
 body.light-theme .top-navbar {
-    background: rgba(255, 255, 255, 0.92);
-    border-bottom: 1px solid #e2e8f0;
+    background: rgba(255, 255, 255, 0.94);
+    border-bottom: 1px solid #cbd5e1;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+}
+
+body.light-theme .brand-title {
+    color: #0f172a;
+}
+
+body.light-theme .view-tabs {
+    background: #e2e8f0;
+    border-color: #cbd5e1;
+}
+
+body.light-theme .tab-btn {
+    color: #475569;
+}
+
+body.light-theme .tab-btn.active {
+    background: #ffffff;
+    border: 1px solid #0284c7;
+    box-shadow: 0 2px 8px rgba(2, 132, 199, 0.2);
+    color: #0284c7;
+}
+
+body.light-theme .dropdown-selector select,
+body.light-theme .btn-icon,
+body.light-theme .metric-search-wrapper input,
+body.light-theme .log-controls input,
+body.light-theme .log-controls select,
+body.light-theme .pagination-btn {
+    background: #ffffff;
+    border: 1px solid #cbd5e1;
+    color: #0f172a;
+}
+
+body.light-theme .btn-icon:hover {
+    background: #f1f5f9;
+    color: #0284c7;
 }
 
 body.light-theme .hero-status-banner,
@@ -74,7 +105,7 @@ body.light-theme .modal-card,
 body.light-theme .notification-drawer {
     background: #ffffff;
     border-color: #e2e8f0;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
 }
 
 body.light-theme .module-card {
@@ -90,14 +121,16 @@ body.light-theme .action-feed-item,
 body.light-theme .stat-pill,
 body.light-theme .public-metric {
     background: #f1f5f9;
-    border-color: #e2e8f0;
+    border-color: #cbd5e1;
 }
 
 body.light-theme .log-terminal-window {
     background: #0f172a;
     border-color: #334155;
+    color: #f8fafc;
 }
 
+/* ================= BASE RESET & UTILITIES ================= */
 * {
     box-sizing: border-box;
     margin: 0;
@@ -116,14 +149,12 @@ body {
     transition: background-color 0.3s ease, color 0.3s ease;
 }
 
-/* Keyboard Focus Indicators */
 :focus-visible {
     outline: 2px solid var(--cyan);
     outline-offset: 3px;
 }
 
 /* ================= TOP NAVIGATION BAR ================= */
-
 .top-navbar {
     align-items: center;
     background: rgba(10, 14, 23, 0.85);
@@ -183,8 +214,6 @@ body {
     font-size: 12px;
 }
 
-/* View Tabs Switcher */
-
 .view-tabs {
     background: rgba(255, 255, 255, 0.04);
     border: 1px solid var(--border-color);
@@ -221,8 +250,6 @@ body {
     box-shadow: 0 0 14px var(--cyan-glow);
     color: var(--cyan);
 }
-
-/* Nav Controls & Touch Targets */
 
 .nav-controls {
     align-items: center;
@@ -358,8 +385,6 @@ body {
     color: var(--text-primary);
 }
 
-/* ERROR DEGRADATION BANNER */
-
 .error-degradation-banner {
     align-items: center;
     background: rgba(244, 63, 94, 0.12);
@@ -389,8 +414,6 @@ body {
     padding: 8px 16px;
 }
 
-/* MAIN CONTENT AREA */
-
 .main-content {
     max-width: 1440px;
     margin: 0 auto;
@@ -410,8 +433,6 @@ body {
     from { opacity: 0; transform: translateY(6px); }
     to { opacity: 1; transform: translateY(0); }
 }
-
-/* HERO STATUS BANNER */
 
 .hero-status-banner {
     align-items: center;
@@ -476,8 +497,6 @@ body {
 
 .stat-val.emerald { color: var(--emerald); }
 .stat-val.cyan { color: var(--cyan); }
-
-/* KPI CARDS GRID */
 
 .kpi-grid-4 {
     display: grid;
@@ -548,8 +567,6 @@ body {
 .text-purple { color: var(--purple); }
 .text-subtle { color: var(--text-subtle); }
 
-/* PANEL CARDS & GRIDS */
-
 .grid-2-cols {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -604,8 +621,6 @@ body {
     font-weight: 700;
 }
 
-/* SLO List */
-
 .slo-list {
     display: flex;
     flex-direction: column;
@@ -644,8 +659,6 @@ body {
 .progress-bar-fill.emerald { background: var(--emerald); box-shadow: 0 0 8px var(--emerald-glow); }
 .progress-bar-fill.cyan { background: var(--cyan); box-shadow: 0 0 8px var(--cyan-glow); }
 .progress-bar-fill.purple { background: var(--purple); box-shadow: 0 0 8px var(--purple-glow); }
-
-/* Action Feed Item */
 
 .action-feed-item {
     align-items: center;
@@ -702,8 +715,6 @@ body {
     color: var(--text-subtle);
     font-size: 11px;
 }
-
-/* TECHNICAL VIEW STYLES & METRIC SEARCH BAR */
 
 .margin-bottom-lg {
     margin-bottom: 24px;
@@ -783,8 +794,6 @@ body {
     color: var(--text-secondary);
 }
 
-/* Metric Gauges */
-
 .metric-gauge-card {
     background: var(--bg-card);
     border: 1px solid var(--border-color);
@@ -810,8 +819,6 @@ body {
     color: var(--text-secondary);
     font-size: 11px;
 }
-
-/* Log Terminal Window & Pagination */
 
 .log-controls {
     align-items: center;
@@ -891,8 +898,6 @@ body {
     opacity: 0.4;
     cursor: not-allowed;
 }
-
-/* PUBLIC STATUS BOARD STYLES */
 
 .public-status-wrapper {
     align-items: center;
@@ -982,8 +987,6 @@ body {
     font-size: 12px;
 }
 
-/* MODAL STYLES */
-
 .modal-backdrop {
     align-items: center;
     background: rgba(0, 0, 0, 0.75);
@@ -1037,8 +1040,6 @@ body {
     line-height: 1.6;
 }
 
-/* Notifications Drawer */
-
 .notification-drawer {
     background: var(--bg-dark);
     border: 1px solid var(--border-color);
@@ -1067,8 +1068,6 @@ body {
 .notification-item:last-child {
     border-bottom: none;
 }
-
-/* Responsive Breakpoints & WCAG Touch Targets */
 
 @media (max-width: 1024px) {
     .kpi-grid-4, .grid-4-cols {
@@ -1123,7 +1122,6 @@ body {
     }
 }
 
-/* Print CSS for Printable PDF Reports */
 @media print {
     .top-navbar, .nav-controls, .log-controls, .btn-action, .btn-icon, .modal-backdrop, .notification-drawer {
         display: none !important;
