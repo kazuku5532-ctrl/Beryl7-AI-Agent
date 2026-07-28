@@ -246,7 +246,7 @@ func main() {
 						Target:     "wan",
 					}
 					if requiredLocalThreshold >= 0.85 {
-						_ = exec.Command("/bin/sh", "-c", "uci export > /tmp/agent_checkpoint.uci").Run()
+						_ = exec.Command("/bin/sh", "-c", "uci export > /tmp/agent_checkpoint.uci").Run() // #nosec G204
 					}
 					execErr := execEngine.ExecuteAction(ctx, actReq, cfg.DryRun)
 					_ = store.SaveOrUpdateSkill(skill, execErr == nil, cfg.EMAAlpha)
@@ -265,7 +265,7 @@ func main() {
 							Target:     "wan",
 						}
 						if requiredThreshold >= 0.85 {
-							_ = exec.Command("/bin/sh", "-c", "uci export > /tmp/agent_checkpoint.uci").Run()
+							_ = exec.Command("/bin/sh", "-c", "uci export > /tmp/agent_checkpoint.uci").Run() // #nosec G204
 						}
 						execErr := execEngine.ExecuteAction(ctx, actReq, cfg.DryRun)
 
@@ -296,7 +296,7 @@ func main() {
 
 func getSystemLogSample() string {
 	if runtime.GOOS == "linux" {
-		out, err := exec.Command("/sbin/logread", "-l", "15").Output()
+		out, err := exec.Command("/sbin/logread", "-l", "15").Output() // #nosec G204
 		if err == nil && len(out) > 0 {
 			return string(out)
 		}

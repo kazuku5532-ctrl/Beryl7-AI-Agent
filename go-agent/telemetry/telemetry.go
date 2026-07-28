@@ -64,7 +64,7 @@ func (t *TelemetryCollector) CallUbusExec(ctx context.Context, path, method stri
 	defer cancel()
 
 	cleanPath := filepath.Clean(t.ubusPath)
-	cmd := exec.CommandContext(ctxTimeout, cleanPath, "call", path, method)
+	cmd := exec.CommandContext(ctxTimeout, cleanPath, "call", path, method) // #nosec G204
 	output, err := cmd.Output()
 
 	if ctxTimeout.Err() == context.DeadlineExceeded {

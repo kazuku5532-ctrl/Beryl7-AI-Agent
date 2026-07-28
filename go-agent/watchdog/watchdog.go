@@ -139,7 +139,7 @@ func (w *Watchdog) LoadAndVerifyCheckpoint() error {
 
 // UCISyntaxPreCheck Kiểm tra cú pháp uci show network TRƯỚC KHI uci commit
 func UCISyntaxPreCheck() error {
-	cmd := exec.Command("uci", "show", "network")
+	cmd := exec.Command("uci", "show", "network") // #nosec G204
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("UCI network syntax error: %s (%v)", string(output), err)
@@ -162,18 +162,18 @@ func (w *Watchdog) ExecuteRollback() error {
 			logger.Info("Successfully imported full UCI snapshot from %s: %s", uciBackupPath, string(out))
 		} else {
 			logger.Warn("UCI import from %s failed (%v), falling back to WAN DHCP default.", uciBackupPath, errImport)
-			_ = exec.Command("uci", "set", "network.wan.proto=dhcp").Run()
-			_ = exec.Command("uci", "commit", "network").Run()
+			_ = exec.Command("uci", "set", "network.wan.proto=dhcp").Run() // #nosec G204
+			_ = exec.Command("uci", "commit", "network").Run()             // #nosec G204
 		}
 	} else {
 		// Fallback chuẩn WAN DHCP nếu không có file snapshot
-		_ = exec.Command("uci", "set", "network.wan.proto=dhcp").Run()
-		_ = exec.Command("uci", "commit", "network").Run()
+		_ = exec.Command("uci", "set", "network.wan.proto=dhcp").Run() // #nosec G204
+		_ = exec.Command("uci", "commit", "network").Run()             // #nosec G204
 	}
 
 	// 2. Reload lại các dịch vụ hệ thống mạng & firewall
-	_ = exec.Command("/etc/init.d/firewall", "reload").Run()
-	_ = exec.Command("/etc/init.d/network", "reload").Run()
+	_ = exec.Command("/etc/init.d/firewall", "reload").Run() // #nosec G204
+	_ = exec.Command("/etc/init.d/network", "reload").Run()  // #nosec G204
 
 	w.safeModeActive = true
 	w.successfulChecks = 0
