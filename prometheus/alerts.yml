@@ -1,0 +1,26 @@
+groups:
+  - name: beryl7_alerts
+    rules:
+      - alert: Beryl7HighCPULoad
+        expr: beryl7_cpu_usage_pct > 80
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Beryl 7 CPU load exceeds 80%"
+
+      - alert: Beryl7HighRAMUsage
+        expr: beryl7_ram_usage_pct > 85
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Beryl 7 RAM usage exceeds 85%"
+
+      - alert: Beryl7WatchdogRollbackTriggered
+        expr: beryl7_watchdog_rollbacks_total > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Beryl 7 Watchdog rollback triggered!"

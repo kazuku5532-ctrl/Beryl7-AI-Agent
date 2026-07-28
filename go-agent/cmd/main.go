@@ -487,6 +487,26 @@ func startHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 		})
 	})
 
+	// Endpoint 7: Prometheus Metrics Exporter (/metrics)
+	mux.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
+		if setCorsHeaders(w, r) {
+			return
+		}
+		w.Header().Set("Content-Type", "text/plain; version=0.0.4")
+		health.mu.RLock()
+		snapshot := *health
+		health.mu.RUnlock()
+		tel := telemetry.NewCollector()
+		metricObj := &telemetry.Metric{
+			CPUUsagePct:     snapshot.CPUUsagePct,
+			RAMUsagePct:     snapshot.RAMUsagePct,
+			HardwareTempC:   snapshot.HardwareTempC,
+			LatencyMs:       snapshot.LatencyMs,
+			SystemUptimeSec: snapshot.UptimeSeconds,
+		}
+		_, _ = w.Write([]byte(tel.ExportPrometheusMetrics(metricObj)))
+	})
+
 	// Endpoint 6: Operator Approval Endpoint (/api/approve)
 	mux.HandleFunc("/api/approve", func(w http.ResponseWriter, r *http.Request) {
 		if setCorsHeaders(w, r) {

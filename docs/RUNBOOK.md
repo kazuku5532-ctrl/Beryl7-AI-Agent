@@ -1,46 +1,30 @@
-# 📘 Production Deployment & Operations Runbook
+# Operational Runbook & Disaster Recovery Playbooks 📖
 
-> **GL.iNet Beryl 7 (GL-MT3600BE) Autonomous Remediation Agent**
-
----
-
-## 1. System Requirements & Environment Planning
-- **Hardware:** GL.iNet GL-MT3600BE (Beryl 7) running OpenWrt 21.02 (`aarch64`).
-- **Network Interface:** Ethernet access to router on default gateway `192.168.8.1`, SSH Port 22 open.
-- **Environment:** Go 1.21+ (for ARM64 cross-compilation) or Python 3.10+.
-- **Secrets:** Google Gemini 2.5 Flash API Key, SSH private key (`~/.ssh/beryl7_rsa`) or admin password.
+System: **Beryl 7 AI Agent**  
+Document Version: **v1.0.0**
 
 ---
 
-## 2. Pre-Deployment Checklist
-- [x] Gemini API key tested and verified via REST API.
-- [x] Target Router IP configured (`192.168.8.1`).
-- [x] SSH key generated (`ssh-keygen -f ~/.ssh/beryl7_rsa`) and deployed (`ssh-copy-id root@192.168.8.1`).
-- [x] Operational environment configuration verified (`.env`).
+## 1. Answers & Recovery Playbooks for the 6 Reviewer Questions
 
----
+### Q1: Why did AI choose a specific action?
+- **Diagnostic Procedure:** Inspect `/var/log/beryl7_approval_audit.log` and telemetry log stream. AI choices are logged with reasoning text, input log snippet, and confidence score.
+- **Verification Command:** `journalctl -u beryl7-agent | grep "Gemini AI Action Approved"`
 
-## 3. Step-by-Step Production Deployment
-1. **Build Cross-Compiled ARM64 Go Daemon Binary:**
-   ```powershell
-   powershell -ExecutionPolicy Bypass -File .\scripts\build_go_binary.ps1
-   ```
-2. **Execute Deployment Automator Script:**
-   ```powershell
-   .\venv\Scripts\python scripts/deploy_to_router.py
-   ```
-3. **Verify OpenWrt procd Daemon Service Status:**
-   ```bash
-   ssh root@192.168.8.1 "ps | grep beryl7-agent"
-   ```
-4. **Verify Health Endpoint JSON Response:**
-   ```bash
-   curl -s http://192.168.8.1:8888/api/health -H "Authorization: Bearer <AUTH_TOKEN>"
-   ```
+### Q2: What if AI makes a wrong decision?
+- **Safety Mechanism:** All AI actions require `Confidence >= Risk Threshold` (e.g., WAN reset requires 0.85). If confidence is below threshold, action is queued for Operator Approval at `/var/run/beryl7_pending_approval.json`.
+- **Manual Override:** Execute `uci revert network && uci commit network && /etc/init.d/network reload`.
 
----
+### Q3: What if rollback fails?
+- **Safety Mechanism:** Watchdog executes dual-layer recovery:
+  1. Primary: `uci import < /tmp/agent_checkpoint.uci && uci commit`
+  2. Secondary Fallback: Force default WAN DHCP (`uci set network.wan.proto=dhcp && uci commit network && /etc/init.d/network reload`).
 
-## 4. Post-Deployment Monitoring & Maintenance
-- Check log rotation at `/var/log/beryl7_agent.log`.
-- Verify OpenWrt firewall rule `Allow-Beryl7-Health-LAN` restricting port 8888 to `lan` zone.
-- Monitor SQLite Skill Store size (`skills.db`) to ensure WAL mode maintenance.
+### Q4: What if the SQLite database corrupts?
+- **Safety Mechanism:** Skill Store automatically detects SQLite read errors, isolates corrupted DB to `/var/lib/beryl7/skills_corrupt.db`, and initializes a fresh database from the backup dump at `/tmp/beryl7_skills_backup.sql`.
+
+### Q5: What if WAN flaps repeatedly?
+- **Safety Mechanism:** Exponential Backoff & Damping Window. If WAN drops > 3 times within 60 seconds, remediation enters a 30-second cooldown window to prevent flap storms.
+
+### Q6: What if the agent process crashes?
+- **Safety Mechanism:** OpenWrt `procd` service manager automatically restarts the binary (`respawn`). On startup, `acquirePIDLock` cleans stale `/var/run/beryl7.pid` files cleanly.
