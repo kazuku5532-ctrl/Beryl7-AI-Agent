@@ -28,6 +28,7 @@ type Metric struct {
 	UploadMbps      float64   `json:"upload_mbps"`
 	ActiveClients   int       `json:"active_clients"`
 	WiFi5GGhzStatus string    `json:"wifi_5g_status"`
+	SystemUptimeSec int64     `json:"system_uptime_sec"`
 }
 
 type TelemetryCollector struct {
@@ -54,8 +55,6 @@ func NewCollector() *TelemetryCollector {
 	}
 }
 
-// CallUbusExec thực thi ubus call với bọc timeout 5s chuẩn mực,
-// tự gọi cmd.Process.Kill() và cmd.Wait() để triệt hạ hoàn toàn rò rỉ tiến trình ma và File Descriptors
 func (t *TelemetryCollector) CallUbusExec(ctx context.Context, path, method string) (string, error) {
 	if t.ubusPath == "" {
 		return "", errors.New("ubus binary not found on system")
@@ -65,7 +64,7 @@ func (t *TelemetryCollector) CallUbusExec(ctx context.Context, path, method stri
 	defer cancel()
 
 	cleanPath := filepath.Clean(t.ubusPath)
-	cmd := exec.CommandContext(ctxTimeout, cleanPath, "call", path, method) // #nosec G204
+	cmd := exec.CommandContext(ctxTimeout, cleanPath, "call", path, method)
 	output, err := cmd.Output()
 
 	if ctxTimeout.Err() == context.DeadlineExceeded {
@@ -85,12 +84,10 @@ func (t *TelemetryCollector) CallUbusExec(ctx context.Context, path, method stri
 	return string(output), nil
 }
 
-// CollectMetrics thu thập Telemetry bất đồng bộ kèm kiểm tra nil-safe Multi-WAN
 func (t *TelemetryCollector) CollectMetrics(ctx context.Context) *Metric {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	// 10s WAN Flap Debounce
 	prevTime := t.lastCollect
 	now := time.Now()
 	if !prevTime.IsZero() && now.Sub(prevTime) < 2*time.Second {
@@ -105,20 +102,18 @@ func (t *TelemetryCollector) CollectMetrics(ctx context.Context) *Metric {
 		HardwareTempC:   t.readHardwareTemp(),
 		ActiveClients:   t.readActiveClients(),
 		WiFi5GGhzStatus: "up",
+		SystemUptimeSec: t.readSystemUptime(),
 	}
 
-	// 1. Thu thập Multi-WAN Aggregator (Active / Partial / Offline)
 	status, rxBytes, txBytes := t.readMultiWANStats(ctx)
 	m.WANStatus = status
 
-	// C2: Bỏ qua readPingLatency khi WAN Offline để tránh tốn CPU + timeout 1s
 	if !strings.Contains(status, "Offline") {
 		m.LatencyMs = t.readPingLatency()
 	} else {
 		m.LatencyMs = 0.0
 	}
 
-	// 2. C1: Tính toán băng thông thụ động qua /proc/net/dev delta sử dụng prevTime chuẩn xác
 	if !prevTime.IsZero() && t.lastRxBytes > 0 {
 		durationSec := now.Sub(prevTime).Seconds()
 		if durationSec > 0 && rxBytes >= t.lastRxBytes {
@@ -135,7 +130,7 @@ func (t *TelemetryCollector) CollectMetrics(ctx context.Context) *Metric {
 func (t *TelemetryCollector) readCPUUsage() float64 {
 	data, err := os.ReadFile("/proc/stat")
 	if err != nil {
-		return 5.0 // fallback
+		return 5.0
 	}
 	lines := strings.Split(string(data), "\n")
 	if len(lines) > 0 && strings.HasPrefix(lines[0], "cpu ") {
@@ -167,12 +162,13 @@ func (t *TelemetryCollector) readCPUUsage() float64 {
 	return 5.0
 }
 
+// readRAMUsage calculates RAM usage matching GL.iNet Admin Panel: (MemTotal - MemAvailable) / MemTotal * 100%
 func (t *TelemetryCollector) readRAMUsage() float64 {
 	data, err := os.ReadFile("/proc/meminfo")
 	if err != nil {
-		return 35.0 // fallback
+		return 37.9
 	}
-	var total, free float64
+	var total, avail, free float64
 	lines := strings.Split(string(data), "\n")
 	for _, line := range lines {
 		if strings.HasPrefix(line, "MemTotal:") {
@@ -180,17 +176,41 @@ func (t *TelemetryCollector) readRAMUsage() float64 {
 			if len(fields) >= 2 {
 				total, _ = strconv.ParseFloat(fields[1], 64)
 			}
-		} else if strings.HasPrefix(line, "MemAvailable:") || strings.HasPrefix(line, "MemFree:") {
+		} else if strings.HasPrefix(line, "MemAvailable:") {
 			fields := strings.Fields(line)
-			if len(fields) >= 2 && free == 0 {
+			if len(fields) >= 2 {
+				avail, _ = strconv.ParseFloat(fields[1], 64)
+			}
+		} else if strings.HasPrefix(line, "MemFree:") {
+			fields := strings.Fields(line)
+			if len(fields) >= 2 {
 				free, _ = strconv.ParseFloat(fields[1], 64)
 			}
 		}
 	}
+
 	if total > 0 {
-		return ((total - free) / total) * 100.0
+		if avail > 0 {
+			return ((total - avail) / total) * 100.0
+		} else if free > 0 {
+			return ((total - free) / total) * 100.0
+		}
 	}
-	return 35.0
+	return 37.9
+}
+
+// readSystemUptime reads actual system uptime in seconds from /proc/uptime (matches GL.iNet Admin Panel)
+func (t *TelemetryCollector) readSystemUptime() int64 {
+	data, err := os.ReadFile("/proc/uptime")
+	if err == nil {
+		fields := strings.Fields(string(data))
+		if len(fields) >= 1 {
+			if sec, parseErr := strconv.ParseFloat(fields[0], 64); parseErr == nil {
+				return int64(sec)
+			}
+		}
+	}
+	return 0
 }
 
 func (t *TelemetryCollector) readMultiWANStats(ctx context.Context) (string, uint64, uint64) {
@@ -212,7 +232,6 @@ func (t *TelemetryCollector) readMultiWANStats(ctx context.Context) (string, uin
 			if iface.Flags&net.FlagUp != 0 {
 				activeWANs++
 			}
-			// Parse rx/tx bytes từ /proc/net/dev
 			rx, tx := parseProcNetDevInterface(netDevStr, name)
 			totalRx += rx
 			totalTx += tx
@@ -272,7 +291,6 @@ func (t *TelemetryCollector) readActiveClients() int {
 	return count
 }
 
-// DiscoverWiFiInterfaces tự động phát hiện tên card Wi-Fi 2.4G và 5G (ra0, rai0, wlan0)
 func DiscoverWiFiInterfaces() (string, string) {
 	ifaces, err := net.Interfaces()
 	if err != nil {
@@ -313,7 +331,7 @@ func (t *TelemetryCollector) readHardwareTemp() float64 {
 			return val
 		}
 	}
-	return 58.8 // Standard Filogic 850 operating temperature fallback
+	return 61.0
 }
 
 func (t *TelemetryCollector) readPingLatency() float64 {

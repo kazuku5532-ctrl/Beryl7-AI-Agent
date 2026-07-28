@@ -157,7 +157,11 @@ func main() {
 			health.HardwareTempC = m.HardwareTempC
 			health.LatencyMs = m.LatencyMs
 			health.WANStatus = m.WANStatus
-			health.UptimeSeconds = int64(time.Since(health.StartTime).Seconds())
+			if m.SystemUptimeSec > 0 {
+				health.UptimeSeconds = m.SystemUptimeSec
+			} else {
+				health.UptimeSeconds = int64(time.Since(health.StartTime).Seconds())
+			}
 			health.SafeMode = wd.IsSafeMode()
 			health.KillSwitch = config.IsKillSwitchActive(cfg)
 			health.mu.Unlock()
