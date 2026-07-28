@@ -1,56 +1,67 @@
-# Beryl 7 AI Agent — Enterprise Autonomous Network Operations Engine 🚀
+# Beryl 7 AI Agent 🛠️
 
-[![Production Certified Grade A++](https://img.shields.io/badge/Production-Certified_Grade_A%2B%2B-emerald)](https://github.com/kazuku5532-ctrl/Beryl7-AI-Agent)
-[![OpenWrt Native](https://img.shields.io/badge/Platform-OpenWrt_GL--MT3600BE-blue)](https://www.gl-inet.com/)
-[![Go Agent](https://img.shields.io/badge/Daemon-Go_ARM64_v15.3-purple)](https://go.dev/)
-[![Prometheus Ready](https://img.shields.io/badge/Metrics-Prometheus_Ready-orange)](go-agent/)
+A lightweight network monitoring and self-healing agent designed for OpenWrt routers, tested on the **GL.iNet Beryl 7 (GL-MT3600BE)**.
 
-An enterprise-grade, autonomous self-healing AI network remediation engine and real-time operations dashboard specifically engineered for the **GL.iNet Beryl 7 (GL-MT3600BE)** OpenWrt Wi-Fi 7 Router.
+The system consists of a compiled Go daemon running on the router to collect system metrics, a Python controller for optional API routing, and an HTML/JS dashboard for real-time visualization.
 
 ---
 
-## 🌟 Architecture & Technical Specifications
+## 📂 Repository Structure
 
-The system repository is structured into a streamlined, high-performance architecture:
-
-| Component | Path | Description |
-| :--- | :--- | :--- |
-| **Go Native Daemon** | [go-agent/](go-agent/) | Compiled ARM64 daemon (`beryl7-agent`), Prometheus `/metrics` & REST API |
-| **Python Controller** | [agent/](agent/) | Python HTTP controller server on port 5000 |
-| **Operations Dashboard** | [dashboard/](dashboard/) | HTML5 Glassmorphism UI & [Standalone HTML Bundle](Beryl7_Dashboard_Standalone.html) |
-| **Architecture Guide** | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | C4 Diagrams, Sequence Flow, State Machine, Security & Threat Model |
-| **Operations Runbook** | [docs/OPERATIONS.md](docs/OPERATIONS.md) | SRE Error Budget, SLA Targets, Capacity Planning & Disaster Recovery |
-| **Empirical Benchmarks** | [docs/benchmark.md](docs/benchmark.md) | Statistical P50/P95/P99 empirical test benchmark report |
+- `go-agent/` : Go daemon running on OpenWrt to read system telemetry (`/proc`, `ubus`) and handle basic network remediation tasks.
+- `agent/` : Python HTTP server providing local API endpoints and serving the dashboard.
+- `dashboard/` : Web dashboard interface and single-file bundle ([Beryl7_Dashboard_Standalone.html](Beryl7_Dashboard_Standalone.html)).
+- `docs/` : Technical notes including architecture details ([docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)), operational notes ([docs/OPERATIONS.md](docs/OPERATIONS.md)), and benchmark sample logs ([docs/benchmark.md](docs/benchmark.md)).
+- `tests/` : Basic unit, integration, and stress test scripts.
 
 ---
 
-## ⚡ Empirical Benchmark Performance
+## ⚡ Measured Resource Usage (GL-MT3600BE)
 
-Empirical metrics measured directly from the running Go Agent Daemon on the **GL-MT3600BE Router (PID `4021`)**:
+Sample metrics observed during local testing on GL-MT3600BE (Filogic 820, 512MB RAM, OpenWrt 24.10):
 
-- **RAM Footprint (`VmRSS`):** **13.08 MB** (~ 2.5% of 512MB RAM)
-- **CPU Utilization:** **1.20% CPU** (> 98.8% CPU headroom)
-- **Hardware Temperature:** **59.54°C** (Cool thermal zone)
-- **API Response Latency:** **29.0 ms**
-- **SQLite Local Skill Hit:** **0.38 ms (P99)**
+- **Memory (RAM):** ~ 13.0 MB (VmRSS)
+- **CPU Usage:** ~ 1.2% (on a 5-second polling loop)
+- **Hardware Temperature:** ~ 59.5°C
+- **API Latency:** ~ 29 ms (local network)
+
+*Note: Resource consumption may vary depending on router hardware, active network load, and customized polling intervals.*
 
 ---
 
-## 📡 REST & Prometheus Metrics API
+## 📡 Available API Endpoints
 
 | Endpoint | Method | Description |
 | :--- | :--- | :--- |
-| `/api/health` | `GET` | System health telemetry (CPU, RAM, Temp, Latency, Uptime, SLO) |
-| `/api/modules/status` | `GET` | Health status of all 6 core architecture modules |
-| `/api/logs` | `GET` | Live OpenWrt logread entries |
-| `/metrics` | `GET` | Standard Prometheus text metrics exporter |
-| `/api/approve` | `POST` | Operator approval for gated high-risk actions |
+| `/api/health` | `GET` | Returns CPU, RAM, temperature, latency, and uptime data |
+| `/api/modules/status` | `GET` | Returns status of internal system modules |
+| `/api/logs` | `GET` | Displays recent system log entries |
+| `/metrics` | `GET` | Exports basic Prometheus-compatible metrics |
+| `/api/approve` | `POST` | Allows manual operator approval for queued actions |
 
 ---
 
-## 🚀 Quick Start & Local Preview
+## 🚀 Quick Start & Testing
 
-Open [Beryl7_Dashboard_Standalone.html](Beryl7_Dashboard_Standalone.html) in any modern browser or launch the Python web controller:
+### 1. View Dashboard Locally
+Open [Beryl7_Dashboard_Standalone.html](Beryl7_Dashboard_Standalone.html) directly in any modern browser, or run the local Python server:
+
 ```bash
 python agent/dashboard_server.py 5000
+```
+
+Then visit `http://localhost:5000`.
+
+### 2. Build Go Daemon for Router
+To cross-compile the Go binary for Linux ARM64:
+
+```bash
+cd go-agent
+GOOS=linux GOARCH=arm64 go build -o beryl7-agent ./cmd
+```
+
+### 3. Run Unit Tests
+```bash
+cd go-agent
+go test -v ./...
 ```
