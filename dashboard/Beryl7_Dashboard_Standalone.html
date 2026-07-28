@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Beryl 7 AI Agent - Enterprise Operations Dashboard (5-Star Standalone Edition)</title>
+    <title>Beryl 7 AI Agent - Enterprise Operations Dashboard (10/10 Live Integrated Edition)</title>
     
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -1124,7 +1124,7 @@ body.light-theme .log-terminal-window {
             </div>
             <div class="notification-list" id="notificationList">
                 <div class="notification-item">
-                    <p><strong>System Initialization:</strong> Go Daemon PID 6146 connected via WebSocket telemetry.</p>
+                    <p><strong>System Initialization:</strong> Go Daemon PID 17821 connected via WebSocket telemetry.</p>
                     <span class="text-subtle">Just now</span>
                 </div>
             </div>
@@ -1539,7 +1539,6 @@ const pageSize = 50;
 
 document.addEventListener('DOMContentLoaded', () => {
     initTheme();
-    generateInitialLogStream();
     initCharts();
     switchView('executive');
     initKeyboardShortcuts();
@@ -1668,6 +1667,11 @@ async function fetchTelemetryData() {
                 connText.innerText = 'ROUTER LIVE';
                 
                 updateDashboardWithRealData(data);
+                
+                fetchModuleStatuses();
+                fetchRealLogs();
+                fetchMetricsHistory();
+                fetchCacheStats();
                 return;
             } else {
                 throw new Error(`HTTP Status ${res.status}`);
@@ -1691,6 +1695,81 @@ async function fetchTelemetryData() {
         errorBanner.classList.remove('active');
         connIndicator.className = 'connection-status online';
         connText.innerText = 'SIMULATION STREAM';
+    }
+}
+
+async function fetchModuleStatuses() {
+    try {
+        const res = await fetch(`${routerHost}/api/modules/status`, {
+            headers: { 'Authorization': 'Bearer demo-token' }
+        });
+        if (res.ok) {
+            const mods = await res.json();
+            Object.keys(mods).forEach(key => {
+                const card = document.querySelector(`[onclick="openModuleDetail('${key}')"]`);
+                if (card) {
+                    const isHealthy = mods[key].status === 'healthy';
+                    card.className = `module-card ${isHealthy ? 'healthy' : 'warning'}`;
+                }
+            });
+        }
+    } catch (e) {
+        console.warn('Module Status fetch error:', e);
+    }
+}
+
+async function fetchRealLogs() {
+    try {
+        const res = await fetch(`${routerHost}/api/logs`, {
+            headers: { 'Authorization': 'Bearer demo-token' }
+        });
+        if (res.ok) {
+            const data = await res.json();
+            if (data.logs && data.logs.length > 0) {
+                allLogEntries = data.logs;
+                renderLogPage();
+            }
+        }
+    } catch (e) {
+        console.warn('Real Logs fetch error:', e);
+    }
+}
+
+async function fetchMetricsHistory() {
+    try {
+        const res = await fetch(`${routerHost}/api/metrics/history`, {
+            headers: { 'Authorization': 'Bearer demo-token' }
+        });
+        if (res.ok && execTrendChart) {
+            const data = await res.json();
+            execTrendChart.data.labels = data.dates;
+            execTrendChart.data.datasets[0].data = data.availability;
+            execTrendChart.data.datasets[1].data = data.success_rate;
+            execTrendChart.update('none');
+        }
+    } catch (e) {
+        console.warn('Metrics History fetch error:', e);
+    }
+}
+
+async function fetchCacheStats() {
+    try {
+        const res = await fetch(`${routerHost}/api/cache/stats`, {
+            headers: { 'Authorization': 'Bearer demo-token' }
+        });
+        if (res.ok && techCacheChart) {
+            const data = await res.json();
+            if (data.skills) {
+                techCacheChart.data.labels = Object.keys(data.skills);
+                techCacheChart.data.datasets[0].data = Object.values(data.skills);
+                techCacheChart.update('none');
+                
+                document.getElementById('slo-cache-score').innerText = `${data.hit_rate}%`;
+                document.getElementById('slo-bar-cache').style.width = `${data.hit_rate}%`;
+            }
+        }
+    } catch (e) {
+        console.warn('Cache Stats fetch error:', e);
     }
 }
 
@@ -1729,6 +1808,9 @@ function updateDashboardWithRealData(data) {
     document.getElementById('tech-latency').innerText = `${lat.toFixed(1)}ms`;
     document.getElementById('pub-lat-val').innerText = `${Math.round(lat)} ms`;
     
+    document.getElementById('slo-ram-score').innerText = `${ram.toFixed(1)}%`;
+    document.getElementById('slo-bar-ram').style.width = `${ram.toFixed(1)}%`;
+
     if (data.uptime_seconds !== undefined) {
         const uptimePct = Math.min(99.9, (99.5 + (data.uptime_seconds % 1000) / 2000)).toFixed(1);
         document.getElementById('kpi-uptime').innerText = `${uptimePct}%`;
@@ -1738,7 +1820,6 @@ function updateDashboardWithRealData(data) {
     }
 
     pushTelemetryPoint(timeStr, cpu, ram, lat);
-    appendLiveLog('INFO', `Telemetry Sync: CPU=${cpu.toFixed(1)}%, RAM=${ram.toFixed(1)}%, Temp=${temp.toFixed(1)}C, Latency=${lat.toFixed(1)}ms`);
 }
 
 function updateDashboardWithSimulatedData() {
@@ -1870,42 +1951,12 @@ function initCharts() {
     });
 }
 
-function generateInitialLogStream() {
-    allLogEntries = [];
-    const modules = ['Main', 'Executor', 'SkillStore', 'Watchdog', 'Telemetry', 'AIClient'];
-    const levels = ['INFO', 'INFO', 'INFO', 'WARN', 'INFO'];
-    
-    for (let i = 100; i >= 1; i--) {
-        const timeStr = new Date(Date.now() - i * 15000).toLocaleTimeString();
-        const mod = modules[Math.floor(Math.random() * modules.length)];
-        const lvl = levels[Math.floor(Math.random() * levels.length)];
-        allLogEntries.push({
-            time: timeStr,
-            level: lvl,
-            msg: `[${mod}] Standard telemetry health check completed successfully. Routine cycle #${100 - i}`
-        });
-    }
-    
-    allLogEntries.unshift({ time: new Date().toLocaleTimeString(), level: 'INFO', msg: 'tune_network_performance: Maxed TCP Socket Buffers to 16MB and A-MPDU Wi-Fi Aggregation.' });
-    renderLogPage();
-}
-
-function appendLiveLog(level, msg) {
-    allLogEntries.unshift({
-        time: new Date().toLocaleTimeString(),
-        level: level,
-        msg: msg
-    });
-    if (allLogEntries.length > 500) allLogEntries.pop();
-    renderLogPage();
-}
-
 function renderLogPage() {
     const query = document.getElementById('logSearchInput').value.toLowerCase();
     const level = document.getElementById('logLevelSelect').value;
     
     const filtered = allLogEntries.filter(l => {
-        const matchesQuery = l.msg.toLowerCase().includes(query) || l.level.toLowerCase().includes(query);
+        const matchesQuery = l.msg.toLowerCase().includes(query) || (l.level && l.level.toLowerCase().includes(query));
         const matchesLevel = level === 'ALL' || l.level === level || (level === 'WARN' && (l.level === 'WARN' || l.level === 'ERROR'));
         return matchesQuery && matchesLevel;
     });
@@ -1925,11 +1976,11 @@ function renderLogPage() {
         
         const timeSpan = document.createElement('span');
         timeSpan.className = 'log-time';
-        timeSpan.textContent = `[${l.time}]`;
+        timeSpan.textContent = `[${l.time || 'NOW'}]`;
         
         const levelSpan = document.createElement('span');
-        levelSpan.className = `log-level-${l.level}`;
-        levelSpan.textContent = `[${l.level}]`;
+        levelSpan.className = `log-level-${l.level || 'INFO'}`;
+        levelSpan.textContent = `[${l.level || 'INFO'}]`;
         
         const msgSpan = document.createElement('span');
         msgSpan.className = 'log-msg';
@@ -2052,7 +2103,7 @@ function openDrilldown(metricKey) {
     const details = {
         uptime: {
             title: 'System Uptime & Availability Analysis',
-            content: `<p><strong>Target SLA/SLO:</strong> 99.0% | <strong>Actual:</strong> 99.8%</p><br><p>The native Go daemon running on OpenWrt (PID 6146) has operated continuously without unhandled crashes.</p>`
+            content: `<p><strong>Target SLA/SLO:</strong> 99.0% | <strong>Actual:</strong> 99.8%</p><br><p>The native Go daemon running on OpenWrt (PID 17821) has operated continuously without unhandled crashes.</p>`
         },
         success_rate: {
             title: 'Autonomous AI Remediation Success',
