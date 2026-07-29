@@ -28,6 +28,7 @@ jobs:
           COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print int($3)}')
           echo "Measured Total Code Coverage: ${COVERAGE}%"
           if [ "$COVERAGE" -lt 80 ]; then
-            echo "⚠️ Notice: Statement coverage ${COVERAGE}% measured across unit-testable packages (Target: 80% per v9.0 plan)."
+            echo "❌ Code Coverage Error: Total coverage ${COVERAGE}% is below required 80% threshold!"
+            exit 1
           fi
-          echo "🟢 Code Coverage Quality Gate Checked: ${COVERAGE}%"
+          echo "🟢 Code Coverage Quality Gate Passed: ${COVERAGE}% >= 80%"

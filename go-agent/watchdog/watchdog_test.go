@@ -1,17 +1,18 @@
 package watchdog
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 )
 
-func TestWatchdogCore(t *testing.T) {
+func TestWatchdogAllBranches(t *testing.T) {
 	tempDir := t.TempDir()
-	checkpointPath := filepath.Join(tempDir, "checkpoint.uci")
+	cpPath := filepath.Join(tempDir, "checkpoint.uci")
 
-	wd := New(checkpointPath)
+	wd := New(cpPath)
 	if !wd.IsSafeMode() {
-		t.Logf("Initial safe mode handled")
+		t.Errorf("Expected SafeMode=true when checkpoint file is missing")
 	}
 
 	err := wd.SaveCheckpoint(map[string]string{"network.wan.proto": "dhcp"})
@@ -24,10 +25,36 @@ func TestWatchdogCore(t *testing.T) {
 		t.Fatalf("Failed to verify checkpoint: %v", err)
 	}
 
-	for i := 0; i < 4; i++ {
-		wd.RecordHealthCheckSuccess()
+	// Corrupt checkpoint file to test checksum error
+	_ = os.WriteFile(cpPath, []byte(`{"version":1, "checksum":"corrupted"}`), 0600)
+	errCorrupt := wd.LoadAndVerifyCheckpoint()
+	if errCorrupt == nil {
+		t.Errorf("Expected checksum mismatch error for corrupted file")
 	}
 
+	// Re-save valid checkpoint
+	_ = wd.SaveCheckpoint(map[string]string{"test": "ok"})
+	wd.safeModeActive = true
+	wd.successfulChecks = 0
+
+	for i := 0; i < 3; i++ {
+		exited := wd.RecordHealthCheckSuccess()
+		if i == 2 && !exited {
+			t.Errorf("Expected RecordHealthCheckSuccess to return true on 3rd success")
+		}
+	}
+
+	if wd.IsSafeMode() {
+		t.Errorf("Expected SafeMode=false after 3 successes")
+	}
+
+	_ = wd.RecordHealthCheckSuccess()
+
+	// Rollback
 	_ = wd.ExecuteRollback()
+	if !wd.IsSafeMode() {
+		t.Errorf("Expected SafeMode=true after ExecuteRollback")
+	}
+
 	_ = UCISyntaxPreCheck()
 }
