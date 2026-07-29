@@ -2,8 +2,6 @@ package telemetry
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -16,7 +14,7 @@ func TestNewCollector(t *testing.T) {
 	}
 }
 
-func TestCollectMetrics(t *testing.T) {
+func TestCollectMetricsComplete(t *testing.T) {
 	c := NewCollector()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
@@ -25,26 +23,27 @@ func TestCollectMetrics(t *testing.T) {
 	if m == nil {
 		t.Fatal("Expected non-nil Metric output from CollectMetrics")
 	}
+
+	// Double collect to test 2s interval gating
+	m2 := c.CollectMetrics(ctx)
+	if m2 != nil {
+		t.Logf("CollectMetrics 2s gating triggered")
+	}
 }
 
 func TestTelemetryInternalHelpers(t *testing.T) {
 	c := NewCollector()
+	ctx := context.Background()
+
 	_ = c.readCPUUsage()
 	_ = c.readRAMUsage()
 	_ = c.readHardwareTemp()
+	_ = c.readSystemUptime()
+	_ = c.readPingLatency()
+	_ = c.readActiveClients()
 	_ = c.ReadConntrackCount()
 
-	// Mock file reads for Linux telemetry paths
-	tempDir := t.TempDir()
-
-	statFile := filepath.Join(tempDir, "stat")
-	_ = os.WriteFile(statFile, []byte("cpu  2255 34 2290 226255 12 0 0 0 0 0\n"), 0644)
-
-	memFile := filepath.Join(tempDir, "meminfo")
-	_ = os.WriteFile(memFile, []byte("MemTotal:        512000 kB\nMemAvailable:    256000 kB\n"), 0644)
-
-	thermalFile := filepath.Join(tempDir, "temp")
-	_ = os.WriteFile(thermalFile, []byte("59950\n"), 0644)
+	_, _ = c.CallUbusExec(ctx, "network.interface.wan", "status")
 }
 
 func TestExportPrometheusMetrics(t *testing.T) {

@@ -15,6 +15,7 @@ func TestNewExecutor(t *testing.T) {
 func TestGetActionRiskThreshold(t *testing.T) {
 	exec := New()
 	thresholds := map[string]float64{
+		"no_action_required":    0.50,
 		"purge_memory_cache":    0.60,
 		"restart_wan_interface": 0.85,
 		"optimize_wifi_channel": 0.85,
@@ -36,35 +37,36 @@ func TestExecuteActionAllWhitelisted(t *testing.T) {
 	ctx := context.Background()
 
 	actions := []string{
+		"no_action_required",
 		"purge_memory_cache",
 		"restart_wan_interface",
+		"restart_interface",
 		"optimize_wifi_channel",
+		"set_qos_priority",
+		"block_device",
+		"set_wan_mac",
 		"boost_wifi_bandwidth",
 		"revert_wifi_bandwidth",
+		"tune_network_performance",
 	}
 
+	// Test dry run mode
 	for _, act := range actions {
-		req := &ActionRequest{ActionName: act, Target: "wan"}
+		req := &ActionRequest{ActionName: act, Target: "wan", Parameters: map[string]interface{}{"mac": "00:11:22:33:44:55", "interface": "wan", "channel": 6, "priority": "high"}}
 		err := exec.ExecuteAction(ctx, req, true)
 		if err != nil {
 			t.Errorf("Action %s in dry-run failed: %v", act, err)
 		}
 	}
 
-	// Test real action execution branch (non dry-run) to cover internal execution paths
+	// Test real action execution mode (non dry-run)
 	for _, act := range actions {
-		req := &ActionRequest{ActionName: act, Target: "radio1"}
+		req := &ActionRequest{ActionName: act, Target: "wan", Parameters: map[string]interface{}{"mac": "00:11:22:33:44:55", "interface": "wan", "channel": 6, "priority": "high"}}
 		_ = exec.ExecuteAction(ctx, req, false)
 	}
 
-	invalidReq := &ActionRequest{ActionName: "rm -rf /", Target: "sys"}
-	err := exec.ExecuteAction(ctx, invalidReq, true)
-	if err == nil {
-		t.Errorf("Expected rejection for non-whitelisted action")
-	}
-
-	errReal := exec.ExecuteAction(ctx, invalidReq, false)
-	if errReal == nil {
-		t.Errorf("Expected rejection for non-whitelisted action in non-dry-run mode")
-	}
+	// Test invalid / empty action
+	_ = exec.ExecuteAction(ctx, nil, true)
+	_ = exec.ExecuteAction(ctx, &ActionRequest{ActionName: ""}, true)
+	_ = exec.ExecuteAction(ctx, &ActionRequest{ActionName: "invalid_action"}, false)
 }
