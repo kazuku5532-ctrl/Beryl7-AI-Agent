@@ -8,31 +8,47 @@ import (
 func TestNewExecutor(t *testing.T) {
 	exec := New()
 	if exec == nil {
-		t.Fatalf("Expected New() to return valid pointer, got nil")
+		t.Fatal("Expected non-nil Executor")
 	}
 }
 
 func TestGetActionRiskThreshold(t *testing.T) {
 	exec := New()
-	th1 := exec.GetActionRiskThreshold("restart_wan_interface")
-	if th1 != 0.85 {
-		t.Errorf("Expected threshold 0.85 for restart_wan_interface, got %.2f", th1)
+	thresholds := map[string]float64{
+		"purge_memory_cache":    0.60,
+		"restart_wan_interface": 0.85,
+		"optimize_wifi_channel": 0.85,
+		"unknown_action":        0.90,
 	}
 
-	th2 := exec.GetActionRiskThreshold("unknown_action")
-	if th2 != 0.90 {
-		t.Errorf("Expected threshold 0.90 for unknown action, got %.2f", th2)
+	for action, expected := range thresholds {
+		val := exec.GetActionRiskThreshold(action)
+		if val != expected {
+			t.Errorf("Action %s: expected threshold %.2f, got %.2f", action, expected, val)
+		}
 	}
 }
 
 func TestExecuteActionDryRun(t *testing.T) {
 	exec := New()
+	ctx := context.Background()
+
 	req := &ActionRequest{
-		ActionName: "restart_wan_interface",
-		Target:     "wan",
+		ActionName: "purge_memory_cache",
+		Target:     "sys",
 	}
-	err := exec.ExecuteAction(context.Background(), req, true)
+
+	err := exec.ExecuteAction(ctx, req, true)
 	if err != nil {
-		t.Fatalf("Expected dry run execution to succeed, got %v", err)
+		t.Errorf("Expected dry run execution to succeed, got %v", err)
+	}
+
+	invalidReq := &ActionRequest{
+		ActionName: "malicious_script_injection",
+		Target:     "sys",
+	}
+	err = exec.ExecuteAction(ctx, invalidReq, true)
+	if err == nil {
+		t.Errorf("Expected invalid action to be rejected by whitelist")
 	}
 }
