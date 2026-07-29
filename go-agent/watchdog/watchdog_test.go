@@ -10,9 +10,24 @@ func TestWatchdogCore(t *testing.T) {
 	checkpointPath := filepath.Join(tempDir, "checkpoint.uci")
 
 	wd := New(checkpointPath)
-	_ = wd.SaveCheckpoint(map[string]string{"test": "val"})
+	if !wd.IsSafeMode() {
+		t.Logf("Initial safe mode handled")
+	}
 
-	_ = wd.LoadAndVerifyCheckpoint()
-	wd.RecordHealthCheckSuccess()
+	err := wd.SaveCheckpoint(map[string]string{"network.wan.proto": "dhcp"})
+	if err != nil {
+		t.Fatalf("Failed to save checkpoint: %v", err)
+	}
+
+	err = wd.LoadAndVerifyCheckpoint()
+	if err != nil {
+		t.Fatalf("Failed to verify checkpoint: %v", err)
+	}
+
+	for i := 0; i < 4; i++ {
+		wd.RecordHealthCheckSuccess()
+	}
+
 	_ = wd.ExecuteRollback()
+	_ = UCISyntaxPreCheck()
 }

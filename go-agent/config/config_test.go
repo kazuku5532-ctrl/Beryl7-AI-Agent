@@ -14,6 +14,8 @@ func TestLoadConfigDefaults(t *testing.T) {
 	if cfg.HealthPort <= 0 {
 		t.Errorf("Expected positive HealthPort, got %d", cfg.HealthPort)
 	}
+
+	_ = cfg.GetAPIKeySnapshot()
 }
 
 func TestKillSwitch(t *testing.T) {
@@ -23,7 +25,20 @@ func TestKillSwitch(t *testing.T) {
 		t.Logf("Kill switch active state checked")
 	}
 
-	disablePath := filepath.Join(os.TempDir(), "beryl7-disable")
-	_ = os.WriteFile(disablePath, []byte("1"), 0600)
-	defer os.Remove(disablePath)
+	cfg.DisableAutoHeal = true
+	if !IsKillSwitchActive(cfg) {
+		t.Errorf("Expected kill switch active when DisableAutoHeal is true")
+	}
+}
+
+func TestReadSecureKeyFile(t *testing.T) {
+	tempDir := t.TempDir()
+	keyPath := filepath.Join(tempDir, "agent.key")
+
+	_ = os.WriteFile(keyPath, []byte("  my-secret-key  "), 0600)
+
+	key, err := readSecureKeyFile(keyPath)
+	if err != nil || key != "my-secret-key" {
+		t.Errorf("Expected my-secret-key, got %s (err=%v)", key, err)
+	}
 }

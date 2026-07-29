@@ -1,12 +1,18 @@
 package main
 
 import (
+	"bytes"
+	"net/http"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"beryl7-agent/ai"
 	"beryl7-agent/config"
+	"beryl7-agent/executor"
+	"beryl7-agent/skillstore"
+	"beryl7-agent/watchdog"
 )
 
 func TestValidateTokenRole(t *testing.T) {
@@ -36,11 +42,88 @@ func TestValidateTokenRole(t *testing.T) {
 	}
 }
 
-func TestQueuePendingApprovalAndAudit(t *testing.T) {
+func TestHealthCheckServerEndpoints(t *testing.T) {
 	tempDir := t.TempDir()
-	pendingFile := filepath.Join(tempDir, "pending.json")
-	auditFile := filepath.Join(tempDir, "audit.log")
+	dbPath := filepath.Join(tempDir, "test.db")
+	cpPath := filepath.Join(tempDir, "cp.uci")
 
+	store, err := skillstore.New(dbPath)
+	if err != nil {
+		t.Fatalf("Failed to init store: %v", err)
+	}
+	defer store.Close()
+
+	wd := watchdog.New(cpPath)
+	execEngine := executor.New()
+	aiClient := ai.NewClient("dummy-key")
+
+	cfg := &config.Config{
+		HealthPort:   8899,
+		AuthToken:    "admin-secret",
+		ApproveToken: "operator-secret",
+		DryRun:       true,
+	}
+
+	health := &HealthState{
+		Status:        "healthy",
+		LastAction:    "none",
+		StartTime:     time.Now(),
+		UptimeSeconds: 100,
+	}
+
+	server := startHealthCheckServer(cfg, health, execEngine, store, aiClient, wd)
+	defer server.Close()
+
+	time.Sleep(100 * time.Millisecond)
+
+	endpoints := []string{
+		"http://127.0.0.1:8899/api/health",
+		"http://127.0.0.1:8899/api/modules/status",
+		"http://127.0.0.1:8899/api/logs",
+		"http://127.0.0.1:8899/metrics",
+		"http://127.0.0.1:8899/api/budget/status",
+		"http://127.0.0.1:8899/api/circuit-breaker",
+	}
+
+	for _, ep := range endpoints {
+		resp, err := http.Get(ep)
+		if err != nil {
+			t.Errorf("Failed GET %s: %v", ep, err)
+		} else {
+			resp.Body.Close()
+			if resp.StatusCode != http.StatusOK {
+				t.Errorf("Endpoint %s returned status %d", ep, resp.StatusCode)
+			}
+		}
+	}
+
+	// Test OPTIONS CORS
+	req, _ := http.NewRequest("OPTIONS", "http://127.0.0.1:8899/api/health", nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err == nil {
+		resp.Body.Close()
+	}
+
+	// Test Config Reload with operator role
+	reloadReq, _ := http.NewRequest("POST", "http://127.0.0.1:8899/api/config/reload", nil)
+	reloadReq.Header.Set("Authorization", "Bearer operator-secret")
+	respReload, err := http.DefaultClient.Do(reloadReq)
+	if err == nil {
+		respReload.Body.Close()
+	}
+
+	// Test Approve with pending request
+	queuePendingApproval(&ai.AIResponse{Action: "purge_memory_cache", Confidence: 0.9}, 0.85)
+
+	appReq, _ := http.NewRequest("POST", "http://127.0.0.1:8899/api/approve", bytes.NewBuffer([]byte("{}")))
+	appReq.Header.Set("Authorization", "Bearer operator-secret")
+	respApp, err := http.DefaultClient.Do(appReq)
+	if err == nil {
+		respApp.Body.Close()
+	}
+}
+
+func TestQueuePendingApprovalAndAuditLog(t *testing.T) {
 	resp := &ai.AIResponse{
 		Action:     "purge_memory_cache",
 		Reasoning:  "High RAM usage",
@@ -48,12 +131,9 @@ func TestQueuePendingApprovalAndAudit(t *testing.T) {
 	}
 
 	queuePendingApproval(resp, 0.85)
-
-	if _, err := os.Stat("/var/run/beryl7_pending_approval.json"); err == nil {
-		_ = os.Remove("/var/run/beryl7_pending_approval.json")
-	}
-
 	recordApprovalAuditLog("purge_memory_cache", "127.0.0.1")
-	_ = pendingFile
-	_ = auditFile
+
+	_ = getSystemLogSample()
+	_ = acquirePIDLock(filepath.Join(os.TempDir(), "test.pid"))
+	_ = os.Remove(filepath.Join(os.TempDir(), "test.pid"))
 }

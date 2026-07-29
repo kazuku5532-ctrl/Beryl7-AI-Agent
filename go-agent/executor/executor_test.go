@@ -18,6 +18,8 @@ func TestGetActionRiskThreshold(t *testing.T) {
 		"purge_memory_cache":    0.60,
 		"restart_wan_interface": 0.85,
 		"optimize_wifi_channel": 0.85,
+		"boost_wifi_bandwidth":  0.90,
+		"revert_wifi_bandwidth": 0.90,
 		"unknown_action":        0.90,
 	}
 
@@ -29,26 +31,29 @@ func TestGetActionRiskThreshold(t *testing.T) {
 	}
 }
 
-func TestExecuteActionDryRun(t *testing.T) {
+func TestExecuteActionAllWhitelisted(t *testing.T) {
 	exec := New()
 	ctx := context.Background()
 
-	req := &ActionRequest{
-		ActionName: "purge_memory_cache",
-		Target:     "sys",
+	actions := []string{
+		"purge_memory_cache",
+		"restart_wan_interface",
+		"optimize_wifi_channel",
+		"boost_wifi_bandwidth",
+		"revert_wifi_bandwidth",
 	}
 
-	err := exec.ExecuteAction(ctx, req, true)
-	if err != nil {
-		t.Errorf("Expected dry run execution to succeed, got %v", err)
+	for _, act := range actions {
+		req := &ActionRequest{ActionName: act, Target: "wan"}
+		err := exec.ExecuteAction(ctx, req, true)
+		if err != nil {
+			t.Errorf("Action %s in dry-run failed: %v", act, err)
+		}
 	}
 
-	invalidReq := &ActionRequest{
-		ActionName: "malicious_script_injection",
-		Target:     "sys",
-	}
-	err = exec.ExecuteAction(ctx, invalidReq, true)
+	invalidReq := &ActionRequest{ActionName: "rm -rf /", Target: "sys"}
+	err := exec.ExecuteAction(ctx, invalidReq, true)
 	if err == nil {
-		t.Errorf("Expected invalid action to be rejected by whitelist")
+		t.Errorf("Expected rejection for non-whitelisted action")
 	}
 }

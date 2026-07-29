@@ -28,6 +28,14 @@ func TestCollectMetrics(t *testing.T) {
 	}
 }
 
+func TestTelemetryInternalHelpers(t *testing.T) {
+	c := NewCollector()
+	_ = c.readCPUUsage()
+	_ = c.readRAMUsage()
+	_ = c.readHardwareTemp()
+	_ = c.ReadConntrackCount()
+}
+
 func TestExportPrometheusMetrics(t *testing.T) {
 	c := NewCollector()
 	metricObj := &Metric{
