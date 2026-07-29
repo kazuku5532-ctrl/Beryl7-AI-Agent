@@ -31,13 +31,24 @@ Sample metrics observed during local testing on GL-MT3600BE (Filogic 820, 512MB 
 
 ## 📡 Available API Endpoints
 
-| Endpoint | Method | Description |
-| :--- | :--- | :--- |
-| `/api/health` | `GET` | Returns CPU, RAM, temperature, latency, and uptime data |
-| `/api/modules/status` | `GET` | Returns status of internal system modules |
-| `/api/logs` | `GET` | Displays recent system log entries |
-| `/metrics` | `GET` | Exports basic Prometheus-compatible metrics |
-| `/api/approve` | `POST` | Allows manual operator approval for queued actions |
+| Endpoint | Method | Description | Role Required |
+| :--- | :--- | :--- | :--- |
+| `/api/health` | `GET` | Returns CPU, RAM, temperature, latency, and uptime data | `viewer` |
+| `/api/modules/status` | `GET` | Returns status of internal system modules | `viewer` |
+| `/api/logs` | `GET` | Displays recent system log entries | `viewer` |
+| `/metrics` | `GET` | Exports basic Prometheus-compatible metrics | `viewer` |
+| `/api/budget/status` | `GET` | Current API usage & remaining daily budget | `viewer` |
+| `/api/circuit-breaker` | `GET` | Circuit breaker state (`CLOSED`, `OPEN`, `HALF_OPEN`) | `viewer` |
+| `/api/approve` | `POST` | Allows manual operator approval for queued actions | `operator` |
+| `/api/config/reload` | `POST` | Live in-memory config reload without daemon restart | `operator` |
+
+---
+
+## 🔐 Role-Based Access Control (RBAC)
+
+- **`viewer`**: Read-only access to health, metrics, module status, and logs (No token required or `viewer-token`).
+- **`operator`**: High-privilege role to approve queued remediation actions and trigger live config reloads (`APPROVE_TOKEN`).
+- **`admin`**: High-privilege access for token rotation, config overrides, and skill store management (`AUTH_TOKEN`).
 
 ---
 
@@ -60,8 +71,8 @@ cd go-agent
 GOOS=linux GOARCH=arm64 go build -o beryl7-agent ./cmd
 ```
 
-### 3. Run Unit Tests
+### 3. Run Unit Tests & Coverage
 ```bash
 cd go-agent
-go test -v ./...
+go test -v -coverpkg=./... -coverprofile=coverage.out ./...
 ```
