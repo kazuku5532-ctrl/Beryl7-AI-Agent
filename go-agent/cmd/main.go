@@ -45,17 +45,21 @@ type HealthState struct {
 }
 
 type PendingApproval struct {
-	Action      string    `json:"action"`
-	Reasoning   string    `json:"reasoning"`
-	Confidence  float64   `json:"confidence"`
-	Required    float64   `json:"required_threshold"`
-	Timestamp   time.Time `json:"timestamp"`
+	Action     string    `json:"action"`
+	Reasoning  string    `json:"reasoning"`
+	Confidence float64   `json:"confidence"`
+	Required   float64   `json:"required_threshold"`
+	Timestamp  time.Time `json:"timestamp"`
 }
+
+var configMu sync.RWMutex
 
 func main() {
 	setOOMScore()
 
+	configMu.Lock()
 	cfg, err := config.LoadConfig()
+	configMu.Unlock()
 	if err != nil {
 		fmt.Printf("Failed to load config: %v\n", err)
 		os.Exit(1)
@@ -68,7 +72,7 @@ func main() {
 	}
 	defer logger.Flush()
 
-	logger.Info("Starting Beryl 7 AI Agent v15.0 Security Hardened & Enterprise Dashboard Edition (Native Go)...")
+	logger.Info("Starting Beryl 7 AI Agent v15.3 Security Hardened & Enterprise Dashboard Edition (Native Go)...")
 
 	pidPath := "/var/run/beryl7-agent.pid"
 	if err := acquirePIDLock(pidPath); err != nil {
@@ -122,7 +126,11 @@ func main() {
 
 	logger.Info("Daemon initialized successfully. Security Hardened Engine listening on 24/7 main loop...")
 
-	ticker := time.NewTicker(cfg.TelemetryInterval)
+	configMu.RLock()
+	interval := cfg.TelemetryInterval
+	configMu.RUnlock()
+
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
 	backupTicker := time.NewTicker(6 * time.Hour)
@@ -150,6 +158,11 @@ func main() {
 			if m == nil {
 				continue
 			}
+
+			configMu.RLock()
+			currentDryRun := cfg.DryRun
+			currentAlpha := cfg.EMAAlpha
+			configMu.RUnlock()
 
 			health.mu.Lock()
 			health.CPUUsagePct = m.CPUUsagePct
@@ -181,7 +194,7 @@ func main() {
 			if m.DownloadMbps > 80.0 && !isWifiBoosted {
 				logger.Info("SMART BANDWIDTH DETECTED (%.1f Mbps > 80Mbps)! Auto-boosting Wi-Fi 7 to 160MHz Max Speed...", m.DownloadMbps)
 				boostReq := &executor.ActionRequest{ActionName: "boost_wifi_bandwidth", Target: "radio1"}
-				if execErr := execEngine.ExecuteAction(ctx, boostReq, cfg.DryRun); execErr == nil {
+				if execErr := execEngine.ExecuteAction(ctx, boostReq, currentDryRun); execErr == nil {
 					isWifiBoosted = true
 					lowTrafficCycles = 0
 				}
@@ -190,7 +203,7 @@ func main() {
 				if lowTrafficCycles >= 2 {
 					logger.Info("SMART BANDWIDTH STABILIZED (%.1f Mbps < 20Mbps for 2 cycles)! Reverting Wi-Fi 7 to Eco 80MHz Mode...", m.DownloadMbps)
 					revertReq := &executor.ActionRequest{ActionName: "revert_wifi_bandwidth", Target: "radio1"}
-					if execErr := execEngine.ExecuteAction(ctx, revertReq, cfg.DryRun); execErr == nil {
+					if execErr := execEngine.ExecuteAction(ctx, revertReq, currentDryRun); execErr == nil {
 						isWifiBoosted = false
 						lowTrafficCycles = 0
 					}
@@ -248,8 +261,8 @@ func main() {
 					if requiredLocalThreshold >= 0.85 {
 						_ = exec.Command("/bin/sh", "-c", "uci export > /tmp/agent_checkpoint.uci").Run() // #nosec G204
 					}
-					execErr := execEngine.ExecuteAction(ctx, actReq, cfg.DryRun)
-					_ = store.SaveOrUpdateSkill(skill, execErr == nil, cfg.EMAAlpha)
+					execErr := execEngine.ExecuteAction(ctx, actReq, currentDryRun)
+					_ = store.SaveOrUpdateSkill(skill, execErr == nil, currentAlpha)
 					continue
 				}
 
@@ -267,7 +280,7 @@ func main() {
 						if requiredThreshold >= 0.85 {
 							_ = exec.Command("/bin/sh", "-c", "uci export > /tmp/agent_checkpoint.uci").Run() // #nosec G204
 						}
-						execErr := execEngine.ExecuteAction(ctx, actReq, cfg.DryRun)
+						execErr := execEngine.ExecuteAction(ctx, actReq, currentDryRun)
 
 						newSkill := &skillstore.Skill{
 							ID:         fmt.Sprintf("%s:%s", anomalyType, aiResp.Action),
@@ -275,7 +288,7 @@ func main() {
 							Condition:  anomalyType,
 							Confidence: aiResp.Confidence,
 						}
-						_ = store.SaveOrUpdateSkill(newSkill, execErr == nil, cfg.EMAAlpha)
+						_ = store.SaveOrUpdateSkill(newSkill, execErr == nil, currentAlpha)
 					} else {
 						logger.Warn("SECURITY GATING TRIGGERED: AI Action [%s] Confidence (%.2f) below Required Risk Threshold (%.2f)! Queued for Operator Approval.", aiResp.Action, aiResp.Confidence, requiredThreshold)
 						queuePendingApproval(aiResp, requiredThreshold)
@@ -398,13 +411,6 @@ func startHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 			return
 		}
 
-		auth := r.Header.Get("Authorization")
-		expectedAuth := "Bearer " + cfg.AuthToken
-
-		if cfg.AuthToken != "" && auth != "" && auth != "Bearer demo-token" && subtle.ConstantTimeCompare([]byte(auth), []byte(expectedAuth)) != 1 {
-			// Note: Allow read-only health metrics query
-		}
-
 		health.mu.RLock()
 		snapshot := *health
 		health.mu.RUnlock()
@@ -456,38 +462,7 @@ func startHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 		})
 	})
 
-	// Endpoint 4: Metrics History (/api/metrics/history)
-	mux.HandleFunc("/api/metrics/history", func(w http.ResponseWriter, r *http.Request) {
-		if setCorsHeaders(w, r) {
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			"dates":        []string{"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"},
-			"availability": []float64{99.7, 99.8, 99.9, 99.6, 99.8, 99.9, 99.8},
-			"success_rate": []float64{98.2, 98.5, 98.9, 98.4, 98.7, 98.9, 98.9},
-		})
-	})
-
-	// Endpoint 5: Cache Stats (/api/cache/stats)
-	mux.HandleFunc("/api/cache/stats", func(w http.ResponseWriter, r *http.Request) {
-		if setCorsHeaders(w, r) {
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			"hit_rate": 91.4,
-			"skills": map[string]float64{
-				"WAN_DROP":   95.2,
-				"WIFI_FAIL":  91.4,
-				"RAM_HIGH":   88.7,
-				"DEAUTH":     94.0,
-				"DNS_FAIL":   90.1,
-			},
-		})
-	})
-
-	// Endpoint 7: Prometheus Metrics Exporter (/metrics)
+	// Endpoint 4: Prometheus Metrics Exporter (/metrics)
 	mux.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
 		if setCorsHeaders(w, r) {
 			return
@@ -507,6 +482,37 @@ func startHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 		_, _ = w.Write([]byte(tel.ExportPrometheusMetrics(metricObj)))
 	})
 
+	// Endpoint 5: Goroutine-Safe Config Reload (/api/config/reload)
+	mux.HandleFunc("/api/config/reload", func(w http.ResponseWriter, r *http.Request) {
+		if setCorsHeaders(w, r) {
+			return
+		}
+		if r.Method != "POST" {
+			http.Error(w, `{"error":"Method Not Allowed"}`, http.StatusMethodNotAllowed)
+			return
+		}
+
+		configMu.Lock()
+		newCfg, loadErr := config.LoadConfig()
+		if loadErr == nil && newCfg != nil {
+			*cfg = *newCfg
+		}
+		configMu.Unlock()
+
+		w.Header().Set("Content-Type", "application/json")
+		if loadErr != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": loadErr.Error()})
+			return
+		}
+
+		logger.Info("Goroutine-Safe Live Config Reload Completed Successfully!")
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"status":  "success",
+			"message": "Configuration reloaded in-memory without service interruption",
+		})
+	})
+
 	// Endpoint 6: Operator Approval Endpoint (/api/approve)
 	mux.HandleFunc("/api/approve", func(w http.ResponseWriter, r *http.Request) {
 		if setCorsHeaders(w, r) {
@@ -517,13 +523,19 @@ func startHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 			return
 		}
 
-		if cfg.ApproveToken == "" || cfg.ApproveToken == cfg.AuthToken {
+		configMu.RLock()
+		currentApproveToken := cfg.ApproveToken
+		currentAuthToken := cfg.AuthToken
+		currentDryRun := cfg.DryRun
+		configMu.RUnlock()
+
+		if currentApproveToken == "" || currentApproveToken == currentAuthToken {
 			http.Error(w, `{"error":"Forbidden: Operator APPROVE_TOKEN must be set distinctly from AUTH_TOKEN for approval safety"}`, http.StatusForbidden)
 			return
 		}
 
 		auth := r.Header.Get("Authorization")
-		expectedAuth := "Bearer " + cfg.ApproveToken
+		expectedAuth := "Bearer " + currentApproveToken
 
 		if len(auth) == 0 || subtle.ConstantTimeCompare([]byte(auth), []byte(expectedAuth)) != 1 {
 			http.Error(w, `{"error":"Unauthorized: Invalid High-Privilege APPROVE_TOKEN"}`, http.StatusUnauthorized)
@@ -555,7 +567,7 @@ func startHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 			ActionName: pending.Action,
 			Target:     "wan",
 		}
-		execErr := execEngine.ExecuteAction(r.Context(), actReq, cfg.DryRun)
+		execErr := execEngine.ExecuteAction(r.Context(), actReq, currentDryRun)
 
 		_ = os.Remove(pendingFile)
 

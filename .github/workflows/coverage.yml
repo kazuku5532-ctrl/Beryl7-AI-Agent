@@ -1,0 +1,34 @@
+name: Test Coverage & Quality Gate
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  coverage:
+    name: Code Coverage Enforcement (80% Target)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Set up Go 1.21
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
+
+      - name: Run Go Unit Tests with Coverage Profile
+        run: |
+          cd go-agent
+          go test -v -coverprofile=coverage.out ./...
+          go tool cover -html=coverage.out -o coverage.html
+          COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print int($3)}')
+          echo "Measured Total Code Coverage: ${COVERAGE}%"
+          if [ "$COVERAGE" -lt 80 ]; then
+            echo "❌ Code Coverage Error: Total coverage ${COVERAGE}% is below required 80% threshold!"
+            exit 1
+          fi
+          echo "🟢 Code Coverage Passed: ${COVERAGE}% >= 80%"

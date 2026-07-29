@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"beryl7-agent/logger"
@@ -23,6 +24,19 @@ const (
 	StateClosed CircuitState = iota
 	StateOpen
 	StateHalfOpen
+)
+
+type APIBudget struct {
+	DailyLimit    int64
+	CostLimit     float64
+	CurrentCount  int64
+	CurrentCost   float64
+	LastResetTime time.Time
+}
+
+var (
+	ErrBudgetExceeded = errors.New("API daily request budget exceeded")
+	ErrCostExceeded   = errors.New("API daily USD cost budget exceeded")
 )
 
 type AIClient struct {
@@ -37,6 +51,8 @@ type AIClient struct {
 	maxTokens    float64
 	refillRate   float64
 	lastRefill   time.Time
+	budget       APIBudget
+	cb           *CircuitBreaker
 }
 
 type FunctionCall struct {
@@ -45,10 +61,10 @@ type FunctionCall struct {
 }
 
 type AIResponse struct {
-	Action      string       `json:"action"`
-	Reasoning   string       `json:"reasoning"`
-	Function    FunctionCall `json:"function"`
-	Confidence  float64      `json:"confidence"`
+	Action     string       `json:"action"`
+	Reasoning  string       `json:"reasoning"`
+	Function   FunctionCall `json:"function"`
+	Confidence float64      `json:"confidence"`
 }
 
 type GeminiCandidate struct {
@@ -72,6 +88,12 @@ func NewClient(apiKey string) *AIClient {
 		tokens:       5.0,
 		refillRate:   10.0 / 60.0,
 		lastRefill:   time.Now(),
+		cb:           NewCircuitBreaker(5 * time.Minute),
+		budget: APIBudget{
+			DailyLimit:    1000,
+			CostLimit:     3.0, // $3.00 USD/day max
+			LastResetTime: time.Now(),
+		},
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 			Transport: &http.Transport{
@@ -87,6 +109,30 @@ func (c *AIClient) SetAPIKey(key string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.apiKey = key
+}
+
+func (c *AIClient) CheckBudgetBeforeCall(estimatedCost float64) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	now := time.Now()
+	if now.Sub(c.budget.LastResetTime) >= 24*time.Hour {
+		c.budget.CurrentCount = 0
+		c.budget.CurrentCost = 0
+		c.budget.LastResetTime = now
+	}
+
+	if c.budget.DailyLimit > 0 && c.budget.CurrentCount >= c.budget.DailyLimit {
+		return ErrBudgetExceeded
+	}
+
+	if c.budget.CostLimit > 0 && (c.budget.CurrentCost+estimatedCost) > c.budget.CostLimit {
+		return ErrCostExceeded
+	}
+
+	atomic.AddInt64(&c.budget.CurrentCount, 1)
+	c.budget.CurrentCost += estimatedCost
+	return nil
 }
 
 func ProbeDNSAsync() {
@@ -122,23 +168,30 @@ func (c *AIClient) allowTokenCheck() bool {
 }
 
 func (c *AIClient) AnalyzeAnomaly(ctx context.Context, anomalyType, description, sourceLog string) (*AIResponse, error) {
-	c.mu.Lock()
-
-	if c.state == StateOpen {
-		if time.Since(c.lastFailTime) >= c.resetTimeout {
-			c.state = StateHalfOpen
-			logger.Info("Circuit Breaker Transition: OPEN -> HALF_OPEN (Testing 1 Probe Request)")
-		} else {
-			c.mu.Unlock()
-			return nil, errors.New("circuit breaker is OPEN: Cloud API temporarily disabled")
-		}
+	if budgetErr := c.CheckBudgetBeforeCall(0.0001); budgetErr != nil {
+		logger.Warn("Cloud AI call blocked by budget limits: %v. Falling back to local skill store.", budgetErr)
+		return nil, budgetErr
 	}
 
+	var resp *AIResponse
+	cbErr := c.cb.Call(func() error {
+		res, err := c.executeAnalyzeRequest(ctx, anomalyType, description, sourceLog)
+		if err != nil {
+			return err
+		}
+		resp = res
+		return nil
+	})
+
+	return resp, cbErr
+}
+
+func (c *AIClient) executeAnalyzeRequest(ctx context.Context, anomalyType, description, sourceLog string) (*AIResponse, error) {
+	c.mu.Lock()
 	if !c.allowTokenCheck() {
 		c.mu.Unlock()
 		return nil, errors.New("rate limit exceeded: max 10 requests/min allowed")
 	}
-
 	key := c.apiKey
 	c.mu.Unlock()
 
@@ -164,7 +217,6 @@ Return JSON format ONLY: {"action":"action_name","reasoning":"clear explanation"
 		},
 	}
 	reqBytes, _ := json.Marshal(reqBodyMap)
-
 	url := "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(reqBytes))
@@ -172,10 +224,9 @@ Return JSON format ONLY: {"action":"action_name","reasoning":"clear explanation"
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	// Chuẩn hóa Gemini REST API Authentication: Ẩn API Key duy nhất qua Header x-goog-api-key
 	req.Header.Set("x-goog-api-key", key)
 
-	var resp *http.Response
+	var httpResp *http.Response
 	for attempt := 1; attempt <= 3; attempt++ {
 		select {
 		case <-ctx.Done():
@@ -183,15 +234,15 @@ Return JSON format ONLY: {"action":"action_name","reasoning":"clear explanation"
 		default:
 		}
 
-		resp, err = c.httpClient.Do(req)
-		if err == nil && resp.StatusCode == 200 {
+		httpResp, err = c.httpClient.Do(req)
+		if err == nil && httpResp.StatusCode == 200 {
 			break
 		}
 
-		if resp != nil {
-			if resp.StatusCode == 429 {
+		if httpResp != nil {
+			if httpResp.StatusCode == 429 {
 				retryAfterSec := 5
-				if headerVal := resp.Header.Get("Retry-After"); headerVal != "" {
+				if headerVal := httpResp.Header.Get("Retry-After"); headerVal != "" {
 					if sec, parseErr := strconv.Atoi(headerVal); parseErr == nil {
 						retryAfterSec = sec
 					}
@@ -199,31 +250,18 @@ Return JSON format ONLY: {"action":"action_name","reasoning":"clear explanation"
 				logger.Warn("Gemini API HTTP 429 Rate Limited! Backing off for %ds...", retryAfterSec)
 				time.Sleep(time.Duration(retryAfterSec) * time.Second)
 			}
-			_ = resp.Body.Close()
+			_ = httpResp.Body.Close()
 		}
 
 		time.Sleep(time.Duration(attempt) * 1 * time.Second)
 	}
 
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if err != nil || resp == nil || resp.StatusCode != 200 {
-		c.failCount++
-		c.lastFailTime = time.Now()
-		if c.failCount >= 5 {
-			c.state = StateOpen
-			logger.Error("Circuit Breaker Triggered: 5 consecutive failures -> OPEN for 5 minutes!")
-		}
+	if err != nil || httpResp == nil || httpResp.StatusCode != 200 {
 		return nil, fmt.Errorf("Gemini API call failed: %v", err)
 	}
 
-	c.failCount = 0
-	c.state = StateClosed
-
-	defer resp.Body.Close()
-
-	limitReader := io.LimitReader(resp.Body, 1*1024*1024)
+	defer httpResp.Body.Close()
+	limitReader := io.LimitReader(httpResp.Body, 1*1024*1024)
 	bodyData, err := io.ReadAll(limitReader)
 	if err != nil {
 		return nil, err
@@ -242,7 +280,6 @@ Return JSON format ONLY: {"action":"action_name","reasoning":"clear explanation"
 		}
 	}
 
-	logger.Error("Failed to parse valid AI JSON response from Gemini API response!")
 	return nil, fmt.Errorf("failed to unmarshal valid AI JSON response from Gemini API payload")
 }
 

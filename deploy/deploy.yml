@@ -1,0 +1,51 @@
+---
+# deploy/deploy.yml - Ansible Playbook for Automated Build, Deployment & Rollback Verification
+- name: Deploy Beryl7 Agent to OpenWrt Router
+  hosts: beryl7_routers
+  gather_facts: no
+  vars:
+    go_source_dir: "../go-agent"
+    binary_name: "beryl7-agent"
+    install_dir: "/usr/bin"
+    backup_binary: "/usr/bin/beryl7-agent.backup"
+    current_binary: "/usr/bin/beryl7-agent"
+
+  tasks:
+    - name: "1. Pre-flight Check: Verify local Go installation"
+      delegate_to: localhost
+      command: go version
+      register: go_ver
+      failed_when: "'go version' not in go_ver.stdout"
+
+    - name: "2. Cross-compile Go ARM64 Binary"
+      delegate_to: localhost
+      environment:
+        GOOS: "linux"
+        GOARCH: "arm64"
+      command: go build -o "{{ go_source_dir }}/{{ binary_name }}" ./cmd
+      args:
+        chdir: "{{ go_source_dir }}"
+
+    - name: "3. Backup existing binary on router"
+      raw: "cp {{ current_binary }} {{ backup_binary }} 2>/dev/null || true"
+
+    - name: "4. Upload new Go binary to router"
+      raw: "cat > {{ current_binary }}"
+      stdin: "{{ lookup('file', go_source_dir + '/' + binary_name) }}"
+
+    - name: "5. Set execution permissions"
+      raw: "chmod +x {{ current_binary }}"
+
+    - name: "6. Restart Beryl7 daemon service"
+      raw: "/etc/init.d/beryl7-agent restart 2>/dev/null || true"
+
+    - name: "7. Verify Health Endpoint"
+      raw: "curl -s http://127.0.0.1:8888/api/health"
+      register: health_resp
+      retries: 3
+      delay: 3
+      until: "'healthy' in health_resp.stdout"
+
+    - name: "8. Rollback on failure"
+      raw: "cp {{ backup_binary }} {{ current_binary }} && /etc/init.d/beryl7-agent restart"
+      when: "'healthy' not in health_resp.stdout"
