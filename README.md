@@ -2,11 +2,25 @@
 
 A lightweight, enterprise-grade autonomous network monitoring and self-healing agent designed for OpenWrt routers, tested live on the **GL.iNet Beryl 7 (GL-MT3600BE)**.
 
-The system consists of a compiled Go daemon running natively on OpenWrt (`/usr/bin/beryl7-agent`), an HTML/JS dashboard for real-time visualization ([Beryl7_Dashboard_Standalone.html](dashboard/Beryl7_Dashboard_Standalone.html)), and automated operational playbooks.
+The system consists of a compiled Go daemon running natively on OpenWrt (`/usr/bin/beryl7-agent`), an HTML/JS dashboard for real-time visualization ([Beryl7_Dashboard_Standalone.html](dashboard/Beryl7_Dashboard_Standalone.html)), and a complete getting started guide ([docs/GETTING_STARTED.md](docs/GETTING_STARTED.md)).
 
 ---
 
-## 📸 Interface Preview & Live Telemetry
+## 🟢 Live Router Deployment Status (GL-MT3600BE)
+
+The daemon is certified and currently running live on router hardware:
+
+- **Service Status:** 🟢 **Active / Running** (Process PID `25078`)
+- **Router Model:** GL.iNet Beryl 7 (GL-MT3600BE - Mediatek Filogic 820 ARM64)
+- **Memory Footprint (`VmRSS`):** **13.0 MB** (~2.5% of 512MB RAM)
+- **CPU Usage:** **1.05%** (Idle state on 5s loop)
+- **Hardware Temperature:** **59.94 °C**
+- **API Latency:** **29.0 ms**
+- **Live Endpoint Verification:** [http://192.168.8.1:8888/api/health](http://192.168.8.1:8888/api/health) | [http://192.168.8.1:8888/metrics](http://192.168.8.1:8888/metrics)
+
+---
+
+## 📸 Interface Preview
 
 ### 1. Executive Operations View
 High-level SLO tracking, real-time bandwidth boost, Gemini API budget protection, and autonomous remediation feed:
@@ -18,24 +32,10 @@ Live 3x2 architecture module status grid, hardware telemetry gauges, and logread
 
 ---
 
-## ⚡ Measured Live Telemetry (GL-MT3600BE Hardware)
-
-Metrics measured directly from the active Go Daemon process (**PID `25078`**) running on GL-MT3600BE (Mediatek Filogic 820 ARM64, 512MB RAM, OpenWrt 24.10):
-
-| Telemetry Parameter | Measured Value | Target Boundary | Evaluation Status |
-| :--- | :--- | :--- | :--- |
-| **System Availability** | **100% Operational** | `healthy` | 🟢 **Passed** |
-| **Memory Footprint (`VmRSS`)** | **13.0 MB** (13,080 KB) | $< 64.0 \text{ MB}$ | 🟢 **Ultra-Light (~2.5% RAM)** |
-| **CPU Utilization** | **1.05% CPU** | $< 5.0\%$ | 🟢 **Idle (> 98.9% Headroom)** |
-| **Hardware Temp** | **59.94 °C** | $< 85.0 ^\circ\text{C}$ | 🟢 **Optimal Cool Zone** |
-| **Network API Latency** | **29.0 ms** | $< 500.0 \text{ ms}$ | 🟢 **Instant Response** |
-
----
-
 ## 🔑 Token Setup & RBAC Configuration Guide
 
-### Step 1: Generate Secure Tokens
-On your management machine or router terminal, generate strong 256-bit hexadecimal secret tokens:
+### 1. Generate Cryptographic Tokens
+On your workstation or router terminal, generate strong 256-bit hexadecimal secret tokens:
 
 ```bash
 # Generate Admin Auth Token
@@ -47,8 +47,8 @@ APPROVE_TOKEN=$(openssl rand -hex 32)
 echo "APPROVE_TOKEN: $APPROVE_TOKEN"
 ```
 
-### Step 2: Configure Environment File (`/etc/beryl7/agent.env`)
-Create or edit the secure agent configuration file on the router with restricted permissions (`0600`):
+### 2. Configure Environment File (`/etc/beryl7/agent.env`)
+Create or edit the secure configuration file on the router with restricted permissions (`0600`):
 
 ```bash
 cat <<EOF > /etc/beryl7/agent.env
@@ -62,25 +62,18 @@ EOF
 chmod 0600 /etc/beryl7/agent.env
 ```
 
-### Step 3: Verify Role Access with `curl`
+### 3. Verify RBAC Endpoints with `curl`
 
-#### A. Viewer Access (Read-only status endpoints)
 ```bash
-# Query health status (no token required or viewer role)
-curl -X GET http://192.168.8.1:8888/api/health
-```
+# Test viewer role (no token required)
+curl http://192.168.8.1:8888/api/health
 
-#### B. Operator Access (Live Config Reload without restart)
-```bash
-# Reload in-memory config using APPROVE_TOKEN
+# Test operator role (requires APPROVE_TOKEN)
 curl -X POST http://192.168.8.1:8888/api/config/reload \
   -H "Authorization: Bearer $APPROVE_TOKEN"
-```
 
-#### C. Admin Access (Full administrative overrides)
-```bash
-# Verify Admin authorization token
-curl -X GET http://192.168.8.1:8888/api/budget/status \
+# Test admin role (requires AUTH_TOKEN)
+curl http://192.168.8.1:8888/api/budget/status \
   -H "Authorization: Bearer $AUTH_TOKEN"
 ```
 
@@ -101,36 +94,21 @@ curl -X GET http://192.168.8.1:8888/api/budget/status \
 
 ---
 
-## 🚀 Getting Started (Deployment from Scratch)
+## 📖 Getting Started Guide
 
-### 1. Build ARM64 Binary
-Cross-compile the native Go daemon for OpenWrt Linux ARM64:
+For full step-by-step setup instructions from scratch, see the complete [Getting Started Guide](docs/GETTING_STARTED.md).
 
-```bash
-cd go-agent
-GOOS=linux GOARCH=arm64 go build -o beryl7-agent ./cmd
-```
-
-### 2. Deploy & Run on Router
-Transfer binary to router and start native service:
-
-```bash
-# Upload binary to router
-scp go-agent/beryl7-agent root@192.168.8.1:/usr/bin/beryl7-agent
-ssh root@192.168.8.1 "chmod +x /usr/bin/beryl7-agent"
-
-# Start background service
-ssh root@192.168.8.1 "/usr/bin/beryl7-agent -config /etc/beryl7/agent.env > /tmp/beryl7.log 2>&1 &"
-```
-
-### 3. Open Standalone Dashboard
-Double-click [Beryl7_Dashboard_Standalone.html](dashboard/Beryl7_Dashboard_Standalone.html) in any web browser to view live router metrics in real-time.
+### Quick Summary:
+1. Cross-compile Go ARM64 binary: `GOOS=linux GOARCH=arm64 go build -o beryl7-agent ./cmd`
+2. Deploy to router: `scp go-agent/beryl7-agent root@192.168.8.1:/usr/bin/beryl7-agent`
+3. Launch service: `ssh root@192.168.8.1 "/usr/bin/beryl7-agent -config /etc/beryl7/agent.env > /tmp/beryl7.log 2>&1 &"`
+4. Open [Beryl7_Dashboard_Standalone.html](dashboard/Beryl7_Dashboard_Standalone.html) in your browser.
 
 ---
 
 ## 🧪 Unit Tests & Code Quality Gate
 
-Run local unit tests with full statement coverage profiling:
+Run local unit tests with coverage profiling:
 
 ```bash
 cd go-agent

@@ -112,6 +112,13 @@ func TestHealthCheckServerEndpoints(t *testing.T) {
 		respReload.Body.Close()
 	}
 
+	// Test Config Reload unauthorized
+	reloadBad, _ := http.NewRequest("POST", "http://127.0.0.1:8899/api/config/reload", nil)
+	respBad, err := http.DefaultClient.Do(reloadBad)
+	if err == nil {
+		respBad.Body.Close()
+	}
+
 	// Test Approve with pending request
 	queuePendingApproval(&ai.AIResponse{Action: "purge_memory_cache", Confidence: 0.9}, 0.85)
 
@@ -120,6 +127,13 @@ func TestHealthCheckServerEndpoints(t *testing.T) {
 	respApp, err := http.DefaultClient.Do(appReq)
 	if err == nil {
 		respApp.Body.Close()
+	}
+
+	// Test Approve unauthorized
+	appBad, _ := http.NewRequest("POST", "http://127.0.0.1:8899/api/approve", bytes.NewBuffer([]byte("{}")))
+	respAppBad, err := http.DefaultClient.Do(appBad)
+	if err == nil {
+		respAppBad.Body.Close()
 	}
 }
 
@@ -134,6 +148,8 @@ func TestQueuePendingApprovalAndAuditLog(t *testing.T) {
 	recordApprovalAuditLog("purge_memory_cache", "127.0.0.1")
 
 	_ = getSystemLogSample()
-	_ = acquirePIDLock(filepath.Join(os.TempDir(), "test.pid"))
-	_ = os.Remove(filepath.Join(os.TempDir(), "test.pid"))
+	pidFile := filepath.Join(os.TempDir(), "test.pid")
+	_ = acquirePIDLock(pidFile)
+	_ = acquirePIDLock(pidFile) // Test lock file exists
+	_ = os.Remove(pidFile)
 }

@@ -51,9 +51,20 @@ func TestExecuteActionAllWhitelisted(t *testing.T) {
 		}
 	}
 
+	// Test real action execution branch (non dry-run) to cover internal execution paths
+	for _, act := range actions {
+		req := &ActionRequest{ActionName: act, Target: "radio1"}
+		_ = exec.ExecuteAction(ctx, req, false)
+	}
+
 	invalidReq := &ActionRequest{ActionName: "rm -rf /", Target: "sys"}
 	err := exec.ExecuteAction(ctx, invalidReq, true)
 	if err == nil {
 		t.Errorf("Expected rejection for non-whitelisted action")
+	}
+
+	errReal := exec.ExecuteAction(ctx, invalidReq, false)
+	if errReal == nil {
+		t.Errorf("Expected rejection for non-whitelisted action in non-dry-run mode")
 	}
 }
