@@ -46,10 +46,12 @@ func LoadConfig() (*Config, error) {
 		DisableAutoHeal:   false,
 	}
 
-	flag.StringVar(&cfg.ConfigFilePath, "config", cfg.ConfigFilePath, "Path to environment config file")
-	flag.StringVar(&cfg.KeyFilePath, "keyfile", cfg.KeyFilePath, "Path to secure API key file")
-	flag.BoolVar(&cfg.DryRun, "dry-run", cfg.DryRun, "Enable dry-run mode (no network modifications)")
-	flag.Parse()
+	if !flag.Parsed() {
+		flag.StringVar(&cfg.ConfigFilePath, "config", cfg.ConfigFilePath, "Path to environment config file")
+		flag.StringVar(&cfg.KeyFilePath, "keyfile", cfg.KeyFilePath, "Path to secure API key file")
+		flag.BoolVar(&cfg.DryRun, "dry-run", cfg.DryRun, "Enable dry-run mode (no network modifications)")
+		flag.Parse()
+	}
 
 	if err := parseEnvFile(cfg.ConfigFilePath, cfg); err != nil {
 		logger.Warn("Could not parse config file %s: %v. Using defaults.", cfg.ConfigFilePath, err)
@@ -84,7 +86,6 @@ func LoadConfig() (*Config, error) {
 		logger.Warn("AUTH_TOKEN is empty in config! Health check endpoint will require setting AUTH_TOKEN.")
 	}
 
-	// Fail-Closed Hardening: APPROVE_TOKEN bắt buộc phải đặt riêng biệt, không dùng chung với AUTH_TOKEN
 	if cfg.ApproveToken == "" || cfg.ApproveToken == cfg.AuthToken {
 		logger.Warn("SECURITY WARNING: APPROVE_TOKEN is not set or identical to AUTH_TOKEN! /api/approve endpoint will be disabled (Fail-Closed).")
 	}

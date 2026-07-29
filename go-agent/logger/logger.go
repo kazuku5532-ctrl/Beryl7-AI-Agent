@@ -117,7 +117,6 @@ func (l *Logger) log(level LogLevel, levelStr, format string, v ...interface{}) 
 	timestamp := time.Now().UTC().Format(time.RFC3339)
 	msg := fmt.Sprintf(format, v...)
 
-	// Áp dụng bóc tách nhạy cảm cho mọi log level
 	msg = sanitizeRedact(msg)
 
 	line := fmt.Sprintf("[%s] [%s] %s\n", timestamp, levelStr, msg)
@@ -169,8 +168,23 @@ func (l *Logger) Flush() {
 	}
 }
 
+func (l *Logger) Close() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.file != nil {
+		_ = l.file.Close()
+		l.file = nil
+	}
+}
+
 func Flush() {
 	if globalLogger != nil {
 		globalLogger.Flush()
+	}
+}
+
+func Close() {
+	if globalLogger != nil {
+		globalLogger.Close()
 	}
 }
