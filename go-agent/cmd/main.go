@@ -104,7 +104,8 @@ func main() {
 
 	pidPath := "/var/run/beryl7-agent.pid"
 	if err := acquirePIDLock(pidPath); err != nil {
-		logger.Fatal("PID Lock Error: %v", err)
+		fmt.Printf("beryl7-agent process already running: %v\n", err)
+		os.Exit(0)
 	}
 	defer os.Remove(pidPath)
 

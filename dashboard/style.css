@@ -748,7 +748,7 @@ body {
 
 .module-grid-6 {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    grid-template-columns: repeat(3, 1fr);
     gap: 16px;
 }
 
@@ -811,7 +811,7 @@ body {
 .gauges-grid-4 {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
-    gap: 20px;
+    gap: 16px;
 }
 
 .gauge-card {
@@ -819,7 +819,7 @@ body {
     backdrop-filter: blur(12px);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-lg);
-    padding: 20px 24px;
+    padding: 18px 20px;
     transition: all 0.3s ease;
     display: flex;
     flex-direction: column;
