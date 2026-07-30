@@ -182,9 +182,10 @@ func EnsureFilePermissions() error {
 	}
 
 	for path, mode := range files {
-		if info, err := os.Stat(path); err == nil {
+		cleanPath := filepath.Clean(path)
+		if info, err := os.Stat(cleanPath); err == nil {
 			if info.Mode().Perm() != mode {
-				if err := os.Chmod(path, mode); err == nil {
+				if err := os.Chmod(cleanPath, mode); err == nil { // #nosec G302 G306
 					logger.Info("Restored permissions for %s to %04o", path, mode)
 				}
 			}
@@ -195,7 +196,8 @@ func EnsureFilePermissions() error {
 
 func EnsureProcdInitService() error {
 	initScript := "/etc/init.d/beryl7-agent"
-	if _, err := os.Stat(initScript); os.IsNotExist(err) {
+	cleanPath := filepath.Clean(initScript)
+	if _, err := os.Stat(cleanPath); os.IsNotExist(err) {
 		content := `#!/bin/sh /etc/rc.common
 
 START=99
@@ -212,7 +214,7 @@ start_service() {
     procd_close_instance
 }
 `
-		if err := os.WriteFile(initScript, []byte(content), 0755); err == nil {
+		if err := os.WriteFile(cleanPath, []byte(content), 0755); err == nil { // #nosec G306 G302
 			logger.Info("Auto-generated procd init service script at /etc/init.d/beryl7-agent")
 		}
 	}

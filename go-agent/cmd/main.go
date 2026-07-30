@@ -548,11 +548,13 @@ func startHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 		}
 
 		health.mu.RLock()
-		snapshot := *health
+		data, err := json.Marshal(health)
 		health.mu.RUnlock()
 
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(snapshot)
+		if err == nil {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write(data)
+		}
 	})
 
 	// Endpoint 2: Module Status (/api/modules/status)
@@ -605,15 +607,20 @@ func startHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 		}
 		w.Header().Set("Content-Type", "text/plain; version=0.0.4")
 		health.mu.RLock()
-		snapshot := *health
+		cpu := health.CPUUsagePct
+		ram := health.RAMUsagePct
+		temp := health.HardwareTempC
+		lat := health.LatencyMs
+		uptime := health.UptimeSeconds
 		health.mu.RUnlock()
+
 		tel := telemetry.NewCollector()
 		metricObj := &telemetry.Metric{
-			CPUUsagePct:     snapshot.CPUUsagePct,
-			RAMUsagePct:     snapshot.RAMUsagePct,
-			HardwareTempC:   snapshot.HardwareTempC,
-			LatencyMs:       snapshot.LatencyMs,
-			SystemUptimeSec: snapshot.UptimeSeconds,
+			CPUUsagePct:     cpu,
+			RAMUsagePct:     ram,
+			HardwareTempC:   temp,
+			LatencyMs:       lat,
+			SystemUptimeSec: uptime,
 		}
 		_, _ = w.Write([]byte(tel.ExportPrometheusMetrics(metricObj)))
 	})
