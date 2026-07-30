@@ -13,12 +13,22 @@ env/
 .env
 *.key
 agent.key
+deploy/inventory.ini
 
 # Build output & Binaries
-bin/beryl7-agent
+bin/
+go-agent/beryl7-agent
+go-agent/beryl7-agent-*
 *.exe
 *.o
 *.so
+
+# Coverage & Test Artifacts
+go-agent/coverage
+go-agent/coverage.out
+go-agent/coverage.html
+coverage.out
+coverage.html
 
 # Database & Logs
 *.db

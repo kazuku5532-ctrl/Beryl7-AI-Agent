@@ -29,6 +29,8 @@ type Config struct {
 	SkillStorePath    string
 	DisableAutoHeal   bool
 	FirmwareVersion   string
+	BindHost          string
+	CORSAllowedOrigins string
 	apiKeyAtomic      atomic.Value
 }
 
@@ -67,19 +69,21 @@ var CapabilityMatrix = map[string]FirmwareCapability{
 
 func LoadConfig() (*Config, error) {
 	cfg := &Config{
-		ConfigFilePath:    "/etc/beryl7/agent.env",
-		KeyFilePath:       "/etc/beryl7/agent.key",
-		AuthToken:         "",
-		ApproveToken:      "",
-		LogLevel:          "INFO",
-		HealthPort:        8888,
-		TelemetryInterval: 5 * time.Second,
-		EMAAlpha:          0.3,
-		DryRun:            false,
-		CheckpointPath:    "/root/.agent_checkpoint.uci",
-		SkillStorePath:    "/root/skills.db",
-		DisableAutoHeal:   false,
-		FirmwareVersion:   "4.9.0",
+		ConfigFilePath:     "/etc/beryl7/agent.env",
+		KeyFilePath:        "/etc/beryl7/agent.key",
+		AuthToken:          "",
+		ApproveToken:       "",
+		LogLevel:           "INFO",
+		HealthPort:         8888,
+		BindHost:           "0.0.0.0",
+		CORSAllowedOrigins: "*",
+		TelemetryInterval:  5 * time.Second,
+		EMAAlpha:           0.3,
+		DryRun:             false,
+		CheckpointPath:     "/root/.agent_checkpoint.uci",
+		SkillStorePath:     "/root/skills.db",
+		DisableAutoHeal:    false,
+		FirmwareVersion:    "4.9.0",
 	}
 
 	if !flag.Parsed() {
@@ -315,6 +319,10 @@ func parseEnvFile(filePath string, cfg *Config) error {
 			if p, err := strconv.Atoi(val); err == nil {
 				cfg.HealthPort = p
 			}
+		case "BIND_HOST":
+			cfg.BindHost = val
+		case "CORS_ORIGINS":
+			cfg.CORSAllowedOrigins = val
 		}
 	}
 

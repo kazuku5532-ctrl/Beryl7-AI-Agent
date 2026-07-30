@@ -34,7 +34,9 @@ def get_router_metrics(router_ip, ssh_port, username, password):
     ssh.close()
     return rss_kb, threads
 
-def run_soak_test(duration_hours=72, interval_seconds=10, router_ip="192.168.8.1", username="root", password="Kazuku@2k6"):
+def run_soak_test(duration_hours=72, interval_seconds=10, router_ip="192.168.8.1", username="root", password=None):
+    if password is None:
+        password = os.getenv("ROUTER_PASSWORD", "")
     print(f"=== Beryl7 72-Hour Memory Leak & Performance Soak Test ===")
     print(f"Target Router: {router_ip} | Target Duration: {duration_hours} hours")
     print(f"Acceptance Criteria: Memory Growth < {ACCEPTANCE_CRITERIA['memory_growth_rate_pct_per_hr']}%/hr | Thread Delta < {ACCEPTANCE_CRITERIA['thread_leak_max_per_hr']}/hr | P99 Latency < {ACCEPTANCE_CRITERIA['latency_p99_ms']}ms")

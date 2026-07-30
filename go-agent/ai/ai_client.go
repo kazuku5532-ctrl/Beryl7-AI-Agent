@@ -298,3 +298,21 @@ func extractJSONString(text string) string {
 	}
 	return strings.TrimSpace(text)
 }
+
+func (c *AIClient) GetBudgetSnapshot() APIBudget {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.budget
+}
+
+func (c *AIClient) GetCircuitBreakerStatus() (string, int, time.Time) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	stateStr := "CLOSED"
+	if c.state == StateOpen {
+		stateStr = "OPEN"
+	} else if c.state == StateHalfOpen {
+		stateStr = "HALF_OPEN"
+	}
+	return stateStr, c.failCount, c.lastFailTime
+}

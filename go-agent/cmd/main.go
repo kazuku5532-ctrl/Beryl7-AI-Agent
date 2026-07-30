@@ -76,7 +76,7 @@ func validateTokenRole(authHeader string, cfg *config.Config) (string, bool) {
 		return "admin", true
 	}
 
-	if token == "demo-token" || token == "viewer-token" {
+	if os.Getenv("BERYL7_DEMO_MODE") == "1" && (token == "demo-token" || token == "viewer-token") {
 		return "viewer", true
 	}
 
@@ -738,9 +738,12 @@ func startHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
+		b := aiClient.GetBudgetSnapshot()
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			"daily_limit_req": 1000,
-			"cost_limit_usd":  3.00,
+			"daily_limit_req": b.DailyLimit,
+			"cost_limit_usd":  b.CostLimit,
+			"current_count":   b.CurrentCount,
+			"current_cost":    b.CurrentCost,
 			"status":          "normal",
 		})
 	})
@@ -751,14 +754,21 @@ func startHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
+		state, failCount, _ := aiClient.GetCircuitBreakerStatus()
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			"state":        "CLOSED",
+			"state":        state,
+			"fail_count":   failCount,
 			"open_timeout": "5m0s",
 		})
 	})
 
+	bindHost := cfg.BindHost
+	if bindHost == "" {
+		bindHost = "0.0.0.0"
+	}
+
 	server := &http.Server{
-		Addr:         fmt.Sprintf("0.0.0.0:%d", cfg.HealthPort),
+		Addr:         fmt.Sprintf("%s:%d", bindHost, cfg.HealthPort),
 		Handler:      mux,
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 5 * time.Second,

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -156,14 +157,20 @@ func (w *Watchdog) ExecuteRollback() error {
 
 	// 1. Thử khôi phục từ full uci export snapshot tại /tmp/agent_checkpoint.uci nếu có
 	uciBackupPath := "/tmp/agent_checkpoint.uci"
-	if _, err := os.Stat(uciBackupPath); err == nil {
-		cmdImport := exec.Command("/bin/sh", "-c", fmt.Sprintf("uci import < %s && uci commit", uciBackupPath)) // #nosec G204
-		if out, errImport := cmdImport.CombinedOutput(); errImport == nil {
-			logger.Info("Successfully imported full UCI snapshot from %s: %s", uciBackupPath, string(out))
-		} else {
-			logger.Warn("UCI import from %s failed (%v), falling back to WAN DHCP default.", uciBackupPath, errImport)
-			_ = exec.Command("uci", "set", "network.wan.proto=dhcp").Run() // #nosec G204
-			_ = exec.Command("uci", "commit", "network").Run()             // #nosec G204
+	cleanBackupPath := filepath.Clean(uciBackupPath)
+	if _, err := os.Stat(cleanBackupPath); err == nil {
+		if f, errOpen := os.Open(cleanBackupPath); errOpen == nil { // #nosec G304
+			cmdImport := exec.Command("uci", "import") // #nosec G204
+			cmdImport.Stdin = f
+			if out, errImport := cmdImport.CombinedOutput(); errImport == nil {
+				_ = exec.Command("uci", "commit").Run() // #nosec G204
+				logger.Info("Successfully imported full UCI snapshot from %s: %s", cleanBackupPath, string(out))
+			} else {
+				logger.Warn("UCI import from %s failed (%v), falling back to WAN DHCP default.", cleanBackupPath, errImport)
+				_ = exec.Command("uci", "set", "network.wan.proto=dhcp").Run() // #nosec G204
+				_ = exec.Command("uci", "commit", "network").Run()             // #nosec G204
+			}
+			_ = f.Close()
 		}
 	} else {
 		// Fallback chuẩn WAN DHCP nếu không có file snapshot

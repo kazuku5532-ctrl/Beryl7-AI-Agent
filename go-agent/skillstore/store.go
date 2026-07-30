@@ -252,7 +252,7 @@ func (s *SkillStore) FilterCompatibleSkills(fwVersion string) []*Skill {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	rows, err := s.db.Query("SELECT id, action, condition, confidence, success_count, failure_count, created_at, last_used_at FROM skills WHERE confidence >= 0.50 ORDER BY confidence DESC")
+	rows, err := s.db.Query("SELECT id, action, condition_query, confidence, success_count, failure_count, created_at, last_used_at FROM skills WHERE confidence >= 0.50 ORDER BY confidence DESC")
 	if err != nil {
 		return nil
 	}
