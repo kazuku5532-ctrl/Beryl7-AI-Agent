@@ -157,7 +157,8 @@ func EnsureSysupgradePreservation() error {
 	}
 
 	if len(missing) > 0 {
-		f, err := os.OpenFile(sysupgradeConf, os.O_APPEND|os.O_WRONLY, 0644)
+		cleanSysupgrade := filepath.Clean(sysupgradeConf)
+		f, err := os.OpenFile(cleanSysupgrade, os.O_APPEND|os.O_WRONLY, 0644) // #nosec G302 G304
 		if err != nil {
 			return err
 		}

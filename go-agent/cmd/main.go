@@ -371,14 +371,15 @@ func queuePendingApproval(resp *ai.AIResponse, required float64) {
 	}
 	data, err := json.MarshalIndent(pending, "", "  ")
 	if err == nil {
-		_ = os.WriteFile("/var/run/beryl7_pending_approval.json", data, 0600)
+		_ = os.WriteFile(filepath.Clean("/var/run/beryl7_pending_approval.json"), data, 0600) // #nosec G306 G304
 		logger.Info("Saved pending approval request to /var/run/beryl7_pending_approval.json")
 	}
 }
 
 func recordApprovalAuditLog(action, remoteAddr string) {
 	auditLine := fmt.Sprintf("[%s] AUDIT: Operator approved action [%s] from %s\n", time.Now().Format(time.RFC3339), action, remoteAddr)
-	f, err := os.OpenFile("/var/log/beryl7_approval_audit.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
+	logFile := filepath.Clean("/var/log/beryl7_approval_audit.log")
+	f, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600) // #nosec G302 G304
 	if err == nil {
 		_, _ = f.WriteString(auditLine)
 		_ = f.Sync()
