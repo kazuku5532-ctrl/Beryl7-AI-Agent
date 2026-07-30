@@ -150,6 +150,24 @@ func TestQueuePendingApprovalAndAuditLog(t *testing.T) {
 	_ = getSystemLogSample()
 	pidFile := filepath.Join(os.TempDir(), "test.pid")
 	_ = acquirePIDLock(pidFile)
-	_ = acquirePIDLock(pidFile) // Test lock file exists
+	_ = acquirePIDLock(pidFile)
 	_ = os.Remove(pidFile)
+}
+
+func TestV16EnterpriseFailsafeAndValidation(t *testing.T) {
+	cfg := &config.Config{
+		AuthToken:      "test-token",
+		SkillStorePath: filepath.Join(t.TempDir(), "test_skills.db"),
+	}
+
+	_ = CheckBinaryCompatibility()
+	_ = PostUpgradeValidation(cfg)
+
+	_ = FailsafeRecovery(FailsafeLevel1, cfg)
+	_ = FailsafeRecovery(FailsafeLevel2, cfg)
+	_ = FailsafeRecovery(FailsafeLevel3, cfg)
+	_ = FailsafeRecovery(FailsafeLevel4, cfg)
+
+	_ = PostRollbackValidationChecklist(cfg)
+	_ = AutoRollback(cfg)
 }

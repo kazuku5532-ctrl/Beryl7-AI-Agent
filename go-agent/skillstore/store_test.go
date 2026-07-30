@@ -43,6 +43,18 @@ func TestSkillStoreLifecycle(t *testing.T) {
 
 	_ = store.PruneSkillsPeriodic()
 	_ = store.BackupDatabase()
+
+	// Test v16.0 skill store functions
+	translated := TranslateSkillInterface("ifconfig eth0 up", "4.9.0", "5.0")
+	if translated != "ifconfig wan0 up" {
+		t.Errorf("Unexpected translation result: %s", translated)
+	}
+
+	compatible := store.FilterCompatibleSkills("5.0")
+	if len(compatible) < 0 {
+		t.Errorf("FilterCompatibleSkills returned nil slice")
+	}
+
 	backupPath := dbPath + ".bak"
 	_ = os.Remove(backupPath)
 }

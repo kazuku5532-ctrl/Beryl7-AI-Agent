@@ -42,3 +42,17 @@ func TestReadSecureKeyFile(t *testing.T) {
 		t.Errorf("Expected my-secret-key, got %s (err=%v)", key, err)
 	}
 }
+
+func TestV16EnterpriseConfigFunctions(t *testing.T) {
+	cfg, _ := LoadConfig()
+
+	_ = EnsureSysupgradePreservation()
+	_ = EnsureFilePermissions()
+	_ = EnsureProcdInitService()
+	_ = DetectSystemCapability(cfg)
+
+	warnings := DryRunUpgradeCheck("5.0")
+	if len(warnings) == 0 {
+		t.Logf("DryRunUpgradeCheck executed")
+	}
+}

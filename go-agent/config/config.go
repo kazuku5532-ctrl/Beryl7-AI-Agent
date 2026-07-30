@@ -3,6 +3,7 @@ package config
 import (
 	"bufio"
 	"flag"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -27,7 +28,41 @@ type Config struct {
 	CheckpointPath    string
 	SkillStorePath    string
 	DisableAutoHeal   bool
+	FirmwareVersion   string
 	apiKeyAtomic      atomic.Value
+}
+
+type FirmwareCapability struct {
+	Version         string
+	MinGoVersion    string
+	UbusAPIVersion  int
+	SkillCompatible map[string]bool
+}
+
+var CapabilityMatrix = map[string]FirmwareCapability{
+	"4.9.0": {
+		Version:        "4.9.0",
+		MinGoVersion:   "1.21",
+		UbusAPIVersion: 1,
+		SkillCompatible: map[string]bool{
+			"purge_memory_cache":    true,
+			"restart_wan_interface": true,
+			"optimize_wifi_channel": true,
+			"boost_wifi_bandwidth":  true,
+		},
+	},
+	"5.0": {
+		Version:        "5.0",
+		MinGoVersion:   "1.21",
+		UbusAPIVersion: 2,
+		SkillCompatible: map[string]bool{
+			"purge_memory_cache":    true,
+			"restart_wan_interface": true,
+			"optimize_wifi_channel": true,
+			"boost_wifi_bandwidth":  true,
+			"qos_v2_boost":          true,
+		},
+	},
 }
 
 func LoadConfig() (*Config, error) {
@@ -44,6 +79,7 @@ func LoadConfig() (*Config, error) {
 		CheckpointPath:    "/root/.agent_checkpoint.uci",
 		SkillStorePath:    "/root/skills.db",
 		DisableAutoHeal:   false,
+		FirmwareVersion:   "4.9.0",
 	}
 
 	if !flag.Parsed() {
@@ -91,6 +127,132 @@ func LoadConfig() (*Config, error) {
 	}
 
 	return cfg, nil
+}
+
+func EnsureSysupgradePreservation() error {
+	sysupgradeConf := "/etc/sysupgrade.conf"
+	if _, err := os.Stat(sysupgradeConf); err != nil {
+		return nil
+	}
+
+	requiredEntries := []string{
+		"/etc/beryl7/agent.env",
+		"/usr/bin/beryl7-agent",
+		"/etc/init.d/beryl7-agent",
+		"/root/.agent_checkpoint.uci",
+		"/root/skills.db",
+	}
+
+	data, err := os.ReadFile(sysupgradeConf)
+	if err != nil {
+		return err
+	}
+	content := string(data)
+
+	var missing []string
+	for _, entry := range requiredEntries {
+		if !strings.Contains(content, entry) {
+			missing = append(missing, entry)
+		}
+	}
+
+	if len(missing) > 0 {
+		f, err := os.OpenFile(sysupgradeConf, os.O_APPEND|os.O_WRONLY, 0644)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+
+		for _, entry := range missing {
+			if _, err := f.WriteString(entry + "\n"); err != nil {
+				return err
+			}
+		}
+		logger.Info("Registered %d missing entries in /etc/sysupgrade.conf for firmware preservation.", len(missing))
+	}
+	return nil
+}
+
+func EnsureFilePermissions() error {
+	files := map[string]os.FileMode{
+		"/etc/beryl7/agent.env":    0600,
+		"/usr/bin/beryl7-agent":    0755,
+		"/etc/init.d/beryl7-agent": 0755,
+		"/root/skills.db":          0600,
+	}
+
+	for path, mode := range files {
+		if info, err := os.Stat(path); err == nil {
+			if info.Mode().Perm() != mode {
+				if err := os.Chmod(path, mode); err == nil {
+					logger.Info("Restored permissions for %s to %04o", path, mode)
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func EnsureProcdInitService() error {
+	initScript := "/etc/init.d/beryl7-agent"
+	if _, err := os.Stat(initScript); os.IsNotExist(err) {
+		content := `#!/bin/sh /etc/rc.common
+
+START=99
+STOP=15
+USE_PROCD=1
+PROG=/usr/bin/beryl7-agent
+
+start_service() {
+    procd_open_instance
+    procd_set_param command "$PROG" -config /etc/beryl7/agent.env
+    procd_set_param respawn 3600 5 0
+    procd_set_param stdout 1
+    procd_set_param stderr 1
+    procd_close_instance
+}
+`
+		if err := os.WriteFile(initScript, []byte(content), 0755); err == nil {
+			logger.Info("Auto-generated procd init service script at /etc/init.d/beryl7-agent")
+		}
+	}
+	return nil
+}
+
+func DetectSystemCapability(cfg *Config) string {
+	if data, err := os.ReadFile("/etc/glversion"); err == nil && len(data) > 0 {
+		version := strings.TrimSpace(string(data))
+		cfg.FirmwareVersion = version
+		logger.Info("Detected GL.iNet Firmware Version: %s", version)
+		return version
+	}
+
+	if data, err := os.ReadFile("/etc/openwrt_release"); err == nil && len(data) > 0 {
+		lines := strings.Split(string(data), "\n")
+		for _, line := range lines {
+			if strings.HasPrefix(line, "DISTRIB_RELEASE=") {
+				ver := strings.Trim(strings.TrimPrefix(line, "DISTRIB_RELEASE="), `"'`)
+				cfg.FirmwareVersion = ver
+				logger.Info("Detected OpenWrt Release Version: %s", ver)
+				return ver
+			}
+		}
+	}
+	return cfg.FirmwareVersion
+}
+
+func DryRunUpgradeCheck(targetVersion string) []string {
+	warnings := []string{}
+	cap, exists := CapabilityMatrix[targetVersion]
+	if !exists {
+		warnings = append(warnings, fmt.Sprintf("Target firmware version %s not listed in CapabilityMatrix", targetVersion))
+		return warnings
+	}
+
+	if cap.UbusAPIVersion > 1 {
+		warnings = append(warnings, fmt.Sprintf("Target version %s uses ubus API v%d (requires updated ubus RPC handler)", targetVersion, cap.UbusAPIVersion))
+	}
+	return warnings
 }
 
 func readSecureKeyFile(filePath string) (string, error) {

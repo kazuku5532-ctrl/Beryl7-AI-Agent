@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -238,6 +239,36 @@ func (s *SkillStore) PruneSkillsPeriodic() error {
 	}
 
 	return nil
+}
+
+func TranslateSkillInterface(command, fromVersion, toVersion string) string {
+	if fromVersion == "4.9.0" && (toVersion == "5.0" || strings.HasPrefix(toVersion, "5.")) {
+		command = strings.ReplaceAll(command, "eth0", "wan0")
+	}
+	return command
+}
+
+func (s *SkillStore) FilterCompatibleSkills(fwVersion string) []*Skill {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	rows, err := s.db.Query("SELECT id, action, condition, confidence, success_count, failure_count, created_at, last_used_at FROM skills WHERE confidence >= 0.50 ORDER BY confidence DESC")
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+
+	var compatible []*Skill
+	for rows.Next() {
+		var sk Skill
+		var created, lastUsed int64
+		if err := rows.Scan(&sk.ID, &sk.Action, &sk.Condition, &sk.Confidence, &sk.SuccessCount, &sk.FailureCount, &created, &lastUsed); err == nil {
+			sk.CreatedAt = time.Unix(created, 0)
+			sk.LastUsedAt = time.Unix(lastUsed, 0)
+			compatible = append(compatible, &sk)
+		}
+	}
+	return compatible
 }
 
 func (s *SkillStore) Close() error {

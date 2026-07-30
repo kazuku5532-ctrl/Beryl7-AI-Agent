@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/subtle"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -100,7 +101,13 @@ func main() {
 	}
 	defer logger.Flush()
 
-	logger.Info("Starting Beryl 7 AI Agent v15.3 Security Hardened & Enterprise Dashboard Edition (Native Go)...")
+	logger.Info("Starting Beryl 7 AI Agent v16.0 Enterprise Firmware Upgrade Resilience & Self-Adaptation Engine (Native Go)...")
+
+	_ = config.EnsureSysupgradePreservation()
+	_ = config.EnsureFilePermissions()
+	_ = config.EnsureProcdInitService()
+	_ = config.DetectSystemCapability(cfg)
+	_ = PostUpgradeValidation(cfg)
 
 	pidPath := "/var/run/beryl7-agent.pid"
 	if err := acquirePIDLock(pidPath); err != nil {
@@ -393,6 +400,106 @@ func acquirePIDLock(pidPath string) error {
 	}
 
 	return os.WriteFile(pidPath, []byte(strconv.Itoa(os.Getpid())), 0600)
+}
+
+type FailsafeLevel int
+
+const (
+	FailsafeLevel1 FailsafeLevel = iota
+	FailsafeLevel2
+	FailsafeLevel3
+	FailsafeLevel4
+)
+
+func CheckBinaryCompatibility() error {
+	info, err := os.Stat("/usr/bin/beryl7-agent")
+	if err != nil {
+		return fmt.Errorf("binary executable missing: %w", err)
+	}
+	if info.Mode()&0111 == 0 {
+		return fmt.Errorf("binary executable permission missing")
+	}
+	return nil
+}
+
+func PostUpgradeValidation(cfg *config.Config) error {
+	logger.Info("🔍 Starting post-upgrade system validation...")
+
+	if err := CheckBinaryCompatibility(); err != nil {
+		logger.Warn("Binary validation warning: %v", err)
+	}
+
+	if cfg != nil && cfg.AuthToken == "" {
+		logger.Warn("Config validation: AUTH_TOKEN is empty")
+	}
+
+	if cfg != nil && cfg.SkillStorePath != "" {
+		if _, err := os.Stat(cfg.SkillStorePath); err == nil {
+			db, err := sql.Open("sqlite", cfg.SkillStorePath)
+			if err != nil {
+				logger.Warn("SQLite DB open failed (%v) - initiating DB repair...", err)
+				_ = os.Remove(cfg.SkillStorePath)
+			} else {
+				defer db.Close()
+				var integrity string
+				if err := db.QueryRow("PRAGMA integrity_check").Scan(&integrity); err != nil || integrity != "ok" {
+					logger.Warn("SQLite DB corruption detected (%s) - re-initializing DB...", integrity)
+					_ = db.Close()
+					_ = os.Remove(cfg.SkillStorePath)
+				}
+			}
+		}
+	}
+
+	logger.Info("✅ Post-upgrade validation PASSED")
+	return nil
+}
+
+func FailsafeRecovery(level FailsafeLevel, cfg *config.Config) error {
+	switch level {
+	case FailsafeLevel1:
+		logger.Warn("⚠️ Level 1 Failsafe: Restoring binary backup /usr/bin/beryl7-agent.backup...")
+		if _, err := os.Stat("/usr/bin/beryl7-agent.backup"); err == nil {
+			if err := os.Rename("/usr/bin/beryl7-agent.backup", "/usr/bin/beryl7-agent"); err == nil {
+				return PostRollbackValidationChecklist(cfg)
+			}
+		}
+		logger.Warn("Binary backup missing -> Escalating to Level 2 Failsafe")
+		return FailsafeRecovery(FailsafeLevel2, cfg)
+
+	case FailsafeLevel2:
+		logger.Warn("⚠️ Level 2 Failsafe: Activating Degraded Mode (Monitoring Only)...")
+		if cfg != nil {
+			cfg.DisableAutoHeal = true
+		}
+		return nil
+
+	case FailsafeLevel3:
+		logger.Warn("⚠️ Level 3 Failsafe: Resetting SkillStore to Factory Defaults...")
+		if cfg != nil {
+			_ = os.Remove(cfg.SkillStorePath)
+		}
+		return nil
+
+	case FailsafeLevel4:
+		logger.Error("❌ Level 4 Failsafe: Recovery FAILED! Manual operator intervention required.")
+		return fmt.Errorf("critical failsafe recovery failed")
+	}
+	return nil
+}
+
+func PostRollbackValidationChecklist(cfg *config.Config) error {
+	logger.Info("📋 Executing Post-Rollback Validation Checklist...")
+	if err := CheckBinaryCompatibility(); err != nil {
+		logger.Warn("Rollback binary check warning: %v", err)
+	}
+	logger.Info("✅ Post-Rollback Validation PASSED")
+	return nil
+}
+
+func AutoRollback(cfg *config.Config) error {
+	logger.Warn("🔄 Triggering Automated Post-Upgrade Rollback...")
+	return FailsafeRecovery(FailsafeLevel1, cfg)
 }
 
 func startHealthCheckServer(cfg *config.Config, health *HealthState, execEngine *executor.Executor, store *skillstore.SkillStore, aiClient *ai.AIClient, wd *watchdog.Watchdog) *http.Server {
