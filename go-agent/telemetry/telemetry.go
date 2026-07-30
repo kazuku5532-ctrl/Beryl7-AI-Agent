@@ -166,52 +166,48 @@ func (t *TelemetryCollector) readCPUUsage() float64 {
 func (t *TelemetryCollector) readRAMUsage() float64 {
 	data, err := os.ReadFile("/proc/meminfo")
 	if err != nil {
-		return 37.93
+		return 0.0
 	}
-	var total, free, buffers, cached, sreclaimable float64
+	var total, free, buffers, cached, sreclaimable, memAvailable float64
 	lines := strings.Split(string(data), "\n")
 	for _, line := range lines {
-		if strings.HasPrefix(line, "MemTotal:") {
-			fields := strings.Fields(line)
-			if len(fields) >= 2 {
-				total, _ = strconv.ParseFloat(fields[1], 64)
-			}
-		} else if strings.HasPrefix(line, "MemFree:") {
-			fields := strings.Fields(line)
-			if len(fields) >= 2 {
-				free, _ = strconv.ParseFloat(fields[1], 64)
-			}
-		} else if strings.HasPrefix(line, "Buffers:") {
-			fields := strings.Fields(line)
-			if len(fields) >= 2 {
-				buffers, _ = strconv.ParseFloat(fields[1], 64)
-			}
-		} else if strings.HasPrefix(line, "Cached:") {
-			fields := strings.Fields(line)
-			if len(fields) >= 2 {
-				cached, _ = strconv.ParseFloat(fields[1], 64)
-			}
-		} else if strings.HasPrefix(line, "SReclaimable:") {
-			fields := strings.Fields(line)
-			if len(fields) >= 2 {
-				sreclaimable, _ = strconv.ParseFloat(fields[1], 64)
-			}
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+		val, _ := strconv.ParseFloat(fields[1], 64)
+		switch {
+		case strings.HasPrefix(line, "MemTotal:"):
+			total = val
+		case strings.HasPrefix(line, "MemFree:"):
+			free = val
+		case strings.HasPrefix(line, "MemAvailable:"):
+			memAvailable = val
+		case strings.HasPrefix(line, "Buffers:"):
+			buffers = val
+		case strings.HasPrefix(line, "Cached:"):
+			cached = val
+		case strings.HasPrefix(line, "SReclaimable:"):
+			sreclaimable = val
 		}
 	}
 
 	if total > 0 {
-		// GL.iNet Admin Panel considers Free + Buffers + Cached + SReclaimable + File Pages as Available Memory (~62.07%)
-		// Used RAM = Total - (Free + Buffers + Cached + SReclaimable + ~120MB reclaimable file pages)
-		reclaimableTotal := free + buffers + cached + sreclaimable + 124000.0
-		if reclaimableTotal < total {
-			availPct := (reclaimableTotal / total) * 100.0
-			usedPct := 100.0 - availPct
-			if usedPct >= 20.0 && usedPct <= 60.0 {
-				return usedPct
-			}
+		avail := memAvailable
+		if avail <= 0 {
+			avail = free + buffers + cached + sreclaimable
 		}
+		used := total - avail
+		if used < 0 {
+			used = 0
+		}
+		usedPct := (used / total) * 100.0
+		if usedPct > 100.0 {
+			usedPct = 100.0
+		}
+		return usedPct
 	}
-	return 37.93
+	return 0.0
 }
 
 func (t *TelemetryCollector) readSystemUptime() int64 {
@@ -391,9 +387,6 @@ func (t *TelemetryCollector) ExportPrometheusMetrics(m *Metric) string {
 	sb.WriteString("# HELP beryl7_conntrack_count Active Conntrack NAT sessions\n")
 	sb.WriteString("# TYPE beryl7_conntrack_count gauge\n")
 	sb.WriteString(fmt.Sprintf("beryl7_conntrack_count %d\n", t.ReadConntrackCount()))
-	sb.WriteString("# HELP beryl7_cache_hit_rate_pct SQLite Skill Cache hit rate percentage\n")
-	sb.WriteString("# TYPE beryl7_cache_hit_rate_pct gauge\n")
-	sb.WriteString("beryl7_cache_hit_rate_pct 91.40\n")
 	return sb.String()
 }
 

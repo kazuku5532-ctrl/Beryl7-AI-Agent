@@ -295,7 +295,7 @@ func main() {
 						Target:     "wan",
 					}
 					if requiredLocalThreshold >= 0.85 {
-						_ = exec.Command("/bin/sh", "-c", "uci export > /tmp/agent_checkpoint.uci").Run() // #nosec G204
+						saveUCICheckpoint(cfg.CheckpointPath)
 					}
 					execErr := execEngine.ExecuteAction(ctx, actReq, currentDryRun)
 					_ = store.SaveOrUpdateSkill(skill, execErr == nil, currentAlpha)
@@ -314,7 +314,7 @@ func main() {
 							Target:     "wan",
 						}
 						if requiredThreshold >= 0.85 {
-							_ = exec.Command("/bin/sh", "-c", "uci export > /tmp/agent_checkpoint.uci").Run() // #nosec G204
+							saveUCICheckpoint(cfg.CheckpointPath)
 						}
 						execErr := execEngine.ExecuteAction(ctx, actReq, currentDryRun)
 
@@ -333,9 +333,19 @@ func main() {
 						}
 					}
 				} else {
-					logger.Error("Cloud AI Call Failed (%v). Processing Selective Fallback Guardrail!", aiErr)
-					if anomalyType == "WAN_DROP" {
-						_ = wd.ExecuteRollback()
+					logger.Warn("Cloud AI Call Failed (%v). Activating Local Offline Heuristic Remediation Engine for [%s]...", aiErr, anomalyType)
+					localReq := &executor.ActionRequest{
+						ActionName: actionName,
+						Target:     "wan",
+					}
+					saveUCICheckpoint(cfg.CheckpointPath)
+					if execErr := execEngine.ExecuteAction(ctx, localReq, currentDryRun); execErr != nil {
+						logger.Error("Local Offline Heuristic Action [%s] failed (%v) -> Triggering Watchdog Rollback...", actionName, execErr)
+						if anomalyType == "WAN_DROP" {
+							_ = wd.ExecuteRollback()
+						}
+					} else {
+						logger.Info("✅ Local Offline Heuristic Action [%s] executed successfully!", actionName)
 					}
 				}
 			}
@@ -384,6 +394,29 @@ func recordApprovalAuditLog(action, remoteAddr string) {
 		_, _ = f.WriteString(auditLine)
 		_ = f.Sync()
 		_ = f.Close()
+	}
+}
+
+func saveUCICheckpoint(path string) {
+	if path == "" {
+		path = "/root/.agent_checkpoint.uci"
+	}
+	cleanPath := filepath.Clean(path)
+	dir := filepath.Dir(cleanPath)
+	_ = os.MkdirAll(dir, 0700)
+	f, err := os.OpenFile(cleanPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600) // #nosec G302 G304
+	if err != nil {
+		logger.Warn("Failed to open checkpoint file %s: %v", cleanPath, err)
+		return
+	}
+	defer f.Close()
+
+	cmd := exec.Command("uci", "export") // #nosec G204
+	cmd.Stdout = f
+	if err := cmd.Run(); err != nil {
+		logger.Warn("UCI export command failed: %v", err)
+	} else {
+		logger.Info("Saved persistent UCI checkpoint to %s", cleanPath)
 	}
 }
 
@@ -563,14 +596,24 @@ func startHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 		if setCorsHeaders(w, r) {
 			return
 		}
+		cbState, cbFails, _ := aiClient.GetCircuitBreakerStatus()
+		aiStatus := "healthy"
+		if cbState == "OPEN" {
+			aiStatus = "degraded"
+		}
+		wdStatus := "healthy"
+		if wd.IsSafeMode() {
+			wdStatus = "degraded"
+		}
+
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"orchestrator": map[string]interface{}{"status": "healthy", "priority": "ACTIVE", "interval_s": 5.0},
 			"executor":     map[string]interface{}{"status": "healthy", "whitelist": "100%", "uci_mapping": "MT7993"},
-			"ai_client":    map[string]interface{}{"status": "healthy", "model": "Gemini 2.5 Flash", "latency_ms": 280},
-			"watchdog":     map[string]interface{}{"status": "healthy", "checkpoint": "UCI Export", "rollback_rate": 0.0},
+			"ai_client":    map[string]interface{}{"status": aiStatus, "circuit_breaker": cbState, "fail_count": cbFails, "model": "Gemini 2.5 Flash"},
+			"watchdog":     map[string]interface{}{"status": wdStatus, "checkpoint": "UCI Persistent", "rollback_window_s": 30},
 			"log_parser":   map[string]interface{}{"status": "healthy", "source": "/sbin/logread", "regex": "Matched"},
-			"skill_store":  map[string]interface{}{"status": "healthy", "storage": "SQLite WAL", "lookup_latency_ms": 0.4},
+			"skill_store":  map[string]interface{}{"status": "healthy", "storage": "SQLite WAL"},
 		})
 	})
 

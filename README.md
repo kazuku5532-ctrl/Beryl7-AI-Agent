@@ -1,12 +1,24 @@
 # Beryl 7 AI Agent 🛠️
 
-A lightweight, enterprise-grade autonomous network monitoring and self-healing agent designed for OpenWrt routers, tested live on the **GL.iNet Beryl 7 (GL-MT3600BE)**.
+An autonomous reactive network remediation engine designed for OpenWrt routers, certified and running live on the **GL.iNet Beryl 7 (GL-MT3600BE)**.
 
-[![System Score](https://img.shields.io/badge/System_Score-10%2F10_Perfect-gold)](https://github.com/kazuku5532-ctrl/Beryl7-AI-Agent)
-[![Security Audit](https://img.shields.io/badge/Security_Audit-CLEAN_PASSED-emerald)](https://github.com/kazuku5532-ctrl/Beryl7-AI-Agent)
-[![Status](https://img.shields.io/badge/Production-Certified_Live-emerald)](http://192.168.8.1:8888/api/health)
+[![Go Version](https://img.shields.io/badge/Go-1.21-blue.svg)](https://golang.org)
+[![Architecture](https://img.shields.io/badge/Target_Arch-ARM64_Linux-blue.svg)](https://openwrt.org)
+[![Build Status](https://img.shields.io/badge/CI_Gate-100%25_PASS-emerald.svg)](https://github.com/kazuku5532-ctrl/Beryl7-AI-Agent)
+[![Status](https://img.shields.io/badge/Production-Certified_Live-emerald.svg)](http://192.168.8.1:8888/api/health)
 
-The system consists of a compiled Go daemon running natively on OpenWrt (`/usr/bin/beryl7-agent`), an HTML/JS dashboard for real-time visualization ([Beryl7_Dashboard_Standalone.html](dashboard/Beryl7_Dashboard_Standalone.html)), a complete getting started guide ([docs/GETTING_STARTED.md](docs/GETTING_STARTED.md)), and performance benchmark reports ([docs/benchmark.md](docs/benchmark.md)).
+The system consists of a zero-dependency compiled Go daemon running natively on OpenWrt (`/usr/bin/beryl7-agent`), an HTML/JS dashboard for real-time visualization ([Beryl7_Dashboard_Standalone.html](dashboard/Beryl7_Dashboard_Standalone.html)), a getting started guide ([docs/GETTING_STARTED.md](docs/GETTING_STARTED.md)), and performance benchmark reports ([docs/benchmark.md](docs/benchmark.md)).
+
+---
+
+## 🏛️ System Architecture & Remediation Engine
+
+Beryl 7 AI Agent operates as a **Reactive Network Remediation Engine with Local Deterministic Heuristics & Cloud AI Skill Caching**:
+
+1. **Local Deterministic Remediation (Offline First):** When internet connectivity drops or cloud APIs are unreachable, the daemon executes deterministic local healing rules (e.g., `restart_wan_interface` for WAN drops, `purge_memory_cache` for memory exhaustion, `optimize_wifi_channel` for Wi-Fi stalls) without requiring cloud connectivity.
+2. **Action Whitelist Guardrails:** All remedial actions are strictly bounded by an explicit Action Whitelist in `executor.go` (11 whitelisted system actions).
+3. **SQLite Skill Caching (`skills.db`):** Successful AI decision pairings are cached locally in SQLite with Exponential Moving Average (EMA) confidence scoring for instant zero-latency local re-use.
+4. **4-Level Failsafe Engine (`FailsafeRecovery`):** Level 1 Binary Backup Restore ➔ Level 2 Degraded Mode ➔ Level 3 Factory Reset ➔ Level 4 Operator Alert.
 
 ---
 
@@ -14,9 +26,9 @@ The system consists of a compiled Go daemon running natively on OpenWrt (`/usr/b
 
 The daemon is certified and currently running live on router hardware:
 
-- **Daemon Version:** 🟢 **v16.0 Enterprise Firmware Upgrade Resilience Engine (10/10 Audit Certified)**
+- **Daemon Version:** 🟢 **v16.0 Enterprise Firmware Upgrade Resilience Engine**
 - **Service Status:** 🟢 **Active / Running** (Process PID `17944`)
-- **Router Model:** GL.iNet Beryl 7 (GL-MT3600BE - Mediatek Filogic 820 ARM64)
+- **Router Model:** GL.iNet Beryl 7 (GL-MT3600BE - Mediatek Filogic 820 ARM64, 512MB RAM)
 - **Memory Footprint (`VmRSS`):** **`9.3 MB`** (9,552 KB - $< 2.0\%$ of 512MB RAM)
 - **CPU Usage:** **`1.05%`** (Idle state on 5s loop)
 - **Hardware Temperature:** **`60.07 °C`**
@@ -25,48 +37,25 @@ The daemon is certified and currently running live on router hardware:
 
 ---
 
-## 🛡️ v16.0 Enterprise Firmware Upgrade Resilience & Security Features
-
-- **Zero Hardcoded Credentials:** Safe environment configuration (`deploy/inventory.example.ini`, `.env`) with zero secrets tracked in Git.
-- **Sysupgrade File Preservation (`EnsureSysupgradePreservation`):** Auto-registers binary, configuration, init scripts, and SQLite skillstore in `/etc/sysupgrade.conf`.
-- **File Permission Restoration (`EnsureFilePermissions`):** Restores strict POSIX permissions (`0600` for secrets, `0755` for executables) immediately after upgrade.
-- **Post-Upgrade Validation (`PostUpgradeValidation`):** 4-point boot verification checking binary stat, config parse, SQLite `PRAGMA integrity_check`, and local HTTP health API.
-- **4-Level Failsafe Recovery Engine (`FailsafeRecovery`):** Level 1 Binary Backup Restore ➔ Level 2 Degraded Monitoring Mode ➔ Level 3 Factory Reset ➔ Level 4 Operator Alert.
-- **Interface & Skill Translation (`TranslateSkillInterface`):** Auto-translates interface names (e.g., `eth0` ➔ `wan0`) when migrating across firmware versions.
-
----
-
 ## 🔑 Token Setup & RBAC Configuration Guide
 
-### 1. Generate Cryptographic Tokens
-On your workstation or router terminal, generate strong 256-bit hexadecimal secret tokens:
-
-```bash
-# Generate Admin Auth Token
-AUTH_TOKEN=$(openssl rand -hex 32)
-echo "AUTH_TOKEN: $AUTH_TOKEN"
-
-# Generate Operator Approval Token
-APPROVE_TOKEN=$(openssl rand -hex 32)
-echo "APPROVE_TOKEN: $APPROVE_TOKEN"
-```
-
-### 2. Configure Environment File (`/etc/beryl7/agent.env`)
+### 1. Configure Environment File (`/etc/beryl7/agent.env`)
 Create or edit the secure configuration file on the router with restricted permissions (`0600`):
 
 ```bash
 cat <<EOF > /etc/beryl7/agent.env
-AUTH_TOKEN=$AUTH_TOKEN
-APPROVE_TOKEN=$APPROVE_TOKEN
+AUTH_TOKEN=your_admin_secret_token
+APPROVE_TOKEN=your_operator_approve_token
 LOG_LEVEL=INFO
 HEALTH_PORT=8888
+BIND_HOST=127.0.0.1
 GEMINI_API_KEY=your_gemini_api_key_here
 EOF
 
 chmod 0600 /etc/beryl7/agent.env
 ```
 
-### 3. Verify RBAC Endpoints with `curl`
+### 2. Verify RBAC Endpoints with `curl`
 
 ```bash
 # 1. Unauthenticated / Viewer Access (Read-Only Status)
@@ -88,4 +77,4 @@ curl -s -X POST http://192.168.8.1:8888/api/config/reload \
 ## 🧪 CI Gate & Verification
 
 - **Unit Test Suite:** 100% PASS across all 10 Go packages (`ai`, `cmd`, `config`, `executor`, `logger`, `parser`, `skillstore`, `telemetry`, `tests`, `watchdog`).
-- **Code Coverage Gate:** CI Workflow configured with strict coverage enforcement (`.github/workflows/coverage.yml`).
+- **Code Coverage Gate:** CI Workflow configured with strict quality gate enforcement (`.github/workflows/coverage.yml`).

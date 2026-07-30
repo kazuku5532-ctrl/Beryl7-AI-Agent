@@ -27,6 +27,7 @@ type LogParser struct {
 	wifiFailRegex  *regexp.Regexp
 	memLimitRegex  *regexp.Regexp
 	metaCharRegex  *regexp.Regexp
+	macRegex       *regexp.Regexp
 }
 
 func NewParser() *LogParser {
@@ -43,15 +44,20 @@ func NewParser() *LogParser {
 		wifiFailRegex: regexp.MustCompile(`(?i)(beacon\s+loss|hostapd.*failed|wlan.*deauth|auth\s+timeout)`),
 		memLimitRegex: regexp.MustCompile(`(?i)(out\s+of\s+memory|oom-killer|page\s+allocation\s+failure)`),
 		metaCharRegex: regexp.MustCompile(`[;&|` + "`" + `$<>\\]`), // Prompt Injection Sanitizer
+		macRegex:      regexp.MustCompile(`(?i)([0-9a-f]{2}[:-]){5}[0-9a-f]{2}`),
 	}
 }
 
-// SanitizeLog Line lọc sạch các ký tự Shell & SQL Meta-characters nguy hiểm
+// SanitizeLog Line lọc sạch các ký tự Shell & MAC Privacy Redaction
 func (p *LogParser) SanitizeLog(line string) string {
 	if len(line) > 4096 {
 		line = line[:4096] // 4096 bytes max syslog truncation
 	}
-	return p.metaCharRegex.ReplaceAllString(line, "_")
+	clean := p.metaCharRegex.ReplaceAllString(line, "_")
+	if p.macRegex != nil {
+		clean = p.macRegex.ReplaceAllString(clean, "[REDACTED_MAC]")
+	}
+	return clean
 }
 
 // ParseLine phân tích 1 dòng log, bọc rate limiter chống tràn CPU
