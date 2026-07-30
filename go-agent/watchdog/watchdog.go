@@ -155,8 +155,10 @@ func (w *Watchdog) ExecuteRollback() error {
 
 	logger.Warn("Watchdog Guardrail Triggered! Rolling back full router UCI configuration from checkpoint...")
 
-	// 1. Thử khôi phục từ full uci export snapshot tại /tmp/agent_checkpoint.uci nếu có
-	uciBackupPath := "/tmp/agent_checkpoint.uci"
+	uciBackupPath := w.checkpointPath
+	if uciBackupPath == "" {
+		uciBackupPath = "/root/.agent_checkpoint.uci"
+	}
 	cleanBackupPath := filepath.Clean(uciBackupPath)
 	if _, err := os.Stat(cleanBackupPath); err == nil {
 		if f, errOpen := os.Open(cleanBackupPath); errOpen == nil { // #nosec G304

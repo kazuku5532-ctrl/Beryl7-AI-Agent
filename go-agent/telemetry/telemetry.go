@@ -130,7 +130,7 @@ func (t *TelemetryCollector) CollectMetrics(ctx context.Context) *Metric {
 func (t *TelemetryCollector) readCPUUsage() float64 {
 	data, err := os.ReadFile("/proc/stat")
 	if err != nil {
-		return 0.8
+		return 0.0
 	}
 	lines := strings.Split(string(data), "\n")
 	if len(lines) > 0 && strings.HasPrefix(lines[0], "cpu ") {
@@ -282,7 +282,7 @@ func parseProcNetDevInterface(content, ifaceName string) (uint64, uint64) {
 func (t *TelemetryCollector) readActiveClients() int {
 	data, err := os.ReadFile("/proc/net/arp")
 	if err != nil {
-		return 3
+		return 0
 	}
 	lines := strings.Split(string(data), "\n")
 	count := 0
@@ -294,9 +294,6 @@ func (t *TelemetryCollector) readActiveClients() int {
 		if len(fields) >= 4 && fields[3] != "00:00:00:00:00:00" {
 			count++
 		}
-	}
-	if count == 0 {
-		return 3
 	}
 	return count
 }
@@ -341,7 +338,7 @@ func (t *TelemetryCollector) readHardwareTemp() float64 {
 			return val
 		}
 	}
-	return 61.0
+	return 0.0
 }
 
 func (t *TelemetryCollector) readPingLatency() float64 {
@@ -361,7 +358,7 @@ func (t *TelemetryCollector) ReadConntrackCount() int {
 			return val
 		}
 	}
-	return 42
+	return 0
 }
 
 func (t *TelemetryCollector) ExportPrometheusMetrics(m *Metric) string {

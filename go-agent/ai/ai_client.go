@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -17,6 +18,15 @@ import (
 
 	"beryl7-agent/logger"
 )
+
+var macRegexGlobal = regexp.MustCompile(`(?i)([0-9a-f]{2}[:-]){5}[0-9a-f]{2}`)
+
+func RedactMACAddresses(text string) string {
+	if macRegexGlobal == nil {
+		return text
+	}
+	return macRegexGlobal.ReplaceAllString(text, "[REDACTED_MAC]")
+}
 
 type CircuitState int
 
@@ -210,6 +220,8 @@ Guidance:
 - For WIFI_FAILURE: prefer optimize_wifi_channel or restart_interface
 
 Return JSON format ONLY: {"action":"action_name","reasoning":"clear explanation","confidence":0.0-1.0}`, anomalyType, description, sourceLog)
+
+	prompt = RedactMACAddresses(prompt)
 
 	reqBodyMap := map[string]interface{}{
 		"contents": []map[string]interface{}{

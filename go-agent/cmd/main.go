@@ -346,6 +346,13 @@ func main() {
 						}
 					} else {
 						logger.Info("✅ Local Offline Heuristic Action [%s] executed successfully!", actionName)
+						offlineSkill := &skillstore.Skill{
+							ID:         fmt.Sprintf("%s:%s", anomalyType, actionName),
+							Action:     actionName,
+							Condition:  anomalyType,
+							Confidence: 0.90,
+						}
+						_ = store.SaveOrUpdateSkill(offlineSkill, true, currentAlpha)
 					}
 				}
 			}

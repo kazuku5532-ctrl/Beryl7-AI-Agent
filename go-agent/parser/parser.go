@@ -48,16 +48,12 @@ func NewParser() *LogParser {
 	}
 }
 
-// SanitizeLog Line lọc sạch các ký tự Shell & MAC Privacy Redaction
+// SanitizeLog Line lọc sạch các ký tự Shell & SQL Meta-characters nguy hiểm
 func (p *LogParser) SanitizeLog(line string) string {
 	if len(line) > 4096 {
 		line = line[:4096] // 4096 bytes max syslog truncation
 	}
-	clean := p.metaCharRegex.ReplaceAllString(line, "_")
-	if p.macRegex != nil {
-		clean = p.macRegex.ReplaceAllString(clean, "[REDACTED_MAC]")
-	}
-	return clean
+	return p.metaCharRegex.ReplaceAllString(line, "_")
 }
 
 // ParseLine phân tích 1 dòng log, bọc rate limiter chống tràn CPU
