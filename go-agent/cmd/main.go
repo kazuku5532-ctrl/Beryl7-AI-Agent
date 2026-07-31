@@ -302,7 +302,7 @@ func main() {
 					continue
 				}
 
-				topExemplars := store.GetTopSkillsSummary(3)
+				topExemplars := store.GetTopSkillsSummaryForAnomaly(anomalyType, 3)
 				aiResp, aiErr := aiClient.AnalyzeAnomalyWithContext(ctx, anomalyType, anomalyDesc, liveLogSample, topExemplars)
 
 				if aiErr == nil && aiResp != nil {

@@ -53,7 +53,7 @@ func (w *Watchdog) IsSafeMode() bool {
 	return w.safeModeActive
 }
 
-// RecordHealthCheckSuccess Đếm số lần kiểm tra Health thành công liên tiếp (3x 30s = 90s) để tự động thoát Safe Mode
+// RecordHealthCheckSuccess Đếm số lần kiểm tra Health thành công liên tiếp (5x 30s = 150s) để tự động thoát Safe Mode
 func (w *Watchdog) RecordHealthCheckSuccess() bool {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -63,12 +63,12 @@ func (w *Watchdog) RecordHealthCheckSuccess() bool {
 	}
 
 	w.successfulChecks++
-	logger.Info("Safe Mode Health Check Success (%d/3)", w.successfulChecks)
+	logger.Info("Safe Mode Health Check Success (%d/5)", w.successfulChecks)
 
-	if w.successfulChecks >= 3 {
+	if w.successfulChecks >= 5 {
 		w.safeModeActive = false
 		w.successfulChecks = 0
-		logger.Info("Safe Mode EXIT Criteria Met (3/3 Consecutive Successes)! Restoring Auto-Healing Engine.")
+		logger.Info("Safe Mode EXIT Criteria Met (5/5 Consecutive Successes)! Restoring Auto-Healing Engine.")
 		_ = w.saveCheckpointInternal(false)
 		return true
 	}

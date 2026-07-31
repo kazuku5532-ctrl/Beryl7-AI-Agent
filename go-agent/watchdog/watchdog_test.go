@@ -37,15 +37,15 @@ func TestWatchdogAllBranches(t *testing.T) {
 	wd.safeModeActive = true
 	wd.successfulChecks = 0
 
-	for i := 0; i < 3; i++ {
+	for i := 0; i < 5; i++ {
 		exited := wd.RecordHealthCheckSuccess()
-		if i == 2 && !exited {
-			t.Errorf("Expected RecordHealthCheckSuccess to return true on 3rd success")
+		if i == 4 && !exited {
+			t.Errorf("Expected RecordHealthCheckSuccess to return true on 5th success")
 		}
 	}
 
 	if wd.IsSafeMode() {
-		t.Errorf("Expected SafeMode=false after 3 successes")
+		t.Errorf("Expected SafeMode=false after 5 successes")
 	}
 
 	_ = wd.RecordHealthCheckSuccess()

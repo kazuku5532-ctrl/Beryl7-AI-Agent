@@ -176,6 +176,11 @@ func (c *AIClient) AnalyzeAnomaly(ctx context.Context, anomalyType, description,
 }
 
 func (c *AIClient) AnalyzeAnomalyWithContext(ctx context.Context, anomalyType, description, sourceLog, fewShotContext string) (*AIResponse, error) {
+	if budgetErr := c.CheckBudgetBeforeCall(0.0001); budgetErr != nil {
+		logger.Warn("Cloud AI call blocked by budget limits: %v. Falling back to local skill store.", budgetErr)
+		return nil, budgetErr
+	}
+
 	var resp *AIResponse
 	var cbErr error
 

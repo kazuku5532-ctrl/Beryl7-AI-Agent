@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [v16.0.0] - 2026-07-31
+
+### Added 🌟
+- **10/10 Perfect Score System Evolution Engine:** Integrated anomaly-filtered Few-Shot exemplars into Gemini AI prompt (`GetTopSkillsSummaryForAnomaly`).
+- **EWMA & Z-Score Anomaly Engine:** Added statistical moving average and dynamic standard deviation anomaly tracking for network latency spikes.
+- **Safe Mode 5/5 Stability Exit Criteria:** Strengthened Safe Mode exit threshold from 3 to 5 consecutive successful health check cycles (150s).
+- **Security & Authorization Tightening:** Fixed Bug 3.1 Budget Check in `AnalyzeAnomalyWithContext`, disallowed `viewer` role from reading system logs (`/api/logs`), exact-matched CORS origins, and set default loopback `127.0.0.1`.
+
 ## [v15.3.0] - 2026-07-28
 
 ### Added 🌟

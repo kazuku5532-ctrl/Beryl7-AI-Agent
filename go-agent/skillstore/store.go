@@ -272,12 +272,25 @@ func (s *SkillStore) FilterCompatibleSkills(fwVersion string) []*Skill {
 }
 
 func (s *SkillStore) GetTopSkillsSummary(limit int) string {
+	return s.GetTopSkillsSummaryForAnomaly("", limit)
+}
+
+func (s *SkillStore) GetTopSkillsSummaryForAnomaly(anomalyType string, limit int) string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if limit <= 0 {
 		limit = 5
 	}
-	rows, err := s.db.Query("SELECT condition_query, action, confidence, success_count FROM skills WHERE confidence >= 0.70 ORDER BY success_count DESC, confidence DESC LIMIT ?", limit)
+
+	var rows *sql.Rows
+	var err error
+
+	if anomalyType != "" {
+		rows, err = s.db.Query("SELECT condition_query, action, confidence, success_count FROM skills WHERE condition_query = ? AND confidence >= 0.70 ORDER BY success_count DESC, confidence DESC LIMIT ?", anomalyType, limit)
+	} else {
+		rows, err = s.db.Query("SELECT condition_query, action, confidence, success_count FROM skills WHERE confidence >= 0.70 ORDER BY success_count DESC, confidence DESC LIMIT ?", limit)
+	}
+
 	if err != nil {
 		return ""
 	}
