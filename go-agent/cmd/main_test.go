@@ -79,7 +79,6 @@ func TestHealthCheckServerEndpoints(t *testing.T) {
 	endpoints := []string{
 		"http://127.0.0.1:8899/api/health",
 		"http://127.0.0.1:8899/api/modules/status",
-		"http://127.0.0.1:8899/api/logs",
 		"http://127.0.0.1:8899/metrics",
 		"http://127.0.0.1:8899/api/budget/status",
 		"http://127.0.0.1:8899/api/circuit-breaker",
@@ -94,6 +93,19 @@ func TestHealthCheckServerEndpoints(t *testing.T) {
 			if resp.StatusCode != http.StatusOK {
 				t.Errorf("Endpoint %s returned status %d", ep, resp.StatusCode)
 			}
+		}
+	}
+
+	// Test /api/logs with Auth header
+	logsReq, _ := http.NewRequest("GET", "http://127.0.0.1:8899/api/logs", nil)
+	logsReq.Header.Set("Authorization", "Bearer operator-secret")
+	respLogs, errLogs := http.DefaultClient.Do(logsReq)
+	if errLogs != nil {
+		t.Errorf("Failed GET /api/logs: %v", errLogs)
+	} else {
+		respLogs.Body.Close()
+		if respLogs.StatusCode != http.StatusOK {
+			t.Errorf("Authenticated /api/logs returned status %d", respLogs.StatusCode)
 		}
 	}
 

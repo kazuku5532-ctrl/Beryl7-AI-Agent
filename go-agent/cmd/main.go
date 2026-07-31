@@ -564,7 +564,15 @@ func startHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 	}
 
 	setCorsHeaders := func(w http.ResponseWriter, r *http.Request) bool {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
+		origin := r.Header.Get("Origin")
+		allowed := cfg.CORSAllowedOrigins
+		if allowed == "" || allowed == "*" {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+		} else if origin != "" && strings.Contains(allowed, origin) {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+		} else {
+			w.Header().Set("Access-Control-Allow-Origin", "http://192.168.8.1:8888")
+		}
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
 		if r.Method == "OPTIONS" {
@@ -588,9 +596,19 @@ func startHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 			return
 		}
 
-		health.mu.RLock()
+		cbState, _, _ := aiClient.GetCircuitBreakerStatus()
+		health.mu.Lock()
+		if wd.IsSafeMode() {
+			health.Status = "degraded (safe_mode)"
+		} else if cbState == "OPEN" {
+			health.Status = "degraded (circuit_open)"
+		} else if strings.Contains(health.WANStatus, "Offline") {
+			health.Status = "degraded (wan_offline)"
+		} else {
+			health.Status = "healthy"
+		}
 		data, err := json.Marshal(health)
-		health.mu.RUnlock()
+		health.mu.Unlock()
 
 		if err == nil {
 			w.Header().Set("Content-Type", "application/json")
@@ -627,6 +645,11 @@ func startHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 	// Endpoint 3: Real Logread Logs (/api/logs)
 	mux.HandleFunc("/api/logs", func(w http.ResponseWriter, r *http.Request) {
 		if setCorsHeaders(w, r) {
+			return
+		}
+		_, valid := validateTokenRole(r.Header.Get("Authorization"), cfg)
+		if !valid {
+			http.Error(w, `{"error":"Unauthorized: Valid Auth Token required to access system logs"}`, http.StatusUnauthorized)
 			return
 		}
 		rawLogs := getSystemLogSample()

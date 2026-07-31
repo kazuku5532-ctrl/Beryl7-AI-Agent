@@ -159,7 +159,7 @@ func (t *TelemetryCollector) readCPUUsage() float64 {
 			}
 		}
 	}
-	return 0.8
+	return 0.0
 }
 
 // readRAMUsage calculates RAM usage matching GL.iNet Admin Panel 1:1 (System Used + Apps Used = ~37.93%)

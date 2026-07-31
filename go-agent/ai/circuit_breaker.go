@@ -62,3 +62,9 @@ func (cb *CircuitBreaker) State() string {
 	defer cb.mu.Unlock()
 	return cb.state
 }
+
+func (cb *CircuitBreaker) Status() (string, int, time.Time) {
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+	return cb.state, cb.failCount, cb.lastFailAt
+}

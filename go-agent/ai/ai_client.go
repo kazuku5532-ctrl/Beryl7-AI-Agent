@@ -13,7 +13,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"beryl7-agent/logger"
@@ -140,7 +139,7 @@ func (c *AIClient) CheckBudgetBeforeCall(estimatedCost float64) error {
 		return ErrCostExceeded
 	}
 
-	atomic.AddInt64(&c.budget.CurrentCount, 1)
+	c.budget.CurrentCount++
 	c.budget.CurrentCost += estimatedCost
 	return nil
 }
@@ -231,20 +230,21 @@ Return JSON format ONLY: {"action":"action_name","reasoning":"clear explanation"
 	reqBytes, _ := json.Marshal(reqBodyMap)
 	url := "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
 
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(reqBytes))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("x-goog-api-key", key)
-
 	var httpResp *http.Response
+	var err error
 	for attempt := 1; attempt <= 3; attempt++ {
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		default:
 		}
+
+		req, reqErr := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(reqBytes))
+		if reqErr != nil {
+			return nil, reqErr
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("x-goog-api-key", key)
 
 		httpResp, err = c.httpClient.Do(req)
 		if err == nil && httpResp.StatusCode == 200 {
@@ -318,13 +318,8 @@ func (c *AIClient) GetBudgetSnapshot() APIBudget {
 }
 
 func (c *AIClient) GetCircuitBreakerStatus() (string, int, time.Time) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	stateStr := "CLOSED"
-	if c.state == StateOpen {
-		stateStr = "OPEN"
-	} else if c.state == StateHalfOpen {
-		stateStr = "HALF_OPEN"
+	if c.cb != nil {
+		return c.cb.Status()
 	}
-	return stateStr, c.failCount, c.lastFailTime
+	return "CLOSED", 0, time.Time{}
 }
