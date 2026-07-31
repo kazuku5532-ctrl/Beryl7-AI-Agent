@@ -292,23 +292,45 @@ func main() {
 					actionName = "restart_interface"
 				}
 
-				// Helper hàm Post-Action Verification
+				// Helper hàm Post-Action Verification bất đồng bộ (Non-blocking async goroutine)
 				verifyActionSuccess := func() bool {
-					time.Sleep(3 * time.Second) // Thời gian đệm nạp lại phần cứng
 					postMetric := collector.CollectMetrics(ctx)
 					if postMetric == nil {
 						return false
 					}
-					if anomalyType == "MEMORY_EXHAUSTION" && postMetric.RAMUsagePct < 88.0 {
-						return true
+					if anomalyType == "MEMORY_EXHAUSTION" {
+						return postMetric.RAMUsagePct < 88.0
 					}
-					if anomalyType == "WAN_DROP" && !strings.Contains(postMetric.WANStatus, "Offline") {
-						return true
+					if anomalyType == "WAN_DROP" {
+						return !strings.Contains(postMetric.WANStatus, "Offline")
 					}
-					if anomalyType == "LATENCY_SPIKE" && postMetric.LatencyMs < 100.0 {
-						return true
+					if anomalyType == "LATENCY_SPIKE" {
+						return postMetric.LatencyMs < 100.0
 					}
-					return true
+					if anomalyType == "WIFI_FAILURE" {
+						statusLower := strings.ToLower(postMetric.WiFi5GGhzStatus)
+						return !strings.Contains(statusLower, "disabled") && !strings.Contains(statusLower, "failed")
+					}
+					return false // Fallback an toàn: trả false nếu sự cố chưa thực sự xóa sạch
+				}
+
+				verifyAndRecordSkillAsync := func(targetSkill *skillstore.Skill, cmdExecSuccess bool) {
+					if !cmdExecSuccess {
+						collector.RecordHealOutcome(false)
+						_ = store.SaveOrUpdateSkill(targetSkill, false, currentAlpha)
+						return
+					}
+					go func(sk *skillstore.Skill) {
+						time.Sleep(3 * time.Second) // Settling period bất đồng bộ trong goroutine riêng
+						verifiedSuccess := verifyActionSuccess()
+						collector.RecordHealOutcome(verifiedSuccess)
+						_ = store.SaveOrUpdateSkill(sk, verifiedSuccess, currentAlpha)
+						if verifiedSuccess {
+							logger.Info("Post-Action Telemetry Verification SUCCESS for [%s:%s]", sk.Condition, sk.Action)
+						} else {
+							logger.Warn("Post-Action Telemetry Verification FAILED for [%s:%s] - Anomaly persists!", sk.Condition, sk.Action)
+						}
+					}(targetSkill)
 				}
 
 				skill := store.GetSkill(anomalyType, actionName)
@@ -325,9 +347,7 @@ func main() {
 						saveUCICheckpoint(cfg.CheckpointPath)
 					}
 					execErr := execEngine.ExecuteAction(ctx, actReq, currentDryRun)
-					verifiedSuccess := (execErr == nil) && verifyActionSuccess()
-					collector.RecordHealOutcome(verifiedSuccess)
-					_ = store.SaveOrUpdateSkill(skill, verifiedSuccess, currentAlpha)
+					verifyAndRecordSkillAsync(skill, execErr == nil)
 					continue
 				}
 
@@ -347,8 +367,6 @@ func main() {
 							saveUCICheckpoint(cfg.CheckpointPath)
 						}
 						execErr := execEngine.ExecuteAction(ctx, actReq, currentDryRun)
-						verifiedSuccess := (execErr == nil) && verifyActionSuccess()
-						collector.RecordHealOutcome(verifiedSuccess)
 
 						newSkill := &skillstore.Skill{
 							ID:         fmt.Sprintf("%s:%s", anomalyType, aiResp.Action),
@@ -356,7 +374,7 @@ func main() {
 							Condition:  anomalyType,
 							Confidence: aiResp.Confidence,
 						}
-						_ = store.SaveOrUpdateSkill(newSkill, verifiedSuccess, currentAlpha)
+						verifyAndRecordSkillAsync(newSkill, execErr == nil)
 					} else {
 						logger.Warn("SECURITY GATING TRIGGERED: AI Action [%s] Confidence (%.2f) below Required Risk Threshold (%.2f)! Queued for Operator Approval.", aiResp.Action, aiResp.Confidence, requiredThreshold)
 						queuePendingApproval(aiResp, requiredThreshold)
@@ -370,22 +388,20 @@ func main() {
 						ActionName: actionName,
 						Target:     "wan",
 					}
-					saveUCICheckpoint(cfg.CheckpointPath)
-					if execErr := execEngine.ExecuteAction(ctx, localReq, currentDryRun); execErr != nil {
+					execErr := execEngine.ExecuteAction(ctx, localReq, currentDryRun)
+					if execErr != nil {
 						logger.Error("Local Offline Heuristic Action [%s] failed (%v) -> Triggering Watchdog Rollback...", actionName, execErr)
 						if anomalyType == "WAN_DROP" {
 							_ = wd.ExecuteRollback()
 						}
-					} else {
-						logger.Info("✅ Local Offline Heuristic Action [%s] executed successfully!", actionName)
-						offlineSkill := &skillstore.Skill{
-							ID:         fmt.Sprintf("%s:%s", anomalyType, actionName),
-							Action:     actionName,
-							Condition:  anomalyType,
-							Confidence: 0.90,
-						}
-						_ = store.SaveOrUpdateSkill(offlineSkill, true, currentAlpha)
 					}
+					offlineSkill := &skillstore.Skill{
+						ID:         fmt.Sprintf("%s:%s", anomalyType, actionName),
+						Action:     actionName,
+						Condition:  anomalyType,
+						Confidence: 0.90,
+					}
+					verifyAndRecordSkillAsync(offlineSkill, execErr == nil)
 				}
 			}
 		}
