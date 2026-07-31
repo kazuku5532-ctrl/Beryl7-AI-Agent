@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -57,8 +59,16 @@ func TestHealthCheckServerEndpoints(t *testing.T) {
 	execEngine := executor.New()
 	aiClient := ai.NewClient("dummy-key")
 
+	// Allocate dynamic free port to prevent test port collisions
+	listener, lErr := net.Listen("tcp", "127.0.0.1:0")
+	if lErr != nil {
+		t.Fatalf("Failed to bind dynamic test port: %v", lErr)
+	}
+	testPort := listener.Addr().(*net.TCPAddr).Port
+	_ = listener.Close()
+
 	cfg := &config.Config{
-		HealthPort:   8899,
+		HealthPort:   testPort,
 		BindHost:     "127.0.0.1",
 		AuthToken:    "admin-secret",
 		ApproveToken: "operator-secret",
@@ -77,12 +87,14 @@ func TestHealthCheckServerEndpoints(t *testing.T) {
 
 	time.Sleep(100 * time.Millisecond)
 
+	baseURL := fmt.Sprintf("http://127.0.0.1:%d", testPort)
+
 	endpoints := []string{
-		"http://127.0.0.1:8899/api/health",
-		"http://127.0.0.1:8899/api/modules/status",
-		"http://127.0.0.1:8899/metrics",
-		"http://127.0.0.1:8899/api/budget/status",
-		"http://127.0.0.1:8899/api/circuit-breaker",
+		baseURL + "/api/health",
+		baseURL + "/api/modules/status",
+		baseURL + "/metrics",
+		baseURL + "/api/budget/status",
+		baseURL + "/api/circuit-breaker",
 	}
 
 	for _, ep := range endpoints {
@@ -98,7 +110,7 @@ func TestHealthCheckServerEndpoints(t *testing.T) {
 	}
 
 	// Test /api/logs unauthenticated (should return 401 Unauthorized)
-	unauthLogsResp, unauthErr := http.Get("http://127.0.0.1:8899/api/logs")
+	unauthLogsResp, unauthErr := http.Get(baseURL + "/api/logs")
 	if unauthErr == nil {
 		unauthLogsResp.Body.Close()
 		if unauthLogsResp.StatusCode != http.StatusUnauthorized {
@@ -107,7 +119,7 @@ func TestHealthCheckServerEndpoints(t *testing.T) {
 	}
 
 	// Test /api/logs with Auth header
-	logsReq, _ := http.NewRequest("GET", "http://127.0.0.1:8899/api/logs", nil)
+	logsReq, _ := http.NewRequest("GET", baseURL+"/api/logs", nil)
 	logsReq.Header.Set("Authorization", "Bearer operator-secret")
 	respLogs, errLogs := http.DefaultClient.Do(logsReq)
 	if errLogs != nil {
@@ -120,14 +132,14 @@ func TestHealthCheckServerEndpoints(t *testing.T) {
 	}
 
 	// Test OPTIONS CORS
-	req, _ := http.NewRequest("OPTIONS", "http://127.0.0.1:8899/api/health", nil)
+	req, _ := http.NewRequest("OPTIONS", baseURL+"/api/health", nil)
 	resp, err := http.DefaultClient.Do(req)
 	if err == nil {
 		resp.Body.Close()
 	}
 
 	// Test Config Reload with operator role
-	reloadReq, _ := http.NewRequest("POST", "http://127.0.0.1:8899/api/config/reload", nil)
+	reloadReq, _ := http.NewRequest("POST", baseURL+"/api/config/reload", nil)
 	reloadReq.Header.Set("Authorization", "Bearer operator-secret")
 	respReload, err := http.DefaultClient.Do(reloadReq)
 	if err == nil {
@@ -135,7 +147,7 @@ func TestHealthCheckServerEndpoints(t *testing.T) {
 	}
 
 	// Test Config Reload unauthorized
-	reloadBad, _ := http.NewRequest("POST", "http://127.0.0.1:8899/api/config/reload", nil)
+	reloadBad, _ := http.NewRequest("POST", baseURL+"/api/config/reload", nil)
 	respBad, err := http.DefaultClient.Do(reloadBad)
 	if err == nil {
 		respBad.Body.Close()
@@ -144,7 +156,7 @@ func TestHealthCheckServerEndpoints(t *testing.T) {
 	// Test Approve with pending request
 	queuePendingApproval(&ai.AIResponse{Action: "purge_memory_cache", Confidence: 0.9}, 0.85)
 
-	appReq, _ := http.NewRequest("POST", "http://127.0.0.1:8899/api/approve", bytes.NewBuffer([]byte("{}")))
+	appReq, _ := http.NewRequest("POST", baseURL+"/api/approve", bytes.NewBuffer([]byte("{}")))
 	appReq.Header.Set("Authorization", "Bearer operator-secret")
 	respApp, err := http.DefaultClient.Do(appReq)
 	if err == nil {
@@ -152,7 +164,7 @@ func TestHealthCheckServerEndpoints(t *testing.T) {
 	}
 
 	// Test Approve unauthorized
-	appBad, _ := http.NewRequest("POST", "http://127.0.0.1:8899/api/approve", bytes.NewBuffer([]byte("{}")))
+	appBad, _ := http.NewRequest("POST", baseURL+"/api/approve", bytes.NewBuffer([]byte("{}")))
 	respAppBad, err := http.DefaultClient.Do(appBad)
 	if err == nil {
 		respAppBad.Body.Close()
