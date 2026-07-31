@@ -59,6 +59,7 @@ func TestHealthCheckServerEndpoints(t *testing.T) {
 
 	cfg := &config.Config{
 		HealthPort:   8899,
+		BindHost:     "127.0.0.1",
 		AuthToken:    "admin-secret",
 		ApproveToken: "operator-secret",
 		DryRun:       true,

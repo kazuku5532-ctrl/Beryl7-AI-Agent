@@ -52,10 +52,6 @@ type AIClient struct {
 	mu           sync.Mutex
 	apiKey       string
 	httpClient   *http.Client
-	state        CircuitState
-	failCount    int
-	lastFailTime time.Time
-	resetTimeout time.Duration
 	tokens       float64
 	maxTokens    float64
 	refillRate   float64
@@ -90,11 +86,9 @@ type GeminiResponseBody struct {
 
 func NewClient(apiKey string) *AIClient {
 	return &AIClient{
-		apiKey:       apiKey,
-		state:        StateClosed,
-		resetTimeout: 5 * time.Minute,
-		maxTokens:    5.0,
-		tokens:       5.0,
+		apiKey:     apiKey,
+		maxTokens:  5.0,
+		tokens:     5.0,
 		refillRate:   10.0 / 60.0,
 		lastRefill:   time.Now(),
 		cb:           NewCircuitBreaker(5 * time.Minute),

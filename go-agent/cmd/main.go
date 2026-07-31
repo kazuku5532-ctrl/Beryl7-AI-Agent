@@ -568,8 +568,19 @@ func startHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 		allowed := cfg.CORSAllowedOrigins
 		if allowed == "" || allowed == "*" {
 			w.Header().Set("Access-Control-Allow-Origin", "*")
-		} else if origin != "" && strings.Contains(allowed, origin) {
-			w.Header().Set("Access-Control-Allow-Origin", origin)
+		} else if origin != "" {
+			matched := false
+			for _, entry := range strings.Split(allowed, ",") {
+				if strings.TrimSpace(entry) == origin {
+					matched = true
+					break
+				}
+			}
+			if matched {
+				w.Header().Set("Access-Control-Allow-Origin", origin)
+			} else {
+				w.Header().Set("Access-Control-Allow-Origin", "http://192.168.8.1:8888")
+			}
 		} else {
 			w.Header().Set("Access-Control-Allow-Origin", "http://192.168.8.1:8888")
 		}
@@ -597,8 +608,10 @@ func startHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 		}
 
 		cbState, _, _ := aiClient.GetCircuitBreakerStatus()
+		safeMode := wd.IsSafeMode()
+
 		health.mu.Lock()
-		if wd.IsSafeMode() {
+		if safeMode {
 			health.Status = "degraded (safe_mode)"
 		} else if cbState == "OPEN" {
 			health.Status = "degraded (circuit_open)"
@@ -647,8 +660,9 @@ func startHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 		if setCorsHeaders(w, r) {
 			return
 		}
-		_, valid := validateTokenRole(r.Header.Get("Authorization"), cfg)
-		if !valid {
+		authHdr := r.Header.Get("Authorization")
+		role, valid := validateTokenRole(authHdr, cfg)
+		if authHdr == "" || !valid || role == "unknown" {
 			http.Error(w, `{"error":"Unauthorized: Valid Auth Token required to access system logs"}`, http.StatusUnauthorized)
 			return
 		}
@@ -837,7 +851,7 @@ func startHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 
 	bindHost := cfg.BindHost
 	if bindHost == "" {
-		bindHost = "0.0.0.0"
+		bindHost = "127.0.0.1"
 	}
 
 	server := &http.Server{
