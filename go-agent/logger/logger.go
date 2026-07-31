@@ -108,6 +108,7 @@ func sanitizeRedact(msg string) string {
 	msg = passRegex.ReplaceAllString(msg, "$1=***REDACTED***")
 	msg = bearerRegex.ReplaceAllString(msg, "Bearer ***REDACTED***")
 	msg = jwtRegex.ReplaceAllString(msg, "***JWT_REDACTED***")
+	msg = macRegex.ReplaceAllString(msg, "[REDACTED_MAC]")
 	msg = ipRegex.ReplaceAllStringFunc(msg, func(ip string) string {
 		parts := regexp.MustCompile(`\.`).Split(ip, -1)
 		if len(parts) == 4 {
