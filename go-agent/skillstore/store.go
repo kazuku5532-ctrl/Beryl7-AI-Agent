@@ -271,6 +271,30 @@ func (s *SkillStore) FilterCompatibleSkills(fwVersion string) []*Skill {
 	return compatible
 }
 
+func (s *SkillStore) GetTopSkillsSummary(limit int) string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if limit <= 0 {
+		limit = 5
+	}
+	rows, err := s.db.Query("SELECT condition_query, action, confidence, success_count FROM skills WHERE confidence >= 0.70 ORDER BY success_count DESC, confidence DESC LIMIT ?", limit)
+	if err != nil {
+		return ""
+	}
+	defer rows.Close()
+
+	var sb strings.Builder
+	for rows.Next() {
+		var cond, act string
+		var conf float64
+		var succ int
+		if err := rows.Scan(&cond, &act, &conf, &succ); err == nil {
+			sb.WriteString(fmt.Sprintf("- When '%s' -> Action '%s' (Confidence: %.2f, Successes: %d)\n", cond, act, conf, succ))
+		}
+	}
+	return sb.String()
+}
+
 func (s *SkillStore) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

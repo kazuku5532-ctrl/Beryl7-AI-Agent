@@ -26,6 +26,8 @@ type Logger struct {
 	filePath    string
 	maxBytes    int64
 	backupCount int
+	jsonMode    bool
+	webhookURL  string
 }
 
 var (
@@ -67,6 +69,18 @@ func Init(filePath string, levelStr string) (*Logger, error) {
 
 	globalLogger = l
 	return l, nil
+}
+
+func (l *Logger) SetJSONMode(enabled bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.jsonMode = enabled
+}
+
+func (l *Logger) SetWebhookURL(url string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.webhookURL = url
 }
 
 func (l *Logger) rotate() {

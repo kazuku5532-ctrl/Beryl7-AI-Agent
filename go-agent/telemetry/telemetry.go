@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"net"
 	"os"
 	"os/exec"
@@ -41,6 +42,8 @@ type TelemetryCollector struct {
 	lastFlapTime   time.Time
 	debounceWindow time.Duration
 	ubusPath       string
+	ewmaLatency    float64
+	ewmaVariance   float64
 }
 
 func NewCollector() *TelemetryCollector {
@@ -385,5 +388,36 @@ func (t *TelemetryCollector) ExportPrometheusMetrics(m *Metric) string {
 	sb.WriteString("# TYPE beryl7_conntrack_count gauge\n")
 	sb.WriteString(fmt.Sprintf("beryl7_conntrack_count %d\n", t.ReadConntrackCount()))
 	return sb.String()
+}
+
+func (t *TelemetryCollector) UpdateEWMALatency(currentLat float64, alpha float64) (float64, float64) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	if alpha <= 0 || alpha >= 1 {
+		alpha = 0.2
+	}
+
+	if t.ewmaLatency == 0 {
+		t.ewmaLatency = currentLat
+		t.ewmaVariance = 0
+		return currentLat, 0.0
+	}
+
+	diff := currentLat - t.ewmaLatency
+	t.ewmaLatency += alpha * diff
+	t.ewmaVariance = (1 - alpha) * (t.ewmaVariance + alpha*diff*diff)
+
+	stdDev := 0.0
+	if t.ewmaVariance > 0 {
+		stdDev = math.Sqrt(t.ewmaVariance)
+	}
+
+	zScore := 0.0
+	if stdDev > 0 {
+		zScore = (currentLat - t.ewmaLatency) / stdDev
+	}
+
+	return t.ewmaLatency, zScore
 }
 

@@ -302,7 +302,8 @@ func main() {
 					continue
 				}
 
-				aiResp, aiErr := aiClient.AnalyzeAnomaly(ctx, anomalyType, anomalyDesc, liveLogSample)
+				topExemplars := store.GetTopSkillsSummary(3)
+				aiResp, aiErr := aiClient.AnalyzeAnomalyWithContext(ctx, anomalyType, anomalyDesc, liveLogSample, topExemplars)
 
 				if aiErr == nil && aiResp != nil {
 					requiredThreshold := execEngine.GetActionRiskThreshold(aiResp.Action)

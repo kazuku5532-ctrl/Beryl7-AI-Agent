@@ -175,7 +175,27 @@ func (c *AIClient) AnalyzeAnomaly(ctx context.Context, anomalyType, description,
 	return resp, cbErr
 }
 
+func (c *AIClient) AnalyzeAnomalyWithContext(ctx context.Context, anomalyType, description, sourceLog, fewShotContext string) (*AIResponse, error) {
+	var resp *AIResponse
+	var cbErr error
+
+	execErr := c.cb.Call(func() error {
+		var err error
+		resp, err = c.executeAnalyzeRequestWithContext(ctx, anomalyType, description, sourceLog, fewShotContext)
+		return err
+	})
+
+	if execErr != nil {
+		return nil, execErr
+	}
+	return resp, cbErr
+}
+
 func (c *AIClient) executeAnalyzeRequest(ctx context.Context, anomalyType, description, sourceLog string) (*AIResponse, error) {
+	return c.executeAnalyzeRequestWithContext(ctx, anomalyType, description, sourceLog, "")
+}
+
+func (c *AIClient) executeAnalyzeRequestWithContext(ctx context.Context, anomalyType, description, sourceLog, fewShotContext string) (*AIResponse, error) {
 	c.mu.Lock()
 	if !c.allowTokenCheck() {
 		c.mu.Unlock()
@@ -188,9 +208,14 @@ func (c *AIClient) executeAnalyzeRequest(ctx context.Context, anomalyType, descr
 		return nil, errors.New("Gemini API key is empty")
 	}
 
+	fewShotSection := ""
+	if fewShotContext != "" {
+		fewShotSection = fmt.Sprintf("\nHistorical Successful Healing Exemplars:\n%s", fewShotContext)
+	}
+
 	prompt := fmt.Sprintf(`Anomaly Detected: %s
 Details: %s
-System Log: %s
+System Log: %s%s
 
 Allowed actions ONLY: no_action_required, purge_memory_cache, restart_wan_interface, restart_interface, optimize_wifi_channel, block_device, set_qos_priority, set_wan_mac
 Guidance:
@@ -198,7 +223,7 @@ Guidance:
 - For WAN_DROP: prefer restart_wan_interface
 - For WIFI_FAILURE: prefer optimize_wifi_channel or restart_interface
 
-Return JSON format ONLY: {"action":"action_name","reasoning":"clear explanation","confidence":0.0-1.0}`, anomalyType, description, sourceLog)
+Return JSON format ONLY: {"action":"action_name","reasoning":"clear explanation","confidence":0.0-1.0}`, anomalyType, description, sourceLog, fewShotSection)
 
 	prompt = RedactMACAddresses(prompt)
 
