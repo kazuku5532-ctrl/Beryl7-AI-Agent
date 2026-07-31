@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -203,5 +204,23 @@ func TestV16EnterpriseFailsafeAndValidation(t *testing.T) {
 	_ = FailsafeRecovery(FailsafeLevel4, cfg)
 
 	_ = PostRollbackValidationChecklist(cfg)
+}
+
+func TestGoroutineLeakGuard(t *testing.T) {
+	before := runtime.NumGoroutine()
+	tempDir := t.TempDir()
+	store, _ := skillstore.New(filepath.Join(tempDir, "bench_skills.db"))
+	if store != nil {
+		store.Close()
+	}
+	time.Sleep(50 * time.Millisecond)
+	after := runtime.NumGoroutine()
+	if delta := after - before; delta > 2 {
+		t.Errorf("Goroutine leak detected: before=%d, after=%d, delta=%d", before, after, delta)
+	}
+}
+
+func TestAutoRollback(t *testing.T) {
+	cfg := &config.Config{}
 	_ = AutoRollback(cfg)
 }
