@@ -58,7 +58,7 @@ func TestParserAllBranches(t *testing.T) {
 	p.rateLimiter = 100
 	rep6 := p.ParseLine("kernel: eth0: link down")
 	if rep6 != nil {
-		t.Errorf("Expected nil when rate limit exceeded, got %v", rep6)
+		t.Errorf("Expected rate limiter to drop line, got %v", rep6)
 	}
 
 	p.lastReset = time.Now().Add(-2 * time.Second)
@@ -66,4 +66,22 @@ func TestParserAllBranches(t *testing.T) {
 	if rep7 == nil {
 		t.Errorf("Expected rate limiter reset after 1 sec")
 	}
+}
+
+func FuzzParseLine(f *testing.F) {
+	p := NewParser()
+	seeds := []string{
+		"kernel: eth0: link down",
+		"hostapd: wlan0: beacon loss",
+		"kernel: Out of memory: oom-killer",
+		"normal log line query[A]",
+		"meta; rm -rf / | reboot $()",
+	}
+	for _, seed := range seeds {
+		f.Add(seed)
+	}
+	f.Fuzz(func(t *testing.T, input string) {
+		_ = p.ParseLine(input)
+		_ = p.SanitizeLog(input)
+	})
 }
