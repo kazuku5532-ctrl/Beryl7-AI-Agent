@@ -27,14 +27,6 @@ func RedactMACAddresses(text string) string {
 	return macRegexGlobal.ReplaceAllString(text, "[REDACTED_MAC]")
 }
 
-type CircuitState int
-
-const (
-	StateClosed CircuitState = iota
-	StateOpen
-	StateHalfOpen
-)
-
 type APIBudget struct {
 	DailyLimit    int64
 	CostLimit     float64
@@ -60,16 +52,10 @@ type AIClient struct {
 	cb           *CircuitBreaker
 }
 
-type FunctionCall struct {
-	Name      string                 `json:"name"`
-	Arguments map[string]interface{} `json:"arguments"`
-}
-
 type AIResponse struct {
-	Action     string       `json:"action"`
-	Reasoning  string       `json:"reasoning"`
-	Function   FunctionCall `json:"function"`
-	Confidence float64      `json:"confidence"`
+	Action     string  `json:"action"`
+	Reasoning  string  `json:"reasoning"`
+	Confidence float64 `json:"confidence"`
 }
 
 type GeminiCandidate struct {

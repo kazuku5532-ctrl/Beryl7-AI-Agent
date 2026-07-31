@@ -662,8 +662,8 @@ func startHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 		}
 		authHdr := r.Header.Get("Authorization")
 		role, valid := validateTokenRole(authHdr, cfg)
-		if authHdr == "" || !valid || role == "unknown" {
-			http.Error(w, `{"error":"Unauthorized: Valid Auth Token required to access system logs"}`, http.StatusUnauthorized)
+		if authHdr == "" || !valid || role == "unknown" || role == "viewer" {
+			http.Error(w, `{"error":"Unauthorized: Operator or Admin Auth Token required to access system logs"}`, http.StatusUnauthorized)
 			return
 		}
 		rawLogs := getSystemLogSample()

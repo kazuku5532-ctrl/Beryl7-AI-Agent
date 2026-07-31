@@ -97,6 +97,15 @@ func TestHealthCheckServerEndpoints(t *testing.T) {
 		}
 	}
 
+	// Test /api/logs unauthenticated (should return 401 Unauthorized)
+	unauthLogsResp, unauthErr := http.Get("http://127.0.0.1:8899/api/logs")
+	if unauthErr == nil {
+		unauthLogsResp.Body.Close()
+		if unauthLogsResp.StatusCode != http.StatusUnauthorized {
+			t.Errorf("Unauthenticated /api/logs expected status 401, got %d", unauthLogsResp.StatusCode)
+		}
+	}
+
 	// Test /api/logs with Auth header
 	logsReq, _ := http.NewRequest("GET", "http://127.0.0.1:8899/api/logs", nil)
 	logsReq.Header.Set("Authorization", "Bearer operator-secret")
