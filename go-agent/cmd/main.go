@@ -138,7 +138,7 @@ func main() {
 		UptimeSeconds: 0,
 	}
 
-	httpServer := startHealthCheckServer(cfg, health, execEngine, store, aiClient, wd)
+	httpServer := StartHealthCheckServer(cfg, health, execEngine, store, aiClient, wd)
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
@@ -591,7 +591,7 @@ func AutoRollback(cfg *config.Config) error {
 	return FailsafeRecovery(FailsafeLevel1, cfg)
 }
 
-func startHealthCheckServer(cfg *config.Config, health *HealthState, execEngine *executor.Executor, store *skillstore.SkillStore, aiClient *ai.AIClient, wd *watchdog.Watchdog) *http.Server {
+func StartHealthCheckServer(cfg *config.Config, health *HealthState, execEngine *executor.Executor, store *skillstore.SkillStore, aiClient *ai.AIClient, wd *watchdog.Watchdog) *http.Server {
 	mux := http.NewServeMux()
 
 	var (

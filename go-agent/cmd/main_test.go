@@ -83,7 +83,7 @@ func TestHealthCheckServerEndpoints(t *testing.T) {
 		UptimeSeconds: 100,
 	}
 
-	server := startHealthCheckServer(cfg, health, execEngine, store, aiClient, wd)
+	server := StartHealthCheckServer(cfg, health, execEngine, store, aiClient, wd)
 	defer server.Close()
 
 	time.Sleep(100 * time.Millisecond)
@@ -204,6 +204,73 @@ func TestV16EnterpriseFailsafeAndValidation(t *testing.T) {
 	_ = FailsafeRecovery(FailsafeLevel4, cfg)
 
 	_ = PostRollbackValidationChecklist(cfg)
+}
+
+func TestFullDaemonE2EWithHILEmulator(t *testing.T) {
+	tempDir := t.TempDir()
+	fakeBinDir := filepath.Join(tempDir, "bin")
+	_ = os.MkdirAll(fakeBinDir, 0755)
+
+	uciExt := ""
+	if runtime.GOOS == "windows" {
+		uciExt = ".cmd"
+	}
+	uciScript := "@echo off\r\nif \"%1\"==\"export\" echo package network\r\nif \"%1\"==\"export\" echo config interface 'wan'\r\nif \"%1\"==\"export\" echo     option proto 'dhcp'\r\nexit /b 0"
+	if runtime.GOOS != "windows" {
+		uciScript = "#!/bin/sh\nif [ \"$1\" = \"export\" ]; then\n  echo 'package network'\n  echo 'config interface wan'\n  echo '    option proto dhcp'\nfi\nexit 0"
+	}
+	_ = os.WriteFile(filepath.Join(fakeBinDir, "uci"+uciExt), []byte(uciScript), 0755)
+	t.Setenv("PATH", fakeBinDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	store, err := skillstore.New(filepath.Join(tempDir, "hil_daemon.db"))
+	if err != nil {
+		t.Fatalf("Failed to init store: %v", err)
+	}
+	defer store.Close()
+
+	wd := watchdog.New(filepath.Join(tempDir, "cp.uci"))
+	execEngine := executor.New()
+	aiClient := ai.NewClient("dummy-key")
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Failed to bind dynamic test port: %v", err)
+	}
+	testPort := listener.Addr().(*net.TCPAddr).Port
+	_ = listener.Close()
+
+	cfg := &config.Config{
+		HealthPort:   testPort,
+		BindHost:     "127.0.0.1",
+		AuthToken:    "admin-secret",
+		ApproveToken: "operator-secret",
+		DryRun:       true,
+	}
+	health := &HealthState{
+		Status:        "healthy",
+		LastAction:    "none",
+		StartTime:     time.Now(),
+		UptimeSeconds: 100,
+	}
+
+	server := StartHealthCheckServer(cfg, health, execEngine, store, aiClient, wd)
+	defer server.Close()
+
+	time.Sleep(100 * time.Millisecond)
+
+	baseURL := fmt.Sprintf("http://127.0.0.1:%d", testPort)
+	resp, err := http.Get(baseURL + "/api/health")
+	if err != nil || resp.StatusCode != http.StatusOK {
+		t.Fatalf("Real Daemon Health Check failed: %v", err)
+	}
+	_ = resp.Body.Close()
+
+	// Verify REAL daemon endpoint /api/modules/status
+	modResp, err := http.Get(baseURL + "/api/modules/status")
+	if err != nil || modResp.StatusCode != http.StatusOK {
+		t.Fatalf("Real Daemon Module Status Check failed: %v", err)
+	}
+	_ = modResp.Body.Close()
 }
 
 func TestGoroutineLeakGuard(t *testing.T) {
