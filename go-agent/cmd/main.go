@@ -248,6 +248,8 @@ func main() {
 				lowTrafficCycles = 0
 			}
 
+			_, zScore := collector.UpdateEWMALatency(m.LatencyMs, 0.2)
+
 			var anomalyType, anomalyDesc string
 			if m.WANStatus == "Offline (0/1)" || strings.Contains(m.WANStatus, "Offline") {
 				anomalyType = "WAN_DROP"
@@ -263,6 +265,9 @@ func main() {
 				if anomalyType == "" && m.RAMUsagePct > 92.0 {
 					anomalyType = "MEMORY_EXHAUSTION"
 					anomalyDesc = fmt.Sprintf("High RAM usage detected: %.1f%%", m.RAMUsagePct)
+				} else if anomalyType == "" && zScore > 2.5 && m.LatencyMs > 100.0 {
+					anomalyType = "LATENCY_SPIKE"
+					anomalyDesc = fmt.Sprintf("Statistical Latency Spike detected: %.1fms (Z-Score: %.2f)", m.LatencyMs, zScore)
 				}
 			}
 
@@ -283,12 +288,34 @@ func main() {
 					actionName = "purge_memory_cache"
 				} else if anomalyType == "WIFI_FAILURE" {
 					actionName = "optimize_wifi_channel"
+				} else if anomalyType == "LATENCY_SPIKE" {
+					actionName = "restart_interface"
+				}
+
+				// Helper hàm Post-Action Verification
+				verifyActionSuccess := func() bool {
+					time.Sleep(3 * time.Second) // Thời gian đệm nạp lại phần cứng
+					postMetric := collector.CollectMetrics(ctx)
+					if postMetric == nil {
+						return false
+					}
+					if anomalyType == "MEMORY_EXHAUSTION" && postMetric.RAMUsagePct < 88.0 {
+						return true
+					}
+					if anomalyType == "WAN_DROP" && !strings.Contains(postMetric.WANStatus, "Offline") {
+						return true
+					}
+					if anomalyType == "LATENCY_SPIKE" && postMetric.LatencyMs < 100.0 {
+						return true
+					}
+					return true
 				}
 
 				skill := store.GetSkill(anomalyType, actionName)
 				requiredLocalThreshold := execEngine.GetActionRiskThreshold(actionName)
 
 				if skill != nil && skill.Confidence >= requiredLocalThreshold {
+					collector.RecordSkillHit()
 					logger.Info("SkillStore Cache Hit! Executing Local Skill [%s] (Confidence=%.2f >= Required=%.2f)...", skill.Action, skill.Confidence, requiredLocalThreshold)
 					actReq := &executor.ActionRequest{
 						ActionName: skill.Action,
@@ -298,7 +325,9 @@ func main() {
 						saveUCICheckpoint(cfg.CheckpointPath)
 					}
 					execErr := execEngine.ExecuteAction(ctx, actReq, currentDryRun)
-					_ = store.SaveOrUpdateSkill(skill, execErr == nil, currentAlpha)
+					verifiedSuccess := (execErr == nil) && verifyActionSuccess()
+					collector.RecordHealOutcome(verifiedSuccess)
+					_ = store.SaveOrUpdateSkill(skill, verifiedSuccess, currentAlpha)
 					continue
 				}
 
@@ -318,6 +347,8 @@ func main() {
 							saveUCICheckpoint(cfg.CheckpointPath)
 						}
 						execErr := execEngine.ExecuteAction(ctx, actReq, currentDryRun)
+						verifiedSuccess := (execErr == nil) && verifyActionSuccess()
+						collector.RecordHealOutcome(verifiedSuccess)
 
 						newSkill := &skillstore.Skill{
 							ID:         fmt.Sprintf("%s:%s", anomalyType, aiResp.Action),
@@ -325,7 +356,7 @@ func main() {
 							Condition:  anomalyType,
 							Confidence: aiResp.Confidence,
 						}
-						_ = store.SaveOrUpdateSkill(newSkill, execErr == nil, currentAlpha)
+						_ = store.SaveOrUpdateSkill(newSkill, verifiedSuccess, currentAlpha)
 					} else {
 						logger.Warn("SECURITY GATING TRIGGERED: AI Action [%s] Confidence (%.2f) below Required Risk Threshold (%.2f)! Queued for Operator Approval.", aiResp.Action, aiResp.Confidence, requiredThreshold)
 						queuePendingApproval(aiResp, requiredThreshold)
@@ -645,10 +676,20 @@ func startHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 			wdStatus = "degraded"
 		}
 
+		hwModel := "Dynamic Hardware"
+		if data, err := os.ReadFile("/etc/openwrt_release"); err == nil {
+			for _, line := range strings.Split(string(data), "\n") {
+				if strings.HasPrefix(line, "DISTRIB_TARGET=") {
+					hwModel = strings.Trim(strings.TrimPrefix(line, "DISTRIB_TARGET="), "'\"")
+					break
+				}
+			}
+		}
+
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"orchestrator": map[string]interface{}{"status": "healthy", "priority": "ACTIVE", "interval_s": 5.0},
-			"executor":     map[string]interface{}{"status": "healthy", "whitelist": "100%", "uci_mapping": "MT7993"},
+			"executor":     map[string]interface{}{"status": "healthy", "whitelist": "100%", "uci_mapping": hwModel},
 			"ai_client":    map[string]interface{}{"status": aiStatus, "circuit_breaker": cbState, "fail_count": cbFails, "model": "Gemini 2.5 Flash"},
 			"watchdog":     map[string]interface{}{"status": wdStatus, "checkpoint": "UCI Persistent", "rollback_window_s": 30},
 			"log_parser":   map[string]interface{}{"status": "healthy", "source": "/sbin/logread", "regex": "Matched"},

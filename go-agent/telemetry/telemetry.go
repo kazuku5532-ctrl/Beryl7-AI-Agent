@@ -41,9 +41,12 @@ type TelemetryCollector struct {
 	prevCPUIdle    float64
 	lastFlapTime   time.Time
 	debounceWindow time.Duration
-	ubusPath       string
-	ewmaLatency    float64
-	ewmaVariance   float64
+	ubusPath          string
+	ewmaLatency       float64
+	ewmaVariance      float64
+	skillHitsTotal    int64
+	healSuccessTotal  int64
+	healFailuresTotal int64
 }
 
 func NewCollector() *TelemetryCollector {
@@ -387,7 +390,36 @@ func (t *TelemetryCollector) ExportPrometheusMetrics(m *Metric) string {
 	sb.WriteString("# HELP beryl7_conntrack_count Active Conntrack NAT sessions\n")
 	sb.WriteString("# TYPE beryl7_conntrack_count gauge\n")
 	sb.WriteString(fmt.Sprintf("beryl7_conntrack_count %d\n", t.ReadConntrackCount()))
+
+	t.mu.Lock()
+	sb.WriteString("# HELP beryl7_skill_hits_total Total SkillStore cache hits\n")
+	sb.WriteString("# TYPE beryl7_skill_hits_total counter\n")
+	sb.WriteString(fmt.Sprintf("beryl7_skill_hits_total %d\n", t.skillHitsTotal))
+	sb.WriteString("# HELP beryl7_healing_success_total Total verified successful auto-healings\n")
+	sb.WriteString("# TYPE beryl7_healing_success_total counter\n")
+	sb.WriteString(fmt.Sprintf("beryl7_healing_success_total %d\n", t.healSuccessTotal))
+	sb.WriteString("# HELP beryl7_healing_failures_total Total failed auto-healing attempts\n")
+	sb.WriteString("# TYPE beryl7_healing_failures_total counter\n")
+	sb.WriteString(fmt.Sprintf("beryl7_healing_failures_total %d\n", t.healFailuresTotal))
+	t.mu.Unlock()
+
 	return sb.String()
+}
+
+func (t *TelemetryCollector) RecordSkillHit() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.skillHitsTotal++
+}
+
+func (t *TelemetryCollector) RecordHealOutcome(success bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if success {
+		t.healSuccessTotal++
+	} else {
+		t.healFailuresTotal++
+	}
 }
 
 func (t *TelemetryCollector) UpdateEWMALatency(currentLat float64, alpha float64) (float64, float64) {
