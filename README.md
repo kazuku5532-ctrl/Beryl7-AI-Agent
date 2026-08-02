@@ -11,17 +11,17 @@ The project delivers a zero-dependency, native Go daemon (`/usr/bin/beryl7-agent
 
 ---
 
-## 🏛️ The 7 Core Architectural Pillars
+## 🏛️ System Architecture & Technical Capabilities
 
-Beryl 7 AI Agent operates as a self-contained autonomous network intelligence system built around 7 core architectural pillars:
+The Beryl 7 AI Agent is structured around seven primary technical capabilities:
 
-1. **⚡ Self-Optimizing Network:** Monitors real-time throughput and dynamically boosts Wi-Fi 7 channel width (e.g. 160MHz max performance) during heavy usage while restoring eco mode (80MHz) during low-traffic periods.
-2. **🧬 Self-Evolving:** Embedded SQLite (`skills.db`) learning engine with Exponential Weighted Moving Average (EMA) confidence scoring that learns effective remediation actions and prunes underperforming ones.
-3. **🦎 Self-Adaptive:** Dynamic firmware capability matrix detection supporting OpenWrt and GL.iNet releases (4.9.0, 5.0+), adapting ubus RPC calls and feature flags without code recompilation.
-4. **🤖 AI-Powered (Gemini API Integration):** Cloud AI reasoning for unclassified system log anomalies, protected by token bucket rate limiters, circuit breaker safeguards, and daily budget caps ($1.00 USD).
-5. **🛡️ Self-Securing:** Enterprise RBAC security with separate `AUTH_TOKEN` and `APPROVE_TOKEN` roles, restricted CORS origins, shell parameter sanitization (`shlex.quote`), and secure file permissions (`0600`/`0755`).
-6. **🚑 Self-Healing:** Autonomous reactive remediation for WAN drops, memory exhaustion, Wi-Fi stalls, and latency spikes, protected by hardware watchdog guardrails and automated UCI rollback timers.
-7. **🌊 Self-Smoothing:** EWMA latency smoothing, debounced metric collection, statistical Z-score anomaly detection, and asynchronous non-blocking post-action telemetry verification.
+1. **Dynamic Wi-Fi Bandwidth Management:** Monitors real-time throughput and adjusts 5GHz channel width (80MHz baseline, 160MHz boost) based on traffic demand.
+2. **Local Skill Caching & Confidence Scoring:** Uses an embedded SQLite database (`skills.db`) with Exponential Weighted Moving Average (EMA) scoring to track, rank, and reuse effective remediation actions.
+3. **Multi-Firmware Compatibility Matrix:** Automatically detects the host firmware release (OpenWrt / GL.iNet 4.9.0, 5.0+) and maps ubus RPC schemas accordingly.
+4. **Cloud AI Log Analysis:** Integrates with Gemini API to analyze unclassified log anomalies, bounded by token bucket rate limiters, circuit breakers, and daily budget caps ($1.00 USD).
+5. **Role-Based Access Control & Input Sanitization:** Implements separate `AUTH_TOKEN` and `APPROVE_TOKEN` permissions, restricted CORS origins, shell parameter quoting (`shlex.quote`), and secure file modes (`0600`/`0755`).
+6. **Automated Anomaly Remediation & Hardware Watchdog:** Executes bounded recovery actions for WAN drops, memory pressure, Wi-Fi stalls, and latency spikes, protected by UCI rollback checkpoints.
+7. **Metric Smoothing & Async Verification:** Applies EWMA filtering and Z-score statistical anomaly detection to network telemetry, coupled with non-blocking post-action verification routines.
 
 ---
 
