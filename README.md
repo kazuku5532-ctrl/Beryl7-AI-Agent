@@ -27,9 +27,9 @@ Beryl 7 AI Agent operates as a **Reactive Network Remediation Engine with Local 
 The daemon is certified and currently running live on router hardware:
 
 - **Daemon Version:** 🟢 **v16.0 Enterprise Firmware Upgrade Resilience Engine**
-- **Service Status:** 🟢 **Active / Running** (Process PID `11762`)
+- **Service Status:** 🟢 **Active / Running** (Process PID `18053` - Auto-Started post Cold Reboot)
 - **Router Model:** GL.iNet Beryl 7 (GL-MT3600BE - Mediatek Filogic 820 ARM64, 512MB RAM)
-- **Memory Footprint (`VmRSS`):** **`9.3 MB`** (9,552 KB - $< 2.0\%$ of 512MB RAM)
+- **Memory Footprint (`VmRSS`):** **`8.7 MB`** (8,756 KB - $< 1.7\%$ of 512MB RAM)
 - **CPU Usage:** **`1.05%`** (Idle state on 5s loop)
 - **Hardware Temperature:** **`60.07 °C`**
 - **API Latency:** **`16.24 ms`**
