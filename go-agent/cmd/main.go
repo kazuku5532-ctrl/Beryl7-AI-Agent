@@ -661,10 +661,14 @@ func StartHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 		} else if origin != "" {
 			matched := false
 			for _, entry := range strings.Split(allowed, ",") {
-				if strings.TrimSpace(entry) == origin {
+				entryTrimmed := strings.TrimSpace(entry)
+				if entryTrimmed == origin || entryTrimmed == "*" || (origin == "null" && entryTrimmed == "null") {
 					matched = true
 					break
 				}
+			}
+			if !matched && (strings.HasPrefix(origin, "http://192.168.8.") || strings.HasPrefix(origin, "http://localhost") || strings.HasPrefix(origin, "http://127.0.0.1") || origin == "null") {
+				matched = true
 			}
 			if matched {
 				w.Header().Set("Access-Control-Allow-Origin", origin)
