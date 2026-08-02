@@ -292,9 +292,9 @@ func main() {
 				if anomalyType == "" && m.RAMUsagePct > cfg.RAMExhaustionPct {
 					anomalyType = "MEMORY_EXHAUSTION"
 					anomalyDesc = fmt.Sprintf("High RAM usage detected: %.1f%% (>%.1f%%)", m.RAMUsagePct, cfg.RAMExhaustionPct)
-				} else if anomalyType == "" && zScore > 2.5 && m.LatencyMs > cfg.LatencySpikeMs {
+				} else if anomalyType == "" && zScore > cfg.LatencyZScoreThreshold && m.LatencyMs > cfg.LatencySpikeMs {
 					anomalyType = "LATENCY_SPIKE"
-					anomalyDesc = fmt.Sprintf("Statistical Latency Spike detected: %.1fms (Z-Score: %.2f > %.1fms)", m.LatencyMs, zScore, cfg.LatencySpikeMs)
+					anomalyDesc = fmt.Sprintf("Statistical Latency Spike detected: %.1fms (Z-Score: %.2f > %.1f)", m.LatencyMs, zScore, cfg.LatencyZScoreThreshold)
 				}
 			}
 

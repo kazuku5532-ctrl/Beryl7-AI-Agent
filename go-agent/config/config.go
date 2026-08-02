@@ -34,6 +34,7 @@ type Config struct {
 	RAMExhaustionPct   float64
 	CPUSpikeLoad       float64
 	LatencySpikeMs     float64
+	LatencyZScoreThreshold float64
 	BandwidthBoostMbps float64
 	BandwidthRestoreMbps float64
 	WiFiDisconnectCount int
@@ -90,12 +91,13 @@ func LoadConfig() (*Config, error) {
 		SkillStorePath:     "/root/skills.db",
 		DisableAutoHeal:    false,
 		FirmwareVersion:    "4.9.0",
-		RAMExhaustionPct:     92.0,
-		CPUSpikeLoad:         1.5,
-		LatencySpikeMs:       100.0,
-		BandwidthBoostMbps:   80.0,
-		BandwidthRestoreMbps: 20.0,
-		WiFiDisconnectCount:  3,
+		RAMExhaustionPct:       92.0,
+		CPUSpikeLoad:           1.5,
+		LatencySpikeMs:         100.0,
+		LatencyZScoreThreshold: 2.5,
+		BandwidthBoostMbps:     80.0,
+		BandwidthRestoreMbps:   20.0,
+		WiFiDisconnectCount:    3,
 	}
 
 	if !flag.Parsed() {
@@ -130,9 +132,19 @@ func LoadConfig() (*Config, error) {
 			cfg.RAMExhaustionPct = f
 		}
 	}
+	if val := os.Getenv("BERYL7_CPU_SPIKE_LOAD"); val != "" {
+		if f, err := strconv.ParseFloat(val, 64); err == nil {
+			cfg.CPUSpikeLoad = f
+		}
+	}
 	if val := os.Getenv("BERYL7_LATENCY_SPIKE_MS"); val != "" {
 		if f, err := strconv.ParseFloat(val, 64); err == nil {
 			cfg.LatencySpikeMs = f
+		}
+	}
+	if val := os.Getenv("BERYL7_LATENCY_ZSCORE"); val != "" {
+		if f, err := strconv.ParseFloat(val, 64); err == nil {
+			cfg.LatencyZScoreThreshold = f
 		}
 	}
 	if val := os.Getenv("BERYL7_BANDWIDTH_BOOST_MBPS"); val != "" {
@@ -143,6 +155,11 @@ func LoadConfig() (*Config, error) {
 	if val := os.Getenv("BERYL7_BANDWIDTH_RESTORE_MBPS"); val != "" {
 		if f, err := strconv.ParseFloat(val, 64); err == nil {
 			cfg.BandwidthRestoreMbps = f
+		}
+	}
+	if val := os.Getenv("BERYL7_WIFI_DISCONNECT_COUNT"); val != "" {
+		if i, err := strconv.Atoi(val); err == nil {
+			cfg.WiFiDisconnectCount = i
 		}
 	}
 
@@ -356,6 +373,34 @@ func parseEnvFile(filePath string, cfg *Config) error {
 			cfg.BindHost = val
 		case "CORS_ORIGINS":
 			cfg.CORSAllowedOrigins = val
+		case "BERYL7_RAM_EXHAUSTION_PCT":
+			if f, err := strconv.ParseFloat(val, 64); err == nil {
+				cfg.RAMExhaustionPct = f
+			}
+		case "BERYL7_CPU_SPIKE_LOAD":
+			if f, err := strconv.ParseFloat(val, 64); err == nil {
+				cfg.CPUSpikeLoad = f
+			}
+		case "BERYL7_LATENCY_SPIKE_MS":
+			if f, err := strconv.ParseFloat(val, 64); err == nil {
+				cfg.LatencySpikeMs = f
+			}
+		case "BERYL7_LATENCY_ZSCORE":
+			if f, err := strconv.ParseFloat(val, 64); err == nil {
+				cfg.LatencyZScoreThreshold = f
+			}
+		case "BERYL7_BANDWIDTH_BOOST_MBPS":
+			if f, err := strconv.ParseFloat(val, 64); err == nil {
+				cfg.BandwidthBoostMbps = f
+			}
+		case "BERYL7_BANDWIDTH_RESTORE_MBPS":
+			if f, err := strconv.ParseFloat(val, 64); err == nil {
+				cfg.BandwidthRestoreMbps = f
+			}
+		case "BERYL7_WIFI_DISCONNECT_COUNT":
+			if i, err := strconv.Atoi(val); err == nil {
+				cfg.WiFiDisconnectCount = i
+			}
 		}
 	}
 

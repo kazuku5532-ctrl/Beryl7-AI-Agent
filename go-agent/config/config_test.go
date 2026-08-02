@@ -67,4 +67,11 @@ func TestValidateSystemDependenciesAndConfig(t *testing.T) {
 	if err != nil {
 		t.Errorf("ValidateSystemConfiguration failed: %v", err)
 	}
+
+	t.Setenv("BERYL7_RAM_EXHAUSTION_PCT", "95.5")
+	t.Setenv("BERYL7_LATENCY_ZSCORE", "3.0")
+	cfgEnv, _ := LoadConfig()
+	if cfgEnv.RAMExhaustionPct != 95.5 || cfgEnv.LatencyZScoreThreshold != 3.0 {
+		t.Errorf("Expected RAM 95.5 and ZScore 3.0, got RAM=%.1f ZScore=%.1f", cfgEnv.RAMExhaustionPct, cfgEnv.LatencyZScoreThreshold)
+	}
 }
