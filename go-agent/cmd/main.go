@@ -149,11 +149,22 @@ func main() {
 		sig := <-sigCh
 		logger.Info("Received shutdown signal (%v)! Initiating Adaptive Graceful Shutdown...", sig)
 
+		// 30s Forced exit fallback to guarantee process termination
+		go func() {
+			time.Sleep(30 * time.Second)
+			logger.Error("FATAL: Graceful shutdown timed out after 30s - forcing immediate exit!")
+			os.Exit(1)
+		}()
+
 		ctxHTTP, cancelHTTP := context.WithTimeout(context.Background(), 2*time.Second)
-		_ = httpServer.Shutdown(ctxHTTP)
+		if err := httpServer.Shutdown(ctxHTTP); err != nil {
+			logger.Error("HTTP server shutdown error: %v", err)
+		}
 		cancelHTTP()
 
-		_ = store.Close()
+		if err := store.Close(); err != nil {
+			logger.Error("SkillStore database close error: %v", err)
+		}
 		logger.Flush()
 
 		cancel()
@@ -315,12 +326,27 @@ func main() {
 				}
 
 				verifyAndRecordSkillAsync := func(targetSkill *skillstore.Skill, cmdExecSuccess bool) {
+					if targetSkill == nil {
+						return
+					}
+					// Value copy to prevent pointer race
+					skillCopy := &skillstore.Skill{
+						ID:         targetSkill.ID,
+						Action:     targetSkill.Action,
+						Condition:  targetSkill.Condition,
+						Confidence: targetSkill.Confidence,
+					}
 					if !cmdExecSuccess {
 						collector.RecordHealOutcome(false)
-						_ = store.SaveOrUpdateSkill(targetSkill, false, currentAlpha)
+						_ = store.SaveOrUpdateSkill(skillCopy, false, currentAlpha)
 						return
 					}
 					go func(sk *skillstore.Skill) {
+						defer func() {
+							if r := recover(); r != nil {
+								logger.Error("Recovered panic in verifyAndRecordSkillAsync: %v", r)
+							}
+						}()
 						time.Sleep(3 * time.Second) // Settling period bất đồng bộ trong goroutine riêng
 						verifiedSuccess := verifyActionSuccess()
 						collector.RecordHealOutcome(verifiedSuccess)
@@ -330,7 +356,7 @@ func main() {
 						} else {
 							logger.Warn("Post-Action Telemetry Verification FAILED for [%s:%s] - Anomaly persists!", sk.Condition, sk.Action)
 						}
-					}(targetSkill)
+					}(skillCopy)
 				}
 
 				skill := store.GetSkill(anomalyType, actionName)

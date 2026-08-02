@@ -1,5 +1,6 @@
 import base64
 import re
+import shlex
 import time
 import socket
 import paramiko
@@ -44,6 +45,9 @@ class RouterWatchdog:
         checkpoint_file = "/tmp/agent_checkpoint.uci"
         fallback_script = "/tmp/watchdog_fallback.sh"
 
+        safe_checkpoint = shlex.quote(checkpoint_file)
+        safe_fallback = shlex.quote(fallback_script)
+
         client = paramiko.SSHClient()
         client.load_system_host_keys()
         client.set_missing_host_key_policy(paramiko.RejectPolicy())
@@ -59,24 +63,24 @@ class RouterWatchdog:
             )
 
             print(f"[WATCHDOG] 1. Khởi tạo điểm sao lưu Checkpoint tại '{checkpoint_file}'...")
-            self._exec_ssh_cmd(client, f"uci export > {checkpoint_file}")
+            self._exec_ssh_cmd(client, f"uci export > {safe_checkpoint}")
 
             print(f"[WATCHDOG] 2. Kích hoạt Local Hardware Watchdog (Tự động Rollback sau {countdown_seconds}s trên Router)...")
             script_content = f"""#!/bin/sh
 sleep {countdown_seconds}
-if [ -f {checkpoint_file} ]; then
-    uci import < {checkpoint_file}
+if [ -f {safe_checkpoint} ]; then
+    uci import < {safe_checkpoint}
     uci commit
     /etc/init.d/firewall reload >/dev/null 2>&1
     /etc/init.d/network reload >/dev/null 2>&1
-    rm -f {checkpoint_file}
+    rm -f {safe_checkpoint}
 fi
 """
             # Mã hóa Base64 đảm bảo 100% an toàn không bị lỗi shell quoting
             b64_script = base64.b64encode(script_content.encode('utf-8')).decode('utf-8')
-            self._exec_ssh_cmd(client, f"echo '{b64_script}' | base64 -d > {fallback_script} && chmod 700 {fallback_script}")
+            self._exec_ssh_cmd(client, f"echo '{b64_script}' | base64 -d > {safe_fallback} && chmod 700 {safe_fallback}")
             
-            client.exec_command(f"nohup {fallback_script} >/dev/null 2>&1 &")
+            client.exec_command(f"nohup {safe_fallback} >/dev/null 2>&1 &")
 
         except Exception as e:
             return {"success": False, "error": f"Lỗi khởi tạo Watchdog: {str(e)}", "rolled_back": False}

@@ -134,14 +134,20 @@ func (s *SkillStore) BackupDatabase() error {
 	backupPath := fmt.Sprintf("%s.bak", s.dbPath)
 	cleanDbPath := filepath.Clean(s.dbPath)
 	cleanBackupPath := filepath.Clean(backupPath)
-	_, err := s.db.Exec(fmt.Sprintf("VACUUM INTO '%s';", cleanBackupPath))
-	if err != nil {
-		data, errRead := os.ReadFile(cleanDbPath) // #nosec G304
-		if errRead == nil {
-			_ = os.WriteFile(cleanBackupPath, data, 0600) // #nosec G703
-		}
+
+	data, errRead := os.ReadFile(cleanDbPath) // #nosec G304
+	if errRead != nil {
+		logger.Error("SkillStore database backup read failed: %v", errRead)
+		return errRead
 	}
-	logger.Info("SkillStore database backup created at %s", cleanBackupPath)
+
+	errWrite := os.WriteFile(cleanBackupPath, data, 0600) // #nosec G703
+	if errWrite != nil {
+		logger.Error("SkillStore database backup write failed: %v", errWrite)
+		return errWrite
+	}
+
+	logger.Info("SkillStore database backup created securely at %s", cleanBackupPath)
 	return nil
 }
 
