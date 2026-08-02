@@ -74,8 +74,11 @@ func (s *SkillStore) OpenAndInit() error {
 	}
 
 	var integrity string
-	_ = db.QueryRow("PRAGMA integrity_check").Scan(&integrity)
-	if integrity != "ok" && integrity != "" {
+	row := db.QueryRow("PRAGMA integrity_check")
+	err = row.Scan(&integrity)
+	if err != nil {
+		logger.Error("CRITICAL: Database integrity check query failed (connection issue): %v", err)
+	} else if integrity != "ok" {
 		logger.Error("CRITICAL SQLITE INTEGRITY FAILURE (%s)! Initiating emergency salvage procedure...", integrity)
 		_ = db.Close()
 

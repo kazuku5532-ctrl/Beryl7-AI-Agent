@@ -56,3 +56,15 @@ func TestV16EnterpriseConfigFunctions(t *testing.T) {
 		t.Logf("DryRunUpgradeCheck executed")
 	}
 }
+
+func TestValidateSystemDependenciesAndConfig(t *testing.T) {
+	_ = ValidateSystemDependencies()
+
+	cfg, _ := LoadConfig()
+	cfg.AuthToken = "test-auth-token"
+	cfg.ApproveToken = "test-approve-token"
+	err := ValidateSystemConfiguration(cfg)
+	if err != nil {
+		t.Errorf("ValidateSystemConfiguration failed: %v", err)
+	}
+}

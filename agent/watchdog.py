@@ -126,22 +126,25 @@ fi
 
     def _cancel_fallback_script(self, checkpoint_file, fallback_script):
         try:
+            safe_checkpoint = shlex.quote(checkpoint_file)
+            safe_fallback = shlex.quote(fallback_script)
             client = paramiko.SSHClient()
             client.load_system_host_keys()
             client.set_missing_host_key_policy(paramiko.RejectPolicy())
             client.connect(hostname=self.hostname, port=self.port, username=self.username, password=self.password, timeout=3)
-            self._exec_ssh_cmd(client, f"rm -f {checkpoint_file} {fallback_script} && pkill -f watchdog_fallback.sh")
+            self._exec_ssh_cmd(client, f"rm -f {safe_checkpoint} {safe_fallback} && pkill -f watchdog_fallback.sh")
             client.close()
         except Exception:
             pass
 
     def _force_rollback_now(self, checkpoint_file):
         try:
+            safe_checkpoint = shlex.quote(checkpoint_file)
             client = paramiko.SSHClient()
             client.load_system_host_keys()
             client.set_missing_host_key_policy(paramiko.RejectPolicy())
             client.connect(hostname=self.hostname, port=self.port, username=self.username, password=self.password, timeout=3)
-            self._exec_ssh_cmd(client, f"uci import < {checkpoint_file} && uci commit && /etc/init.d/firewall reload && /etc/init.d/network reload && rm -f {checkpoint_file}")
+            self._exec_ssh_cmd(client, f"uci import < {safe_checkpoint} && uci commit && /etc/init.d/firewall reload && /etc/init.d/network reload && rm -f {safe_checkpoint}")
             client.close()
         except Exception:
             pass
