@@ -101,6 +101,13 @@ func main() {
 	}
 	defer logger.Flush()
 
+	if valErr := config.ValidateSystemConfiguration(cfg); valErr != nil {
+		logger.Warn("System configuration validation check: %v", valErr)
+	}
+	if depErr := config.ValidateSystemDependencies(); depErr != nil {
+		logger.Info("System dependencies check info: %v", depErr)
+	}
+
 	logger.Info("Starting Beryl 7 AI Agent v16.0 Enterprise Firmware Upgrade Resilience & Self-Adaptation Engine (Native Go)...")
 
 	_ = config.EnsureSysupgradePreservation()
@@ -183,10 +190,14 @@ func main() {
 	backupTicker := time.NewTicker(6 * time.Hour)
 	defer backupTicker.Stop()
 
+	pruneTicker := time.NewTicker(24 * time.Hour)
+	defer pruneTicker.Stop()
+
 	cooldowns := map[string]time.Duration{
-		"WAN_DROP":          90 * time.Second,
-		"MEMORY_EXHAUSTION": 45 * time.Second,
-		"WIFI_FAILURE":      60 * time.Second,
+		"WAN_DROP":          30 * time.Second,
+		"WIFI_FAILURE":      45 * time.Second,
+		"MEMORY_EXHAUSTION": 60 * time.Second,
+		"LATENCY_SPIKE":     60 * time.Second,
 	}
 	lastActionByAnomaly := make(map[string]time.Time)
 	isWifiBoosted := false
@@ -195,28 +206,33 @@ func main() {
 	for {
 		select {
 		case <-ctx.Done():
+			logger.Info("Main loop exiting context done...")
 			return
 		case <-backupTicker.C:
-			_ = store.BackupDatabase()
+			if backupErr := store.BackupDatabase(); backupErr != nil {
+				logger.Error("Scheduled SkillStore backup failed: %v", backupErr)
+			}
+		case <-pruneTicker.C:
+			if pruneErr := store.PruneSkillsPeriodic(); pruneErr != nil {
+				logger.Error("Scheduled SkillStore pruning failed: %v", pruneErr)
+			}
 		case <-ticker.C:
-			_ = store.PruneSkillsPeriodic()
+			configMu.RLock()
+			currentDryRun := cfg.DryRun
+			currentAlpha := cfg.EMAAlpha
+			configMu.RUnlock()
 
 			m := collector.CollectMetrics(ctx)
 			if m == nil {
 				continue
 			}
 
-			configMu.RLock()
-			currentDryRun := cfg.DryRun
-			currentAlpha := cfg.EMAAlpha
-			configMu.RUnlock()
-
 			health.mu.Lock()
+			health.WANStatus = m.WANStatus
 			health.CPUUsagePct = m.CPUUsagePct
 			health.RAMUsagePct = m.RAMUsagePct
 			health.HardwareTempC = m.HardwareTempC
 			health.LatencyMs = m.LatencyMs
-			health.WANStatus = m.WANStatus
 			if m.SystemUptimeSec > 0 {
 				health.UptimeSeconds = m.SystemUptimeSec
 			} else {
@@ -238,24 +254,24 @@ func main() {
 
 			liveLogSample := logParser.SanitizeLog(getSystemLogSample())
 
-			if m.DownloadMbps > 80.0 && !isWifiBoosted {
-				logger.Info("SMART BANDWIDTH DETECTED (%.1f Mbps > 80Mbps)! Auto-boosting Wi-Fi 7 to 160MHz Max Speed...", m.DownloadMbps)
+			if m.DownloadMbps > cfg.BandwidthBoostMbps && !isWifiBoosted {
+				logger.Info("SMART BANDWIDTH DETECTED (%.1f Mbps > %.1fMbps)! Auto-boosting Wi-Fi 7 to 160MHz Max Speed...", m.DownloadMbps, cfg.BandwidthBoostMbps)
 				boostReq := &executor.ActionRequest{ActionName: "boost_wifi_bandwidth", Target: "radio1"}
 				if execErr := execEngine.ExecuteAction(ctx, boostReq, currentDryRun); execErr == nil {
 					isWifiBoosted = true
 					lowTrafficCycles = 0
 				}
-			} else if isWifiBoosted && m.DownloadMbps < 20.0 {
+			} else if isWifiBoosted && m.DownloadMbps < cfg.BandwidthRestoreMbps {
 				lowTrafficCycles++
 				if lowTrafficCycles >= 2 {
-					logger.Info("SMART BANDWIDTH STABILIZED (%.1f Mbps < 20Mbps for 2 cycles)! Reverting Wi-Fi 7 to Eco 80MHz Mode...", m.DownloadMbps)
+					logger.Info("SMART BANDWIDTH STABILIZED (%.1f Mbps < %.1fMbps for 2 cycles)! Reverting Wi-Fi 7 to Eco 80MHz Mode...", m.DownloadMbps, cfg.BandwidthRestoreMbps)
 					revertReq := &executor.ActionRequest{ActionName: "revert_wifi_bandwidth", Target: "radio1"}
 					if execErr := execEngine.ExecuteAction(ctx, revertReq, currentDryRun); execErr == nil {
 						isWifiBoosted = false
 						lowTrafficCycles = 0
 					}
 				}
-			} else if isWifiBoosted && m.DownloadMbps >= 20.0 {
+			} else if isWifiBoosted && m.DownloadMbps >= cfg.BandwidthRestoreMbps {
 				lowTrafficCycles = 0
 			}
 
@@ -273,12 +289,12 @@ func main() {
 						break
 					}
 				}
-				if anomalyType == "" && m.RAMUsagePct > 92.0 {
+				if anomalyType == "" && m.RAMUsagePct > cfg.RAMExhaustionPct {
 					anomalyType = "MEMORY_EXHAUSTION"
-					anomalyDesc = fmt.Sprintf("High RAM usage detected: %.1f%%", m.RAMUsagePct)
-				} else if anomalyType == "" && zScore > 2.5 && m.LatencyMs > 100.0 {
+					anomalyDesc = fmt.Sprintf("High RAM usage detected: %.1f%% (>%.1f%%)", m.RAMUsagePct, cfg.RAMExhaustionPct)
+				} else if anomalyType == "" && zScore > 2.5 && m.LatencyMs > cfg.LatencySpikeMs {
 					anomalyType = "LATENCY_SPIKE"
-					anomalyDesc = fmt.Sprintf("Statistical Latency Spike detected: %.1fms (Z-Score: %.2f)", m.LatencyMs, zScore)
+					anomalyDesc = fmt.Sprintf("Statistical Latency Spike detected: %.1fms (Z-Score: %.2f > %.1fms)", m.LatencyMs, zScore, cfg.LatencySpikeMs)
 				}
 			}
 

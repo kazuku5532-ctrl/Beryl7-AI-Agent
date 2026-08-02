@@ -31,6 +31,12 @@ type Config struct {
 	FirmwareVersion   string
 	BindHost          string
 	CORSAllowedOrigins string
+	RAMExhaustionPct   float64
+	CPUSpikeLoad       float64
+	LatencySpikeMs     float64
+	BandwidthBoostMbps float64
+	BandwidthRestoreMbps float64
+	WiFiDisconnectCount int
 	apiKeyAtomic      atomic.Value
 }
 
@@ -84,6 +90,12 @@ func LoadConfig() (*Config, error) {
 		SkillStorePath:     "/root/skills.db",
 		DisableAutoHeal:    false,
 		FirmwareVersion:    "4.9.0",
+		RAMExhaustionPct:     92.0,
+		CPUSpikeLoad:         1.5,
+		LatencySpikeMs:       100.0,
+		BandwidthBoostMbps:   80.0,
+		BandwidthRestoreMbps: 20.0,
+		WiFiDisconnectCount:  3,
 	}
 
 	if !flag.Parsed() {
@@ -111,6 +123,27 @@ func LoadConfig() (*Config, error) {
 	}
 	if val := os.Getenv("BERYL7_DISABLE_HEALING"); val == "1" || strings.ToLower(val) == "true" {
 		cfg.DisableAutoHeal = true
+	}
+
+	if val := os.Getenv("BERYL7_RAM_EXHAUSTION_PCT"); val != "" {
+		if f, err := strconv.ParseFloat(val, 64); err == nil {
+			cfg.RAMExhaustionPct = f
+		}
+	}
+	if val := os.Getenv("BERYL7_LATENCY_SPIKE_MS"); val != "" {
+		if f, err := strconv.ParseFloat(val, 64); err == nil {
+			cfg.LatencySpikeMs = f
+		}
+	}
+	if val := os.Getenv("BERYL7_BANDWIDTH_BOOST_MBPS"); val != "" {
+		if f, err := strconv.ParseFloat(val, 64); err == nil {
+			cfg.BandwidthBoostMbps = f
+		}
+	}
+	if val := os.Getenv("BERYL7_BANDWIDTH_RESTORE_MBPS"); val != "" {
+		if f, err := strconv.ParseFloat(val, 64); err == nil {
+			cfg.BandwidthRestoreMbps = f
+		}
 	}
 
 	if cfg.GeminiAPIKey == "" {

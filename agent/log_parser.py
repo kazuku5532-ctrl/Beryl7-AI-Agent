@@ -1,5 +1,6 @@
 import re
 import json
+import socket
 import paramiko
 
 class RouterLogParser:
@@ -68,8 +69,10 @@ class RouterLogParser:
             
             if out:
                 logs = out.splitlines()
-        except Exception as e:
+        except (paramiko.SSHException, socket.error, socket.timeout) as e:
             logs = [f"ERROR: Cannot fetch logs - {str(e)}"]
+        except Exception as e:
+            logs = [f"ERROR: Unexpected exception during fetch logs - {type(e).__name__}: {str(e)}"]
         finally:
             client.close()
             
