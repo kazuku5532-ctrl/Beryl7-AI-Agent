@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -54,6 +55,7 @@ type PendingApproval struct {
 }
 
 var configMu sync.RWMutex
+var cfgAtomic atomic.Value
 
 func validateTokenRole(authHeader string, cfg *config.Config) (string, bool) {
 	if authHeader == "" {
@@ -203,6 +205,8 @@ func main() {
 	isWifiBoosted := false
 	lowTrafficCycles := 0
 
+	cfgAtomic.Store(cfg)
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -217,10 +221,9 @@ func main() {
 				logger.Error("Scheduled SkillStore pruning failed: %v", pruneErr)
 			}
 		case <-ticker.C:
-			configMu.RLock()
-			currentDryRun := cfg.DryRun
-			currentAlpha := cfg.EMAAlpha
-			configMu.RUnlock()
+			cfgSnap := cfgAtomic.Load().(*config.Config)
+			currentDryRun := cfgSnap.DryRun
+			currentAlpha := cfgSnap.EMAAlpha
 
 			m := collector.CollectMetrics(ctx)
 			if m == nil {
@@ -254,24 +257,24 @@ func main() {
 
 			liveLogSample := logParser.SanitizeLog(getSystemLogSample())
 
-			if m.DownloadMbps > cfg.BandwidthBoostMbps && !isWifiBoosted {
-				logger.Info("SMART BANDWIDTH DETECTED (%.1f Mbps > %.1fMbps)! Auto-boosting Wi-Fi 7 to 160MHz Max Speed...", m.DownloadMbps, cfg.BandwidthBoostMbps)
+			if m.DownloadMbps > cfgSnap.BandwidthBoostMbps && !isWifiBoosted {
+				logger.Info("SMART BANDWIDTH DETECTED (%.1f Mbps > %.1fMbps)! Auto-boosting Wi-Fi 7 to 160MHz Max Speed...", m.DownloadMbps, cfgSnap.BandwidthBoostMbps)
 				boostReq := &executor.ActionRequest{ActionName: "boost_wifi_bandwidth", Target: "radio1"}
 				if execErr := execEngine.ExecuteAction(ctx, boostReq, currentDryRun); execErr == nil {
 					isWifiBoosted = true
 					lowTrafficCycles = 0
 				}
-			} else if isWifiBoosted && m.DownloadMbps < cfg.BandwidthRestoreMbps {
+			} else if isWifiBoosted && m.DownloadMbps < cfgSnap.BandwidthRestoreMbps {
 				lowTrafficCycles++
 				if lowTrafficCycles >= 2 {
-					logger.Info("SMART BANDWIDTH STABILIZED (%.1f Mbps < %.1fMbps for 2 cycles)! Reverting Wi-Fi 7 to Eco 80MHz Mode...", m.DownloadMbps, cfg.BandwidthRestoreMbps)
+					logger.Info("SMART BANDWIDTH STABILIZED (%.1f Mbps < %.1fMbps for 2 cycles)! Reverting Wi-Fi 7 to Eco 80MHz Mode...", m.DownloadMbps, cfgSnap.BandwidthRestoreMbps)
 					revertReq := &executor.ActionRequest{ActionName: "revert_wifi_bandwidth", Target: "radio1"}
 					if execErr := execEngine.ExecuteAction(ctx, revertReq, currentDryRun); execErr == nil {
 						isWifiBoosted = false
 						lowTrafficCycles = 0
 					}
 				}
-			} else if isWifiBoosted && m.DownloadMbps >= cfg.BandwidthRestoreMbps {
+			} else if isWifiBoosted && m.DownloadMbps >= cfgSnap.BandwidthRestoreMbps {
 				lowTrafficCycles = 0
 			}
 
@@ -289,12 +292,12 @@ func main() {
 						break
 					}
 				}
-				if anomalyType == "" && m.RAMUsagePct > cfg.RAMExhaustionPct {
+				if anomalyType == "" && m.RAMUsagePct > cfgSnap.RAMExhaustionPct {
 					anomalyType = "MEMORY_EXHAUSTION"
-					anomalyDesc = fmt.Sprintf("High RAM usage detected: %.1f%% (>%.1f%%)", m.RAMUsagePct, cfg.RAMExhaustionPct)
-				} else if anomalyType == "" && zScore > cfg.LatencyZScoreThreshold && m.LatencyMs > cfg.LatencySpikeMs {
+					anomalyDesc = fmt.Sprintf("High RAM usage detected: %.1f%% (>%.1f%%)", m.RAMUsagePct, cfgSnap.RAMExhaustionPct)
+				} else if anomalyType == "" && zScore > cfgSnap.LatencyZScoreThreshold && m.LatencyMs > cfgSnap.LatencySpikeMs {
 					anomalyType = "LATENCY_SPIKE"
-					anomalyDesc = fmt.Sprintf("Statistical Latency Spike detected: %.1fms (Z-Score: %.2f > %.1f)", m.LatencyMs, zScore, cfg.LatencyZScoreThreshold)
+					anomalyDesc = fmt.Sprintf("Statistical Latency Spike detected: %.1fms (Z-Score: %.2f > %.1f)", m.LatencyMs, zScore, cfgSnap.LatencyZScoreThreshold)
 				}
 			}
 
@@ -837,6 +840,7 @@ func StartHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 		newCfg, loadErr := config.LoadConfig()
 		if loadErr == nil && newCfg != nil {
 			*cfg = *newCfg
+			cfgAtomic.Store(newCfg)
 		}
 		configMu.Unlock()
 

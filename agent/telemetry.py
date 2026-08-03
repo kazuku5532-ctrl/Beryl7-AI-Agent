@@ -58,7 +58,7 @@ class RouterTelemetry:
             if out:
                 try:
                     raw_data["system_info"] = json.loads(out)
-                except Exception:
+                except (json.JSONDecodeError, TypeError, ValueError):
                     pass
 
             # 2. DHCP Leases (MAC -> IP -> Hostname)
@@ -81,14 +81,14 @@ class RouterTelemetry:
             if out:
                 try:
                     raw_data["wifi_clients_2g"] = json.loads(out).get("clients", {})
-                except Exception:
+                except (json.JSONDecodeError, AttributeError, TypeError, ValueError):
                     pass
                     
             out, _ = self._exec_ssh_cmd(client, "ubus call hostapd.wlan1 get_clients")
             if out:
                 try:
                     raw_data["wifi_clients_5g"] = json.loads(out).get("clients", {})
-                except Exception:
+                except (json.JSONDecodeError, AttributeError, TypeError, ValueError):
                     pass
 
             # 4. Network Devices (RX/TX bytes, packets, errors, drops)
@@ -96,7 +96,7 @@ class RouterTelemetry:
             if out:
                 try:
                     raw_data["network_devices"] = json.loads(out)
-                except Exception:
+                except (json.JSONDecodeError, TypeError, ValueError):
                     pass
 
             # 5. WAN Interface Status (Public IP, Gateway, DNS)
@@ -104,10 +104,10 @@ class RouterTelemetry:
             if out:
                 try:
                     raw_data["wan_status"] = json.loads(out)
-                except Exception:
+                except (json.JSONDecodeError, TypeError, ValueError):
                     pass
 
-        except Exception as e:
+        except (paramiko.SSHException, socket.error, socket.timeout, OSError) as e:
             agent_logger.error(f"Lỗi thu thập Telemetry từ Router: {e}")
             raw_data["error"] = str(e)
         finally:

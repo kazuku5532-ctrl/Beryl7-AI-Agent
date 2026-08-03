@@ -34,7 +34,7 @@ class RouterWatchdog:
             if result == 0:
                 return True
             return False
-        except Exception:
+        except (socket.error, socket.timeout, OSError):
             return False
 
     def execute_with_guardrail(self, executor_func, *args, countdown_seconds=30, **kwargs):
@@ -82,7 +82,7 @@ fi
             
             client.exec_command(f"nohup {safe_fallback} >/dev/null 2>&1 &")
 
-        except Exception as e:
+        except (paramiko.SSHException, socket.error, socket.timeout, OSError) as e:
             return {"success": False, "error": f"Lỗi khởi tạo Watchdog: {str(e)}", "rolled_back": False}
         finally:
             client.close()
@@ -134,7 +134,7 @@ fi
             client.connect(hostname=self.hostname, port=self.port, username=self.username, password=self.password, timeout=3)
             self._exec_ssh_cmd(client, f"rm -f {safe_checkpoint} {safe_fallback} && pkill -f watchdog_fallback.sh")
             client.close()
-        except Exception:
+        except (paramiko.SSHException, socket.error, socket.timeout, OSError):
             pass
 
     def _force_rollback_now(self, checkpoint_file):
@@ -146,7 +146,7 @@ fi
             client.connect(hostname=self.hostname, port=self.port, username=self.username, password=self.password, timeout=3)
             self._exec_ssh_cmd(client, f"uci import < {safe_checkpoint} && uci commit && /etc/init.d/firewall reload && /etc/init.d/network reload && rm -f {safe_checkpoint}")
             client.close()
-        except Exception:
+        except (paramiko.SSHException, socket.error, socket.timeout, OSError):
             pass
 
 # Export alias cho unit tests compatibility

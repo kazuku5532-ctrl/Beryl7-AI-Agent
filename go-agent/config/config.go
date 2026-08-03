@@ -162,6 +162,12 @@ func LoadConfig() (*Config, error) {
 			cfg.WiFiDisconnectCount = i
 		}
 	}
+	if val := os.Getenv("BERYL7_SKILLSTORE_PATH"); val != "" {
+		cfg.SkillStorePath = strings.TrimSpace(val)
+	}
+	if val := os.Getenv("BERYL7_CHECKPOINT_PATH"); val != "" {
+		cfg.CheckpointPath = strings.TrimSpace(val)
+	}
 
 	if cfg.GeminiAPIKey == "" {
 		key, err := readSecureKeyFile(cfg.KeyFilePath)
@@ -401,6 +407,10 @@ func parseEnvFile(filePath string, cfg *Config) error {
 			if i, err := strconv.Atoi(val); err == nil {
 				cfg.WiFiDisconnectCount = i
 			}
+		case "BERYL7_SKILLSTORE_PATH":
+			cfg.SkillStorePath = val
+		case "BERYL7_CHECKPOINT_PATH":
+			cfg.CheckpointPath = val
 		}
 	}
 
