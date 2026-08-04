@@ -1,0 +1,6 @@
+{
+  "scenario": "Wi-Fi Bandwidth Boost",
+  "trigger_condition": "WAN Throughput > 80.0 Mbps",
+  "action": "uci set wireless.rai0.htmode=EHT160 && uci commit wireless && wifi reload",
+  "verification": "Check ping latency < 35ms"
+}

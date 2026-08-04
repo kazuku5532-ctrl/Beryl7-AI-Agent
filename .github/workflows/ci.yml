@@ -53,7 +53,9 @@ jobs:
       - name: Python Dependency, Bandit Security & Detect Secrets Check
         run: |
           python -m pip install --upgrade pip
-          pip install paramiko python-dotenv google-genai google-generativeai requests bandit detect-secrets
+          pip install paramiko python-dotenv google-genai google-generativeai requests bandit detect-secrets ansible
           bandit -r agent/ -s B101,B104 || echo "Bandit security check complete"
           detect-secrets scan --all-files || echo "Detect secrets scan complete"
+          ansible-playbook -i deploy/inventory.ini.example deploy/deploy.yml --syntax-check
           python -m unittest discover -s tests
+

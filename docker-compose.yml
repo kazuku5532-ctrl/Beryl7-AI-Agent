@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  beryl7-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: beryl7-agent-dev
+    ports:
+      - "8888:8888"
+    environment:
+      - LOG_LEVEL=INFO
+      - HEALTH_PORT=8888
+      - BIND_HOST=0.0.0.0
+    restart: unless-stopped
