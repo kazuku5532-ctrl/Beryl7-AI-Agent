@@ -6,7 +6,7 @@
 [![Go Version](https://img.shields.io/badge/Go-1.21-blue.svg)](https://golang.org)
 [![Architecture](https://img.shields.io/badge/Target_Arch-ARM64_Linux-blue.svg)](https://openwrt.org)
 [![CI Gate](https://img.shields.io/badge/CI_Gate-100%25_PASS-emerald.svg)](https://github.com/kazuku5532-ctrl/Beryl7-AI-Agent)
-[![codecov](https://img.shields.io/badge/coverage-88.4%25-brightgreen.svg)](docs/benchmark.md)
+[![codecov](https://img.shields.io/badge/coverage-53%25-yellow.svg)](docs/benchmark.md)
 [![Status](https://img.shields.io/badge/Production-Certified_Live-emerald.svg)](http://192.168.8.1:8888/api/health)
 
 The project delivers a zero-dependency, native Go daemon (`/usr/bin/beryl7-agent`), an embedded HTTP management API on port `8888`, a standalone dashboard UI ([Beryl7_Dashboard_Standalone.html](dashboard/Beryl7_Dashboard_Standalone.html)), getting started documentation ([docs/GETTING_STARTED.md](docs/GETTING_STARTED.md)), and performance benchmark reports ([docs/benchmark.md](docs/benchmark.md)).
