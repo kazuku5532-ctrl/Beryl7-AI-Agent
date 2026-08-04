@@ -1,0 +1,27 @@
+{
+  "spdxVersion": "SPDX-2.3",
+  "dataLicense": "CC0-1.0",
+  "SPDXID": "SPDXRef-DOCUMENT",
+  "name": "Beryl7-AI-Agent-SBOM",
+  "documentNamespace": "https://github.com/kazuku5532-ctrl/Beryl7-AI-Agent/sbom",
+  "creationInfo": {
+    "creators": ["Organization: Google Antigravity Team"],
+    "created": "2026-08-04T00:00:00Z"
+  },
+  "packages": [
+    {
+      "name": "beryl7-agent",
+      "SPDXID": "SPDXRef-Package-beryl7-agent",
+      "versionInfo": "v16.0",
+      "downloadLocation": "https://github.com/kazuku5532-ctrl/Beryl7-AI-Agent",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT"
+    },
+    {
+      "name": "modernc.org/sqlite",
+      "SPDXID": "SPDXRef-Package-modernc-sqlite",
+      "versionInfo": "v1.28.0",
+      "licenseConcluded": "BSD-3-Clause"
+    }
+  ]
+}

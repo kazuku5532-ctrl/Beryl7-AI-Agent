@@ -1,0 +1,9 @@
+# Ansible Inventory Configuration Example
+# Copy this file to inventory.ini and edit your router's IP and credentials
+
+[router]
+beryl7_router ansible_host=192.168.8.1 ansible_user=root ansible_port=22
+
+[router:vars]
+ansible_python_interpreter=/usr/bin/python3
+EOF

@@ -18,6 +18,7 @@ build:
 
 deploy: build
 	@echo "=== Deploying to GL-MT3600BE Router via Ansible ==="
+	@command -v ansible-playbook >/dev/null 2>&1 || (echo "Error: ansible-playbook is required for 'make deploy'. Please install ansible or use python scratch/deploy_router_v15.py." && exit 1)
 	ansible-playbook -i deploy/inventory.ini deploy/deploy.yml
 
 help:
