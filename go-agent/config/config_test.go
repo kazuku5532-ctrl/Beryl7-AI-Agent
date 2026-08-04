@@ -61,8 +61,8 @@ func TestValidateSystemDependenciesAndConfig(t *testing.T) {
 	_ = ValidateSystemDependencies()
 
 	cfg, _ := LoadConfig()
-	cfg.AuthToken = "test-auth-token"
-	cfg.ApproveToken = "test-approve-token"
+	cfg.AuthToken = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	cfg.ApproveToken = "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"
 	err := ValidateSystemConfiguration(cfg)
 	if err != nil {
 		t.Errorf("ValidateSystemConfiguration failed: %v", err)
