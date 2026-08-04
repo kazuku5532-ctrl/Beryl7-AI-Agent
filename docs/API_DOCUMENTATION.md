@@ -1,6 +1,6 @@
 # Beryl 7 AI Agent — Backend REST API Specification 🛠️
 
-Version: **v16.0 10/10 Certified**  
+Version: **v16.0**  
 Server Port: `8888` (Router Go Daemon)  
 Authentication: Optional Header `Authorization: Bearer <token>`  
 Rate Limit: `60 requests / minute per client IP`  

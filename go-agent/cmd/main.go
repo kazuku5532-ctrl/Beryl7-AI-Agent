@@ -110,7 +110,7 @@ func main() {
 		logger.Info("System dependencies check info: %v", depErr)
 	}
 
-	logger.Info("Starting Beryl 7 AI Agent v16.0 Enterprise Firmware Upgrade Resilience & Self-Adaptation Engine (Native Go)...")
+	logger.Info("Starting Beryl 7 AI Agent v16.0 Daemon (Native Go)...")
 
 	_ = config.EnsureSysupgradePreservation()
 	_ = config.EnsureFilePermissions()

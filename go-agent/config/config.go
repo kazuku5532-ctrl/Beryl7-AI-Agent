@@ -110,7 +110,7 @@ func LoadConfig() (*Config, error) {
 	}
 
 	if showVersion {
-		fmt.Println("beryl7-agent version v16.0 Enterprise Self-Adaptation Engine (commit 498e658)")
+		fmt.Println("beryl7-agent version v16.0")
 		os.Exit(0)
 	}
 
