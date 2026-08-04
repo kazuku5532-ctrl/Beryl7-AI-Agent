@@ -134,39 +134,60 @@ func LoadConfig() (*Config, error) {
 		cfg.DisableAutoHeal = true
 	}
 
+	if val := os.Getenv("HEALTH_PORT"); val != "" {
+		if p, err := strconv.Atoi(val); err == nil {
+			cfg.HealthPort = p
+		} else {
+			logger.Warn("Invalid numeric value for HEALTH_PORT: '%s'. Keeping default %d", val, cfg.HealthPort)
+		}
+	}
 	if val := os.Getenv("BERYL7_RAM_EXHAUSTION_PCT"); val != "" {
 		if f, err := strconv.ParseFloat(val, 64); err == nil {
 			cfg.RAMExhaustionPct = f
+		} else {
+			logger.Warn("Invalid float value for BERYL7_RAM_EXHAUSTION_PCT: '%s'. Keeping default %.1f", val, cfg.RAMExhaustionPct)
 		}
 	}
 	if val := os.Getenv("BERYL7_CPU_SPIKE_LOAD"); val != "" {
 		if f, err := strconv.ParseFloat(val, 64); err == nil {
 			cfg.CPUSpikeLoad = f
+		} else {
+			logger.Warn("Invalid float value for BERYL7_CPU_SPIKE_LOAD: '%s'. Keeping default %.1f", val, cfg.CPUSpikeLoad)
 		}
 	}
 	if val := os.Getenv("BERYL7_LATENCY_SPIKE_MS"); val != "" {
 		if f, err := strconv.ParseFloat(val, 64); err == nil {
 			cfg.LatencySpikeMs = f
+		} else {
+			logger.Warn("Invalid float value for BERYL7_LATENCY_SPIKE_MS: '%s'. Keeping default %.1f", val, cfg.LatencySpikeMs)
 		}
 	}
 	if val := os.Getenv("BERYL7_LATENCY_ZSCORE"); val != "" {
 		if f, err := strconv.ParseFloat(val, 64); err == nil {
 			cfg.LatencyZScoreThreshold = f
+		} else {
+			logger.Warn("Invalid float value for BERYL7_LATENCY_ZSCORE: '%s'. Keeping default %.1f", val, cfg.LatencyZScoreThreshold)
 		}
 	}
 	if val := os.Getenv("BERYL7_BANDWIDTH_BOOST_MBPS"); val != "" {
 		if f, err := strconv.ParseFloat(val, 64); err == nil {
 			cfg.BandwidthBoostMbps = f
+		} else {
+			logger.Warn("Invalid float value for BERYL7_BANDWIDTH_BOOST_MBPS: '%s'. Keeping default %.1f", val, cfg.BandwidthBoostMbps)
 		}
 	}
 	if val := os.Getenv("BERYL7_BANDWIDTH_RESTORE_MBPS"); val != "" {
 		if f, err := strconv.ParseFloat(val, 64); err == nil {
 			cfg.BandwidthRestoreMbps = f
+		} else {
+			logger.Warn("Invalid float value for BERYL7_BANDWIDTH_RESTORE_MBPS: '%s'. Keeping default %.1f", val, cfg.BandwidthRestoreMbps)
 		}
 	}
 	if val := os.Getenv("BERYL7_WIFI_DISCONNECT_COUNT"); val != "" {
 		if i, err := strconv.Atoi(val); err == nil {
 			cfg.WiFiDisconnectCount = i
+		} else {
+			logger.Warn("Invalid integer value for BERYL7_WIFI_DISCONNECT_COUNT: '%s'. Keeping default %d", val, cfg.WiFiDisconnectCount)
 		}
 	}
 	if val := os.Getenv("BERYL7_SKILLSTORE_PATH"); val != "" {

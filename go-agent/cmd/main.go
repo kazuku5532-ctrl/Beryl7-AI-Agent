@@ -673,13 +673,15 @@ func StartHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 			if !matched && (strings.HasPrefix(origin, "http://192.168.8.") || strings.HasPrefix(origin, "http://localhost") || strings.HasPrefix(origin, "http://127.0.0.1") || origin == "null") {
 				matched = true
 			}
+			defaultOrigin := fmt.Sprintf("http://192.168.8.1:%d", cfg.HealthPort)
 			if matched {
 				w.Header().Set("Access-Control-Allow-Origin", origin)
 			} else {
-				w.Header().Set("Access-Control-Allow-Origin", "http://192.168.8.1:8888")
+				w.Header().Set("Access-Control-Allow-Origin", defaultOrigin)
 			}
 		} else {
-			w.Header().Set("Access-Control-Allow-Origin", "http://192.168.8.1:8888")
+			defaultOrigin := fmt.Sprintf("http://192.168.8.1:%d", cfg.HealthPort)
+			w.Header().Set("Access-Control-Allow-Origin", defaultOrigin)
 		}
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")

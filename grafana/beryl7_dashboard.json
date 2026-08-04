@@ -31,12 +31,40 @@
       "title": "SkillStore Cache Hit Rate (%)",
       "type": "stat",
       "targets": [{ "expr": "beryl7_skill_hits_total / (beryl7_skill_hits_total + beryl7_cache_misses_total) * 100", "legendFormat": "Hit Rate %" }]
+    },
+    {
+      "title": "Watchdog Rollbacks Total",
+      "type": "stat",
+      "targets": [{ "expr": "beryl7_rollbacks_total", "legendFormat": "Rollbacks" }]
+    },
+    {
+      "title": "Auto-Healing Success vs Failures",
+      "type": "timeseries",
+      "targets": [
+        { "expr": "beryl7_healing_success_total", "legendFormat": "Successful Heals" },
+        { "expr": "beryl7_healing_failures_total", "legendFormat": "Failed Attempts" }
+      ]
+    },
+    {
+      "title": "Router WAN Network Reachability",
+      "type": "stat",
+      "targets": [{ "expr": "beryl7_router_reachable", "legendFormat": "Status (1=Online, 0=Offline)" }]
+    },
+    {
+      "title": "Active Conntrack NAT Sessions",
+      "type": "stat",
+      "targets": [{ "expr": "beryl7_conntrack_count", "legendFormat": "Conntrack Sessions" }]
+    },
+    {
+      "title": "System Uptime (Hours)",
+      "type": "stat",
+      "targets": [{ "expr": "beryl7_uptime_seconds / 3600", "legendFormat": "Uptime Hours" }]
     }
   ],
   "refresh": "5s",
   "schemaVersion": 38,
   "style": "dark",
-  "tags": ["beryl7", "router", "openwrt"],
+  "tags": ["beryl7", "router", "openwrt", "enterprise"],
   "time": { "from": "now-1h", "to": "now" },
   "title": "Beryl 7 AI Agent — Operations Dashboard",
   "uid": "beryl7-ops-dashboard"
