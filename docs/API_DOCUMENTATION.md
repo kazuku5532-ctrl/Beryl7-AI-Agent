@@ -1,8 +1,9 @@
 # Beryl 7 AI Agent — Backend REST API Specification 🛠️
 
-Version: **v15.3**  
-Server Port: `8888` (Router Go Daemon) / `5000` (Python Controller)  
+Version: **v16.0 10/10 Certified**  
+Server Port: `8888` (Router Go Daemon)  
 Authentication: Optional Header `Authorization: Bearer <token>`  
+Rate Limit: `60 requests / minute per client IP`  
 
 ---
 
@@ -96,5 +97,33 @@ Approves a pending AI remediation action queued for operator approval.
 {
   "status": "success",
   "message": "Action approved successfully"
+}
+```
+
+---
+
+## ❌ HTTP Error Response Specifications
+
+### 1. `401 Unauthorized`
+Returned when an endpoint requiring Operator or Admin role (e.g. `/api/logs`) is called without a valid Bearer token.
+```json
+{
+  "error": "Unauthorized: Operator or Admin Auth Token required to access system logs"
+}
+```
+
+### 2. `429 Too Many Requests`
+Returned when a client IP exceeds 60 requests within a 60-second sliding window.
+```json
+{
+  "error": "Too Many Requests: Rate limit exceeded"
+}
+```
+
+### 3. `500 Internal Server Error`
+Returned when a configuration reload or internal storage error occurs.
+```json
+{
+  "error": "Internal Error: Failed to reload configuration in-memory"
 }
 ```

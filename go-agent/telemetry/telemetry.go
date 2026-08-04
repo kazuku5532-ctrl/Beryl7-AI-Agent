@@ -44,9 +44,12 @@ type TelemetryCollector struct {
 	ubusPath          string
 	ewmaLatency       float64
 	ewmaVariance      float64
-	skillHitsTotal    int64
-	healSuccessTotal  int64
-	healFailuresTotal int64
+	skillHitsTotal      int64
+	skillMissesTotal    int64
+	healSuccessTotal    int64
+	healFailuresTotal   int64
+	rollbacksTotal      int64
+	falsePositivesTotal int64
 }
 
 func NewCollector() *TelemetryCollector {
@@ -391,16 +394,33 @@ func (t *TelemetryCollector) ExportPrometheusMetrics(m *Metric) string {
 	sb.WriteString("# TYPE beryl7_conntrack_count gauge\n")
 	sb.WriteString(fmt.Sprintf("beryl7_conntrack_count %d\n", t.ReadConntrackCount()))
 
+	reachableVal := 1
+	if strings.Contains(m.WANStatus, "Offline") {
+		reachableVal = 0
+	}
+	sb.WriteString("# HELP beryl7_router_reachable Router WAN network reachability status (1=Online, 0=Offline)\n")
+	sb.WriteString("# TYPE beryl7_router_reachable gauge\n")
+	sb.WriteString(fmt.Sprintf("beryl7_router_reachable %d\n", reachableVal))
+
 	t.mu.Lock()
 	sb.WriteString("# HELP beryl7_skill_hits_total Total SkillStore cache hits\n")
 	sb.WriteString("# TYPE beryl7_skill_hits_total counter\n")
 	sb.WriteString(fmt.Sprintf("beryl7_skill_hits_total %d\n", t.skillHitsTotal))
+	sb.WriteString("# HELP beryl7_cache_misses_total Total SkillStore cache misses\n")
+	sb.WriteString("# TYPE beryl7_cache_misses_total counter\n")
+	sb.WriteString(fmt.Sprintf("beryl7_cache_misses_total %d\n", t.skillMissesTotal))
 	sb.WriteString("# HELP beryl7_healing_success_total Total verified successful auto-healings\n")
 	sb.WriteString("# TYPE beryl7_healing_success_total counter\n")
 	sb.WriteString(fmt.Sprintf("beryl7_healing_success_total %d\n", t.healSuccessTotal))
 	sb.WriteString("# HELP beryl7_healing_failures_total Total failed auto-healing attempts\n")
 	sb.WriteString("# TYPE beryl7_healing_failures_total counter\n")
 	sb.WriteString(fmt.Sprintf("beryl7_healing_failures_total %d\n", t.healFailuresTotal))
+	sb.WriteString("# HELP beryl7_rollbacks_total Total Watchdog rollback triggers\n")
+	sb.WriteString("# TYPE beryl7_rollbacks_total counter\n")
+	sb.WriteString(fmt.Sprintf("beryl7_rollbacks_total %d\n", t.rollbacksTotal))
+	sb.WriteString("# HELP beryl7_false_positives_total Total false positive anomaly detections\n")
+	sb.WriteString("# TYPE beryl7_false_positives_total counter\n")
+	sb.WriteString(fmt.Sprintf("beryl7_false_positives_total %d\n", t.falsePositivesTotal))
 	t.mu.Unlock()
 
 	return sb.String()
@@ -410,6 +430,24 @@ func (t *TelemetryCollector) RecordSkillHit() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.skillHitsTotal++
+}
+
+func (t *TelemetryCollector) RecordSkillMiss() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.skillMissesTotal++
+}
+
+func (t *TelemetryCollector) RecordRollback() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.rollbacksTotal++
+}
+
+func (t *TelemetryCollector) RecordFalsePositive() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.falsePositivesTotal++
 }
 
 func (t *TelemetryCollector) RecordHealOutcome(success bool) {

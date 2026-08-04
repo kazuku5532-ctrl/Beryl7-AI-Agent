@@ -1,0 +1,29 @@
+groups:
+  - name: beryl7_alerts
+    rules:
+      - alert: RouterUnreachable
+        expr: beryl7_router_reachable == 0
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "Router {{ $labels.instance }} is unreachable"
+          description: "WAN interface network reachability has been lost for over 30s."
+
+      - alert: HighMemoryUsage
+        expr: beryl7_ram_usage_pct > 92
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High RAM usage on {{ $labels.instance }}"
+          description: "Memory usage is at {{ $value }}% (threshold: 92%)."
+
+      - alert: HighHardwareTemperature
+        expr: beryl7_hardware_temp_c > 80
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High hardware temperature on {{ $labels.instance }}"
+          description: "Thermal zone temperature is at {{ $value }}°C (threshold: 80°C)."

@@ -1,0 +1,43 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "title": "CPU Usage (%)",
+      "type": "stat",
+      "targets": [{ "expr": "beryl7_cpu_usage_pct", "legendFormat": "CPU %" }]
+    },
+    {
+      "title": "RAM Usage (%)",
+      "type": "stat",
+      "targets": [{ "expr": "beryl7_ram_usage_pct", "legendFormat": "RAM %" }]
+    },
+    {
+      "title": "Hardware Temperature (°C)",
+      "type": "stat",
+      "targets": [{ "expr": "beryl7_hardware_temp_c", "legendFormat": "Temp °C" }]
+    },
+    {
+      "title": "DNS Ping Latency (ms)",
+      "type": "timeseries",
+      "targets": [{ "expr": "beryl7_latency_ms", "legendFormat": "Latency ms" }]
+    },
+    {
+      "title": "SkillStore Cache Hit Rate (%)",
+      "type": "stat",
+      "targets": [{ "expr": "beryl7_skill_hits_total / (beryl7_skill_hits_total + beryl7_cache_misses_total) * 100", "legendFormat": "Hit Rate %" }]
+    }
+  ],
+  "refresh": "5s",
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["beryl7", "router", "openwrt"],
+  "time": { "from": "now-1h", "to": "now" },
+  "title": "Beryl 7 AI Agent — Operations Dashboard",
+  "uid": "beryl7-ops-dashboard"
+}

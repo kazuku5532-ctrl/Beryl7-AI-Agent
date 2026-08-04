@@ -36,15 +36,19 @@ func ValidateSystemConfiguration(cfg *Config) error {
 	}
 	var errs []string
 	if cfg.AuthToken == "" {
-		errs = append(errs, "AUTH_TOKEN is required")
+		errs = append(errs, "AUTH_TOKEN is required -> Fix: Generate 64-hex token using 'openssl rand -hex 32' and set AUTH_TOKEN in /etc/beryl7/agent.env")
+	} else if len(cfg.AuthToken) < 32 {
+		errs = append(errs, "AUTH_TOKEN is too weak (< 32 chars) -> Fix: Generate 64-hex token using 'openssl rand -hex 32'")
 	}
 	if cfg.ApproveToken != "" && cfg.ApproveToken == cfg.AuthToken {
-		errs = append(errs, "APPROVE_TOKEN must be distinct from AUTH_TOKEN")
+		errs = append(errs, "APPROVE_TOKEN must be distinct from AUTH_TOKEN -> Fix: Use a separate 64-hex token for Operator approval")
 	}
 	for _, path := range []string{cfg.SkillStorePath, cfg.CheckpointPath} {
 		dir := filepath.Dir(path)
 		if dir != "" && dir != "." {
-			_ = os.MkdirAll(dir, 0700)
+			if err := os.MkdirAll(dir, 0700); err != nil {
+				errs = append(errs, fmt.Sprintf("Cannot create directory %s: %v -> Fix: Check disk space and permissions for %s", dir, err, dir))
+			}
 		}
 	}
 	if len(errs) > 0 {

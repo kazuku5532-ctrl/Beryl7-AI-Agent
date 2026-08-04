@@ -56,7 +56,7 @@ func Init(filePath string, levelStr string) (*Logger, error) {
 		level:       lvl,
 		filePath:    filePath,
 		maxBytes:    2 * 1024 * 1024,
-		backupCount: 1,
+		backupCount: 5,
 	}
 
 	if filePath != "" {
@@ -94,13 +94,33 @@ func (l *Logger) rotate() {
 	}
 
 	_ = l.file.Close()
-	backupPath := l.filePath + ".1"
-	_ = os.Remove(backupPath)
-	_ = os.Rename(l.filePath, backupPath)
+	maxBackups := l.backupCount
+	if maxBackups <= 0 {
+		maxBackups = 5
+	}
+
+	for i := maxBackups; i >= 1; i-- {
+		oldPath := fmt.Sprintf("%s.%d", l.filePath, i)
+		if i == maxBackups {
+			_ = os.Remove(oldPath)
+		} else {
+			newPath := fmt.Sprintf("%s.%d", l.filePath, i+1)
+			_ = os.Rename(oldPath, newPath)
+		}
+	}
+	_ = os.Rename(l.filePath, l.filePath+".1")
 
 	f, err := os.OpenFile(l.filePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 	if err == nil {
 		l.file = f
+	}
+}
+
+func (l *Logger) SetBackupCount(count int) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if count > 0 {
+		l.backupCount = count
 	}
 }
 

@@ -100,11 +100,18 @@ func LoadConfig() (*Config, error) {
 		WiFiDisconnectCount:    3,
 	}
 
+	var showVersion bool
 	if !flag.Parsed() {
 		flag.StringVar(&cfg.ConfigFilePath, "config", cfg.ConfigFilePath, "Path to environment config file")
 		flag.StringVar(&cfg.KeyFilePath, "keyfile", cfg.KeyFilePath, "Path to secure API key file")
 		flag.BoolVar(&cfg.DryRun, "dry-run", cfg.DryRun, "Enable dry-run mode (no network modifications)")
+		flag.BoolVar(&showVersion, "version", false, "Print daemon version and exit")
 		flag.Parse()
+	}
+
+	if showVersion {
+		fmt.Println("beryl7-agent version v16.0 Enterprise Self-Adaptation Engine (commit 498e658)")
+		os.Exit(0)
 	}
 
 	if err := parseEnvFile(cfg.ConfigFilePath, cfg); err != nil {
