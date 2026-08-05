@@ -38,6 +38,8 @@ type Config struct {
 	BandwidthBoostMbps float64
 	BandwidthRestoreMbps float64
 	WiFiDisconnectCount int
+	LogMaxBytes         int64
+	LogBackupCount      int
 	apiKeyAtomic      atomic.Value
 }
 
@@ -98,6 +100,8 @@ func LoadConfig() (*Config, error) {
 		BandwidthBoostMbps:     80.0,
 		BandwidthRestoreMbps:   20.0,
 		WiFiDisconnectCount:    3,
+		LogMaxBytes:            2 * 1024 * 1024,
+		LogBackupCount:         5,
 	}
 
 	var showVersion bool
@@ -188,6 +192,20 @@ func LoadConfig() (*Config, error) {
 			cfg.WiFiDisconnectCount = i
 		} else {
 			logger.Warn("Invalid integer value for BERYL7_WIFI_DISCONNECT_COUNT: '%s'. Keeping default %d", val, cfg.WiFiDisconnectCount)
+		}
+	}
+	if val := os.Getenv("BERYL7_LOG_MAX_BYTES"); val != "" {
+		if mb, err := strconv.ParseInt(val, 10, 64); err == nil && mb > 0 {
+			cfg.LogMaxBytes = mb
+		} else {
+			logger.Warn("Invalid integer value for BERYL7_LOG_MAX_BYTES: '%s'. Keeping default %d", val, cfg.LogMaxBytes)
+		}
+	}
+	if val := os.Getenv("BERYL7_LOG_BACKUP_COUNT"); val != "" {
+		if count, err := strconv.Atoi(val); err == nil && count > 0 {
+			cfg.LogBackupCount = count
+		} else {
+			logger.Warn("Invalid integer value for BERYL7_LOG_BACKUP_COUNT: '%s'. Keeping default %d", val, cfg.LogBackupCount)
 		}
 	}
 	if val := os.Getenv("BERYL7_SKILLSTORE_PATH"); val != "" {
@@ -434,6 +452,14 @@ func parseEnvFile(filePath string, cfg *Config) error {
 		case "BERYL7_WIFI_DISCONNECT_COUNT":
 			if i, err := strconv.Atoi(val); err == nil {
 				cfg.WiFiDisconnectCount = i
+			}
+		case "BERYL7_LOG_MAX_BYTES":
+			if mb, err := strconv.ParseInt(val, 10, 64); err == nil && mb > 0 {
+				cfg.LogMaxBytes = mb
+			}
+		case "BERYL7_LOG_BACKUP_COUNT":
+			if count, err := strconv.Atoi(val); err == nil && count > 0 {
+				cfg.LogBackupCount = count
 			}
 		case "BERYL7_SKILLSTORE_PATH":
 			cfg.SkillStorePath = val

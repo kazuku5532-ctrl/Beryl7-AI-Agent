@@ -1,0 +1,7 @@
+{
+  "scenario": "WAN Drop Auto-Recovery",
+  "trigger_condition": "WAN Status == Offline",
+  "checkpoint": "/tmp/agent_checkpoint.uci",
+  "remediation_action": "ubus call network.interface.wan restart",
+  "verification": "Ping 1.1.1.1 within 15 seconds"
+}

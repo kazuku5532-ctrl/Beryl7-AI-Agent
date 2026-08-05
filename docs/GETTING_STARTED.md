@@ -14,6 +14,14 @@ This guide provides step-by-step instructions to compile, configure, deploy, and
 
 ---
 
+## ⚠️ Scope & Technical Limitations
+
+- **IPv4 Focus:** Primary telemetry and WAN healing routines target IPv4 interfaces (`wan`, `eth0`, `ra0`, `rai0`). Advanced IPv6 SLAAC/DHCPv6 prefix delegation is out of scope.
+- **Single-Node Focus:** Designed for single-router AP/Gateway nodes; nested multi-hop Wi-Fi mesh topologies are not supported.
+- **Resource Minimums:** Requires at least **16MB flash storage** and **128MB RAM** running OpenWrt 21.02+.
+
+---
+
 ## 🛠️ Step 1: Cross-Compile Native Go ARM64 Binary
 
 On your development machine, clone the repository and cross-compile the Go daemon for Linux ARM64:

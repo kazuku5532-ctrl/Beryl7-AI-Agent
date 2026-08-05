@@ -96,12 +96,16 @@ func main() {
 		os.Exit(1)
 	}
 
-	_, err = logger.Init("/var/log/beryl7_agent.log", cfg.LogLevel)
+	l, err := logger.Init("/var/log/beryl7_agent.log", cfg.LogLevel)
 	if err != nil {
 		fmt.Printf("Failed to init logger: %v\n", err)
 		os.Exit(1)
 	}
 	defer logger.Flush()
+	if l != nil {
+		l.SetMaxBytes(cfg.LogMaxBytes)
+		l.SetBackupCount(cfg.LogBackupCount)
+	}
 
 	if valErr := config.ValidateSystemConfiguration(cfg); valErr != nil {
 		logger.Warn("System configuration validation check: %v", valErr)
@@ -112,11 +116,12 @@ func main() {
 
 	logger.Info("Starting Beryl 7 AI Agent v16.0 Daemon (Native Go)...")
 
-	_ = config.EnsureSysupgradePreservation()
-	_ = config.EnsureFilePermissions()
-	_ = config.EnsureProcdInitService()
-	_ = config.DetectSystemCapability(cfg)
-	_ = PostUpgradeValidation(cfg)
+	// Non-fatal init checks: errors are logged internally inside helper functions
+	_ = config.EnsureSysupgradePreservation() // nolint:errcheck (non-fatal, logged inside helper)
+	_ = config.EnsureFilePermissions()        // nolint:errcheck (non-fatal, logged inside helper)
+	_ = config.EnsureProcdInitService()       // nolint:errcheck (non-fatal, logged inside helper)
+	_ = config.DetectSystemCapability(cfg)    // nolint:errcheck (non-fatal, logged inside helper)
+	_ = PostUpgradeValidation(cfg)            // nolint:errcheck (non-fatal, logged inside helper)
 
 	pidPath := "/var/run/beryl7-agent.pid"
 	if err := acquirePIDLock(pidPath); err != nil {

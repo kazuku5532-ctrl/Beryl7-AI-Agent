@@ -124,6 +124,14 @@ func (l *Logger) SetBackupCount(count int) {
 	}
 }
 
+func (l *Logger) SetMaxBytes(maxBytes int64) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if maxBytes > 0 {
+		l.maxBytes = maxBytes
+	}
+}
+
 func sanitizeRedact(msg string) string {
 	msg = passRegex.ReplaceAllString(msg, "$1=***REDACTED***")
 	msg = bearerRegex.ReplaceAllString(msg, "Bearer ***REDACTED***")

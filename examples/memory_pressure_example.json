@@ -1,0 +1,6 @@
+{
+  "scenario": "High RAM Pressure Mitigation",
+  "trigger_condition": "RAM Usage > 92.0%",
+  "remediation_action": "echo 3 > /proc/sys/vm/drop_caches",
+  "verification": "RAM Usage < 85.0%"
+}
