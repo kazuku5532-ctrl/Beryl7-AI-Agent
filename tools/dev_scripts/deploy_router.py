@@ -11,6 +11,18 @@ import socketserver
 import threading
 import urllib.request
 import paramiko
+import socket
+
+def get_routing_local_ip(target_ip):
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect((target_ip, 1))
+        ip = s.getsockname()[0]
+    except Exception:
+        ip = "127.0.0.1"
+    finally:
+        s.close()
+    return ip
 
 # STRICT ENFORCEMENT: ZERO HARDCODED SECRETS ALLOWED IN REPOSITORY.
 ROUTER_IP = os.getenv("ROUTER_IP", "192.168.8.1")
@@ -21,7 +33,7 @@ if not ROUTER_PASS:
     print("Error: ROUTER_PASS environment variable is not set. Please set $env:ROUTER_PASS='your_password' before running.")
     sys.exit(1)
 PORT = 8999
-LOCAL_IP = "192.168.8.102"
+LOCAL_IP = os.getenv("LOCAL_IP", get_routing_local_ip(ROUTER_IP))
 
 BINARY_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../go-agent/beryl7-agent"))
 
