@@ -682,6 +682,37 @@ func AutoRollback(cfg *config.Config) error {
 	return FailsafeRecovery(FailsafeLevel1, cfg)
 }
 
+func isLANOrLoopbackIP(ip net.IP) bool {
+	if ip == nil {
+		return false
+	}
+	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() {
+		return true
+	}
+	ifaces, err := net.Interfaces()
+	if err == nil {
+		for _, iface := range ifaces {
+			addrs, errAddr := iface.Addrs()
+			if errAddr != nil {
+				continue
+			}
+			for _, addr := range addrs {
+				var ipNet *net.IPNet
+				switch v := addr.(type) {
+				case *net.IPNet:
+					ipNet = v
+				case *net.IPAddr:
+					ipNet = &net.IPNet{IP: v.IP, Mask: net.CIDRMask(32, 32)}
+				}
+				if ipNet != nil && ipNet.Contains(ip) {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
 func StartHealthCheckServer(cfg *config.Config, health *HealthState, execEngine *executor.Executor, store *skillstore.SkillStore, aiClient *ai.AIClient, wd *watchdog.Watchdog) *http.Server {
 	mux := http.NewServeMux()
 
@@ -720,7 +751,7 @@ func StartHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 				if parsedURL, err := url.Parse(origin); err == nil {
 					hostname := parsedURL.Hostname()
 					ip := net.ParseIP(hostname)
-					if hostname == "localhost" || (ip != nil && (ip.IsLoopback() || strings.HasPrefix(ip.String(), "192.168.8."))) {
+					if hostname == "localhost" || (ip != nil && isLANOrLoopbackIP(ip)) {
 						matched = true
 					}
 				}
@@ -728,14 +759,14 @@ func StartHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 				matched = true
 			}
 
-			defaultOrigin := fmt.Sprintf("http://192.168.8.1:%d", cfg.HealthPort)
+			defaultOrigin := fmt.Sprintf("http://%s:%d", cfg.BindHost, cfg.HealthPort)
 			if matched {
 				w.Header().Set("Access-Control-Allow-Origin", origin)
 			} else {
 				w.Header().Set("Access-Control-Allow-Origin", defaultOrigin)
 			}
 		} else {
-			defaultOrigin := fmt.Sprintf("http://192.168.8.1:%d", cfg.HealthPort)
+			defaultOrigin := fmt.Sprintf("http://%s:%d", cfg.BindHost, cfg.HealthPort)
 			w.Header().Set("Access-Control-Allow-Origin", defaultOrigin)
 		}
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
@@ -933,7 +964,14 @@ func StartHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 		logger.Info("Goroutine-Safe Live Config Reload Completed Successfully by role [%s]!", role)
 		msg := "Configuration reloaded in-memory without service interruption"
 		if netChanged {
-			msg += ". WARNING: BindHost/HealthPort changes require process restart (/etc/init.d/beryl7-agent restart) to re-bind listener socket."
+			msg += ". Auto-restarting daemon service in 1s to re-bind listener socket to new IP/Port."
+			go func() {
+				time.Sleep(1 * time.Second)
+				logger.Warn("Re-binding HTTP listener socket via daemon service restart...")
+				if runtime.GOOS == "linux" {
+					_ = exec.Command("/etc/init.d/beryl7-agent", "restart").Run() // #nosec G204 // nolint:errcheck (non-fatal)
+				}
+			}()
 		}
 		_ = json.NewEncoder(w).Encode(map[string]string{
 			"status":  "success",
