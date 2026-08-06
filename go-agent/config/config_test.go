@@ -41,6 +41,13 @@ func TestReadSecureKeyFile(t *testing.T) {
 	if err != nil || key != "my-secret-key" {
 		t.Errorf("Expected my-secret-key, got %s (err=%v)", key, err)
 	}
+
+	// Test fallback key file reading into Config
+	cfg := &Config{KeyFilePath: keyPath}
+	k, errRead := readSecureKeyFile(cfg.KeyFilePath)
+	if errRead != nil || k != "my-secret-key" {
+		t.Errorf("Expected my-secret-key from cfg.KeyFilePath, got %s", k)
+	}
 }
 
 func TestV16EnterpriseConfigFunctions(t *testing.T) {

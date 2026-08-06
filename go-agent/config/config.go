@@ -219,6 +219,10 @@ func LoadConfig() (*Config, error) {
 		key, err := readSecureKeyFile(cfg.KeyFilePath)
 		if err == nil && key != "" {
 			cfg.GeminiAPIKey = key
+			logger.Info("Loaded secure GEMINI_API_KEY from keyfile [%s]", cfg.KeyFilePath)
+		} else if fallbackKey, errFallback := readSecureKeyFile("/etc/beryl7/agent.key"); errFallback == nil && fallbackKey != "" {
+			cfg.GeminiAPIKey = fallbackKey
+			logger.Info("Loaded fallback GEMINI_API_KEY from [/etc/beryl7/agent.key]")
 		}
 	}
 
@@ -243,6 +247,7 @@ func EnsureSysupgradePreservation() error {
 
 	requiredEntries := []string{
 		"/etc/beryl7/agent.env",
+		"/etc/beryl7/agent.key",
 		"/usr/bin/beryl7-agent",
 		"/etc/init.d/beryl7-agent",
 		"/root/.agent_checkpoint.uci",
