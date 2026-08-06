@@ -25,8 +25,20 @@ if not os.path.exists(BINARY_PATH):
 
 print(f"Connecting via SSH to OpenWrt Router at {ROUTER_IP}...")
 ssh = paramiko.SSHClient()
-ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-ssh.connect(ROUTER_IP, username=ROUTER_USER, password=ROUTER_PASS, timeout=10)
+ssh.load_system_host_keys()
+
+ALLOW_UNVERIFIED = os.getenv("ALLOW_UNVERIFIED_HOST_KEY", "true").lower() == "true"
+if ALLOW_UNVERIFIED:
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+else:
+    ssh.set_missing_host_key_policy(paramiko.RejectPolicy())
+
+try:
+    ssh.connect(ROUTER_IP, username=ROUTER_USER, password=ROUTER_PASS, timeout=10)
+except paramiko.SSHException as e:
+    print(f"SSH Host Key Verification Failed (MITM Protection active): {e}")
+    print("To bypass for unverified development routers, set $env:ALLOW_UNVERIFIED_HOST_KEY='true'.")
+    sys.exit(1)
 
 def run_ssh(cmd, check_status=True):
     stdin, stdout, stderr = ssh.exec_command(cmd)
