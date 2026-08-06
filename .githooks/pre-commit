@@ -1,0 +1,10 @@
+#!/bin/sh
+# Git Pre-Commit Hook: Mandatory Beryl 7 Automated Rule Enforcement Engine
+# BLOCKS ANY COMMIT IF ANY RULE VIOLATION IS DETECTED.
+
+echo "🔍 Running Mandatory Beryl 7 Rule Enforcement Engine..."
+python tools/dev_scripts/verify_rules.py
+if [ $? -ne 0 ]; then
+    echo "❌ COMMIT BLOCKED: Rule Compliance Verification Failed!"
+    exit 1
+fi
