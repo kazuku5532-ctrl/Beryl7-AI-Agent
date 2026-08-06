@@ -1,14 +1,32 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"go/ast"
 	"go/parser"
+	"go/printer"
 	"go/token"
 	"os"
 	"path/filepath"
 	"strings"
 )
+
+func renderNode(fset *token.FileSet, node ast.Node) string {
+	var buf bytes.Buffer
+	if err := printer.Fprint(&buf, fset, node); err != nil {
+		return ""
+	}
+	return buf.String()
+}
+
+func isOriginExpression(exprStr string) bool {
+	lower := strings.ToLower(exprStr)
+	if lower == "origin" || strings.HasSuffix(lower, ".origin") || lower == `r.header.get("origin")` || lower == `r.header.get("origin")` {
+		return true
+	}
+	return false
+}
 
 func main() {
 	if len(os.Args) < 2 {
@@ -38,17 +56,33 @@ func main() {
 				return true
 			}
 
-			// AST Data-Flow Inspection: Check for unsafe strings.HasPrefix or strings.HasSuffix calls on CORS origin
+			// Inspect Selector Expressions (e.g. strings.HasPrefix or strings.HasSuffix)
 			if sel, ok := call.Fun.(*ast.SelectorExpr); ok {
 				if pkg, ok := sel.X.(*ast.Ident); ok && pkg.Name == "strings" {
 					funcName := sel.Sel.Name
-					if funcName == "HasPrefix" || funcName == "HasSuffix" {
-						for _, arg := range call.Args {
-							argStr := fmt.Sprintf("%v", arg)
-							if strings.Contains(strings.ToLower(argStr), "origin") {
+
+					if funcName == "HasPrefix" && len(call.Args) >= 2 {
+						arg0Code := renderNode(fset, call.Args[0])
+						if isOriginExpression(arg0Code) {
+							hasUnsafeCORS = true
+							pos := fset.Position(call.Pos())
+							msg := fmt.Sprintf("❌ [AST-FAIL] %s:%d: Unsafe strings.HasPrefix check on CORS origin expression: '%s'", path, pos.Line, arg0Code)
+							violations = append(violations, msg)
+							fmt.Println(msg)
+						}
+					}
+
+					if funcName == "HasSuffix" && len(call.Args) >= 2 {
+						arg0Code := renderNode(fset, call.Args[0])
+						arg1Code := renderNode(fset, call.Args[1])
+
+						// Restored mDNS Suffix Inspection (.local, .lan, .home)
+						if lit, ok := call.Args[1].(*ast.BasicLit); ok && lit.Kind == token.STRING {
+							val := strings.ToLower(lit.Value)
+							if strings.Contains(val, ".local") || strings.Contains(val, ".lan") || strings.Contains(val, ".home") {
 								hasUnsafeCORS = true
 								pos := fset.Position(call.Pos())
-								msg := fmt.Sprintf("❌ [AST-FAIL] %s:%d: Unsafe strings.%s check on CORS origin variable (%s)", path, pos.Line, funcName, argStr)
+								msg := fmt.Sprintf("❌ [AST-FAIL] %s:%d: Unsafe mDNS strings.HasSuffix check on target '%s' with suffix '%s'", path, pos.Line, arg0Code, arg1Code)
 								violations = append(violations, msg)
 								fmt.Println(msg)
 							}
