@@ -30,8 +30,10 @@
       raw: "cp {{ current_binary }} {{ backup_binary }} 2>/dev/null || true"
 
     - name: "4. Upload new Go binary to router"
-      raw: "cat > {{ current_binary }}"
-      stdin: "{{ lookup('file', go_source_dir + '/' + binary_name) }}"
+      copy:
+        src: "{{ go_source_dir }}/{{ binary_name }}"
+        dest: "{{ current_binary }}"
+        mode: '0755'
 
     - name: "5. Set execution permissions"
       raw: "chmod +x {{ current_binary }}"
