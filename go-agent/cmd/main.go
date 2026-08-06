@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"database/sql"
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -29,6 +30,9 @@ import (
 	"beryl7-agent/telemetry"
 	"beryl7-agent/watchdog"
 )
+
+//go:embed dashboard.html
+var embeddedDashboardHTML []byte
 
 type HealthState struct {
 	mu             sync.RWMutex
@@ -57,7 +61,24 @@ type PendingApproval struct {
 var configMu sync.RWMutex
 var cfgAtomic atomic.Value
 
-func validateTokenRole(authHeader string, cfg *config.Config) (string, bool) {
+func isLocalhostRequest(r *http.Request) bool {
+	if r == nil {
+		return false
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	host = strings.Trim(strings.TrimSpace(host), "[]")
+	return host == "127.0.0.1" || host == "::1" || host == "localhost"
+}
+
+func validateTokenRole(r *http.Request, authHeader string, cfg *config.Config) (string, bool) {
+	// 1. Localhost Bypass: Requests originating from loopback (127.0.0.1 / ::1) automatically bypass Auth for local CLI operations
+	if isLocalhostRequest(r) {
+		return "admin", true
+	}
+
 	if authHeader == "" {
 		return "viewer", true
 	}
@@ -70,12 +91,12 @@ func validateTokenRole(authHeader string, cfg *config.Config) (string, bool) {
 	approveToken := cfg.ApproveToken
 	configMu.RUnlock()
 
-	// 1. Check Operator Token
+	// 2. Check Operator Token
 	if approveToken != "" && subtle.ConstantTimeCompare([]byte(token), []byte(approveToken)) == 1 {
 		return "operator", true
 	}
 
-	// 2. Check Admin Token (In Single-Token mode when approveToken is empty/unconfigured, Admin Token grants full Operator + Admin access)
+	// 3. Check Admin Token (In Single-Token mode when approveToken is empty/unconfigured, Admin Token grants full Operator + Admin access)
 	if authToken != "" && subtle.ConstantTimeCompare([]byte(token), []byte(authToken)) == 1 {
 		if approveToken == "" {
 			return "operator", true
@@ -145,6 +166,9 @@ func main() {
 	collector := telemetry.NewCollector()
 	logParser := parser.NewParser()
 	execEngine := executor.New()
+	if cfg.GeminiAPIKey == "" {
+		logger.Warn("NOTICE: GEMINI_API_KEY is not set! Cloud AI Log Analysis disabled. Graceful degradation active: Local-First SQLite Self-Healing & Watchdog running 100%% normally.")
+	}
 	aiClient := ai.NewClient(cfg.GeminiAPIKey)
 
 	ai.ProbeDNSAsync()
@@ -702,6 +726,21 @@ func StartHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 		return false
 	}
 
+	// Endpoint 0: Embedded Standalone Web Dashboard (/ and /dashboard)
+	serveDashboard := func(w http.ResponseWriter, r *http.Request) {
+		if setCorsHeaders(w, r) {
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		if len(embeddedDashboardHTML) > 0 {
+			_, _ = w.Write(embeddedDashboardHTML)
+		} else {
+			http.Error(w, "Dashboard HTML not embedded", http.StatusNotFound)
+		}
+	}
+	mux.HandleFunc("/", serveDashboard)
+	mux.HandleFunc("/dashboard", serveDashboard)
+
 	// Endpoint 1: Health Check (/api/health)
 	mux.HandleFunc("/api/health", func(w http.ResponseWriter, r *http.Request) {
 		if setCorsHeaders(w, r) {
@@ -780,8 +819,8 @@ func StartHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 			return
 		}
 		authHdr := r.Header.Get("Authorization")
-		role, valid := validateTokenRole(authHdr, cfg)
-		if authHdr == "" || !valid || role == "unknown" || role == "viewer" {
+		role, valid := validateTokenRole(r, authHdr, cfg)
+		if (!isLocalhostRequest(r) && authHdr == "") || !valid || role == "unknown" || (role == "viewer" && !isLocalhostRequest(r)) {
 			http.Error(w, `{"error":"Unauthorized: Operator or Admin Auth Token required to access system logs"}`, http.StatusUnauthorized)
 			return
 		}
@@ -842,7 +881,7 @@ func StartHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 			return
 		}
 
-		role, valid := validateTokenRole(r.Header.Get("Authorization"), cfg)
+		role, valid := validateTokenRole(r, r.Header.Get("Authorization"), cfg)
 		if !valid || (role != "operator" && role != "admin") {
 			http.Error(w, `{"error":"Forbidden: Endpoint requires operator or admin role"}`, http.StatusForbidden)
 			return
@@ -881,7 +920,7 @@ func StartHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 			return
 		}
 
-		role, valid := validateTokenRole(r.Header.Get("Authorization"), cfg)
+		role, valid := validateTokenRole(r, r.Header.Get("Authorization"), cfg)
 		if !valid || (role != "operator" && role != "admin") {
 			http.Error(w, `{"error":"Forbidden: Endpoint requires operator or admin role"}`, http.StatusForbidden)
 			return

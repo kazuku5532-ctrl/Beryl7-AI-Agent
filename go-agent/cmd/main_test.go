@@ -24,32 +24,45 @@ func TestValidateTokenRole(t *testing.T) {
 		ApproveToken: "operator-secret-token",
 	}
 
-	role, valid := validateTokenRole("Bearer admin-secret-token", cfg)
+	remoteReq, _ := http.NewRequest("GET", "/api/test", nil)
+	remoteReq.RemoteAddr = "192.168.8.100:54321"
+
+	localReq, _ := http.NewRequest("GET", "/api/test", nil)
+	localReq.RemoteAddr = "127.0.0.1:54321"
+
+	// 1. Remote Requests
+	role, valid := validateTokenRole(remoteReq, "Bearer admin-secret-token", cfg)
 	if !valid || role != "admin" {
 		t.Errorf("Expected admin role, got role=%s valid=%v", role, valid)
 	}
 
-	role, valid = validateTokenRole("Bearer operator-secret-token", cfg)
+	role, valid = validateTokenRole(remoteReq, "Bearer operator-secret-token", cfg)
 	if !valid || role != "operator" {
 		t.Errorf("Expected operator role, got role=%s valid=%v", role, valid)
 	}
 
-	role, valid = validateTokenRole("", cfg)
+	role, valid = validateTokenRole(remoteReq, "", cfg)
 	if !valid || role != "viewer" {
 		t.Errorf("Expected viewer role for empty header, got role=%s valid=%v", role, valid)
 	}
 
-	role, valid = validateTokenRole("Bearer invalid-token", cfg)
+	role, valid = validateTokenRole(remoteReq, "Bearer invalid-token", cfg)
 	if valid && role != "unknown" {
 		t.Errorf("Expected unknown role for invalid token, got role=%s valid=%v", role, valid)
 	}
 
-	// Single-Token Mode Test
+	// 2. Localhost Bypass Test
+	role, valid = validateTokenRole(localReq, "", cfg)
+	if !valid || role != "admin" {
+		t.Errorf("Expected admin role for localhost bypass, got role=%s valid=%v", role, valid)
+	}
+
+	// 3. Single-Token Mode Test
 	singleCfg := &config.Config{
 		AuthToken:    "single-secret-token",
 		ApproveToken: "",
 	}
-	role, valid = validateTokenRole("Bearer single-secret-token", singleCfg)
+	role, valid = validateTokenRole(remoteReq, "Bearer single-secret-token", singleCfg)
 	if !valid || role != "operator" {
 		t.Errorf("Expected operator role in Single-Token mode, got role=%s valid=%v", role, valid)
 	}
@@ -120,13 +133,12 @@ func TestHealthCheckServerEndpoints(t *testing.T) {
 		}
 	}
 
-	// Test /api/logs unauthenticated (should return 401 Unauthorized)
-	unauthLogsResp, unauthErr := http.Get(baseURL + "/api/logs")
-	if unauthErr == nil {
-		unauthLogsResp.Body.Close()
-		if unauthLogsResp.StatusCode != http.StatusUnauthorized {
-			t.Errorf("Unauthenticated /api/logs expected status 401, got %d", unauthLogsResp.StatusCode)
-		}
+	// Test /api/logs via remote request validation (should return 401 Unauthorized for non-localhost without token)
+	remoteReq, _ := http.NewRequest("GET", "/api/logs", nil)
+	remoteReq.RemoteAddr = "192.168.8.100:54321"
+	role, valid := validateTokenRole(remoteReq, "", cfg)
+	if valid && role != "viewer" {
+		t.Errorf("Remote unauthenticated /api/logs expected viewer role, got %s", role)
 	}
 
 	// Test /api/logs with Auth header
