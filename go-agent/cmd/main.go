@@ -276,7 +276,7 @@ func main() {
 				health.UptimeSeconds = int64(time.Since(health.StartTime).Seconds())
 			}
 			health.SafeMode = wd.IsSafeMode()
-			health.KillSwitch = config.IsKillSwitchActive(cfg)
+			health.KillSwitch = config.IsKillSwitchActive(cfgSnap)
 			health.mu.Unlock()
 
 			if wd.IsSafeMode() {
