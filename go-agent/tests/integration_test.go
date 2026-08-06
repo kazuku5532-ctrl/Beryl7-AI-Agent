@@ -18,17 +18,17 @@ func TestEndToEndSystemIntegration(t *testing.T) {
 	dbPath := filepath.Join(tempDir, "skills.db")
 	checkpointPath := filepath.Join(tempDir, "checkpoint.uci")
 
-	validAdminToken := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-	validOpToken := "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"
+	placeholderAdminToken := "placeholder_test_token_admin_64char_length_abcdef0123456789abcdef"
+	placeholderOpToken := "placeholder_test_token_approve_64char_length_fedcba9876543210fed"
 
-	t.Setenv("AUTH_TOKEN", validAdminToken)
-	t.Setenv("APPROVE_TOKEN", validOpToken)
+	t.Setenv("AUTH_TOKEN", placeholderAdminToken)
+	t.Setenv("APPROVE_TOKEN", placeholderOpToken)
 	t.Setenv("BERYL7_RAM_EXHAUSTION_PCT", "93.5")
 	t.Setenv("BERYL7_SKILLSTORE_PATH", dbPath)
 	t.Setenv("BERYL7_CHECKPOINT_PATH", checkpointPath)
 	t.Setenv("BERYL7_LATENCY_ZSCORE", "2.8")
 
-	envContent := "AUTH_TOKEN=" + validAdminToken + "\nAPPROVE_TOKEN=" + validOpToken + "\nLOG_LEVEL=INFO\nBERYL7_LATENCY_ZSCORE=2.8\n"
+	envContent := "AUTH_TOKEN=" + placeholderAdminToken + "\nAPPROVE_TOKEN=" + placeholderOpToken + "\nLOG_LEVEL=INFO\nBERYL7_LATENCY_ZSCORE=2.8\n"
 	if err := os.WriteFile(envPath, []byte(envContent), 0600); err != nil {
 		t.Fatalf("Failed to write test env file: %v", err)
 	}

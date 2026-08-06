@@ -1,10 +1,10 @@
 #!/bin/bash
 # Sample API cURL commands for testing Beryl 7 REST endpoints
 
-ROUTER_IP="192.168.8.1"
-PORT="8888"
-AUTH_TOKEN="0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-APPROVE_TOKEN="fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"
+ROUTER_IP="${ROUTER_IP:-192.168.8.1}"
+PORT="${PORT:-8888}"
+AUTH_TOKEN="${AUTH_TOKEN:-YOUR_AUTH_TOKEN_HERE}"
+APPROVE_TOKEN="${APPROVE_TOKEN:-YOUR_APPROVE_TOKEN_HERE}"
 
 echo "=== 1. Health Status ==="
 curl -s "http://${ROUTER_IP}:${PORT}/api/health"

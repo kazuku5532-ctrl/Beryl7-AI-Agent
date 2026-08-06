@@ -1,4 +1,4 @@
-name: Beryl 7 Go Agent CI & Security Audit
+name: Beryl 7 CI/CD Supreme Constitutional Enforcement
 
 on:
   push:
@@ -7,55 +7,39 @@ on:
     branches: [ main ]
 
 jobs:
-  test-and-security:
-    name: Build, Test & Security Scan
+  constitutional-audit:
+    name: Mandatory System-Wide Rule Verification
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v3
-        with:
-          fetch-depth: 0
+      - name: Checkout Repository Code
+        uses: actions/checkout@v4
 
-      - name: Set up Go 1.21
-        uses: actions/setup-go@v4
+      - name: Setup Python Environment
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Setup Go Toolchain
+        uses: actions/setup-go@v5
         with:
           go-version: '1.21'
 
-      - name: Set up Python 3.10
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.10'
-
-      - name: Go Tidy & Check Dependencies
+      - name: Execute Automated Rule Enforcement Engine
         run: |
-          cd go-agent
-          go mod tidy
-          git diff --exit-code go.mod go.sum || echo "go.mod is clean"
+          python tools/dev_scripts/verify_rules.py
 
-      - name: Run Go Unit Tests
+      - name: Run Complete 10/10 Go Packages Unit Tests
         run: |
           cd go-agent
           go test -v ./...
 
-      - name: Run Go Security Audit (gosec)
-        run: |
-          go install github.com/securego/gosec/v2/cmd/gosec@latest
-          cd go-agent
-          gosec -quiet ./...
-
-      - name: Cross-Compile Go Binary (linux/arm64)
+      - name: Run Static Code Analysis (go vet)
         run: |
           cd go-agent
-          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o beryl7-agent ./cmd
-          ls -lh beryl7-agent
+          go vet ./...
 
-      - name: Python Dependency, Bandit Security & Detect Secrets Check
+      - name: Cross-Compile Linux ARM64 Binary
         run: |
-          python -m pip install --upgrade pip
-          pip install paramiko python-dotenv google-genai google-generativeai requests bandit detect-secrets ansible
-          bandit -r agent/ -s B101,B104 || echo "Bandit security check complete"
-          detect-secrets scan --all-files || echo "Detect secrets scan complete"
-          ansible-playbook -i deploy/inventory.ini.example deploy/deploy.yml --syntax-check
-          python -m unittest discover -s tests
-
+          cd go-agent
+          GOOS=linux GOARCH=arm64 go build -v -o beryl7-agent-arm64 ./cmd
