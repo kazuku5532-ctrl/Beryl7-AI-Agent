@@ -719,7 +719,8 @@ func StartHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 			if !matched && origin != "null" {
 				if parsedURL, err := url.Parse(origin); err == nil {
 					hostname := parsedURL.Hostname()
-					if hostname == "127.0.0.1" || hostname == "localhost" || strings.HasPrefix(hostname, "192.168.8.") {
+					ip := net.ParseIP(hostname)
+					if hostname == "localhost" || (ip != nil && (ip.IsLoopback() || strings.HasPrefix(ip.String(), "192.168.8."))) {
 						matched = true
 					}
 				}
@@ -908,8 +909,15 @@ func StartHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 		}
 
 		configMu.Lock()
+		oldHost := cfg.BindHost
+		oldPort := cfg.HealthPort
 		newCfg, loadErr := config.LoadConfig()
+		netChanged := false
 		if loadErr == nil && newCfg != nil {
+			if newCfg.BindHost != oldHost || newCfg.HealthPort != oldPort {
+				netChanged = true
+				logger.Warn("NOTICE: Network binding configuration changed (%s:%d -> %s:%d). Process restart required for new IP/Port binding.", oldHost, oldPort, newCfg.BindHost, newCfg.HealthPort)
+			}
 			*cfg = *newCfg
 			cfgAtomic.Store(newCfg)
 		}
@@ -923,10 +931,14 @@ func StartHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 		}
 
 		logger.Info("Goroutine-Safe Live Config Reload Completed Successfully by role [%s]!", role)
+		msg := "Configuration reloaded in-memory without service interruption"
+		if netChanged {
+			msg += ". WARNING: BindHost/HealthPort changes require process restart (/etc/init.d/beryl7-agent restart) to re-bind listener socket."
+		}
 		_ = json.NewEncoder(w).Encode(map[string]string{
 			"status":  "success",
 			"role":    role,
-			"message": "Configuration reloaded in-memory without service interruption",
+			"message": msg,
 		})
 	})
 
