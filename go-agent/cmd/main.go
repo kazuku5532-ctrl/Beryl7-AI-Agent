@@ -640,6 +640,36 @@ func PostUpgradeValidation(cfg *config.Config) error {
 	return nil
 }
 
+func PerformGracefulProcessRestart(store *skillstore.SkillStore, httpServer *http.Server) {
+	go func() {
+		time.Sleep(3 * time.Second)
+		logger.Warn("Initiating Graceful Process Restart (closing DB & sockets before process re-execution)...")
+
+		if httpServer != nil {
+			ctxHTTP, cancelHTTP := context.WithTimeout(context.Background(), 2*time.Second)
+			_ = httpServer.Shutdown(ctxHTTP)
+			cancelHTTP()
+		}
+
+		if store != nil {
+			_ = store.Close()
+		}
+
+		logger.Flush()
+
+		if runtime.GOOS == "linux" {
+			ctxCmd, cancelCmd := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancelCmd()
+
+			cmd := exec.CommandContext(ctxCmd, "/etc/init.d/beryl7-agent", "restart")
+			if err := cmd.Run(); err != nil {
+				logger.Warn("Procd restart failed or not managing process (%v). Performing fallback syscall.Exec process replacement...", err)
+				_ = syscall.Exec("/usr/bin/beryl7-agent", os.Args, os.Environ()) // #nosec G204 // nolint:errcheck (non-fatal)
+			}
+		}
+	}()
+}
+
 func FailsafeRecovery(level FailsafeLevel, cfg *config.Config) error {
 	switch level {
 	case FailsafeLevel1:
@@ -648,12 +678,7 @@ func FailsafeRecovery(level FailsafeLevel, cfg *config.Config) error {
 			if err := os.Rename("/usr/bin/beryl7-agent.backup", "/usr/bin/beryl7-agent"); err == nil {
 				logger.Warn("Binary restored! Re-executing daemon service process into RAM...")
 				if runtime.GOOS == "linux" {
-					go func() {
-						time.Sleep(3 * time.Second)
-						if errExec := exec.Command("/etc/init.d/beryl7-agent", "restart").Run(); errExec != nil {
-							_ = syscall.Exec("/usr/bin/beryl7-agent", os.Args, os.Environ()) // #nosec G204 // nolint:errcheck (non-fatal)
-						}
-					}()
+					PerformGracefulProcessRestart(nil, nil)
 				}
 				return PostRollbackValidationChecklist(cfg)
 			}
@@ -991,15 +1016,7 @@ func StartHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 		}
 
 		if netChanged {
-			go func() {
-				time.Sleep(3 * time.Second)
-				logger.Warn("Re-binding HTTP listener socket via daemon service restart / syscall.Exec...")
-				if runtime.GOOS == "linux" {
-					if errExec := exec.Command("/etc/init.d/beryl7-agent", "restart").Run(); errExec != nil {
-						_ = syscall.Exec("/usr/bin/beryl7-agent", os.Args, os.Environ()) // #nosec G204 // nolint:errcheck (non-fatal)
-					}
-				}
-			}()
+			PerformGracefulProcessRestart(store, nil)
 		}
 	})
 
