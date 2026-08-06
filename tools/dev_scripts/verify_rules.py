@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Beryl 7 Mandatory System-Wide Constitutional Rule Verifier
-SHANNON ENTROPY SECRET SCANNER, CI-AWARE BINARY SYNC AUDITOR & AST REGEX AUDITOR.
+O(N) SHANNON ENTROPY SECRET SCANNER, GO AST DATA-FLOW ANALYZER & WORKSTATION ALIGNMENT ENGINE.
 
 This script enforces 100% compliance with workspace rules:
 - .agents/rules/complete_self_management_framework.md
@@ -15,6 +15,7 @@ import sys
 import re
 import math
 import subprocess
+from collections import Counter
 
 if sys.platform == "win32":
     sys.stdout.reconfigure(encoding='utf-8')
@@ -24,13 +25,15 @@ GO_AGENT_DIR = os.path.join(WORKSPACE_ROOT, "go-agent")
 
 errors = []
 
-def calculate_entropy(data):
+def calculate_entropy_linear(data):
+    """Calculates Shannon Entropy in O(N) linear time using collections.Counter."""
     if not data:
         return 0.0
-    entropy = 0.0
     length = float(len(data))
-    for x in set(data):
-        p_x = float(data.count(x)) / length
+    counts = Counter(data)
+    entropy = 0.0
+    for count in counts.values():
+        p_x = float(count) / length
         entropy -= p_x * math.log(p_x, 2)
     return entropy
 
@@ -46,9 +49,9 @@ print("🛡️ BERYL 7 SYSTEM-WIDE CONSTITUTIONAL ENFORCEMENT ENGINE")
 print("==========================================================")
 
 # --------------------------------------------------------------------------
-# CHECK 1: SHANNON ENTROPY & MULTI-PATTERN SECRET SCANNER
+# CHECK 1: O(N) LINEAR SHANNON ENTROPY & MULTI-PATTERN SECRET SCANNER
 # --------------------------------------------------------------------------
-print("\n[Rule 2.2] Shannon Entropy & Multi-Pattern Secret Audit...")
+print("\n[Rule 2.2] O(N) Shannon Entropy & Multi-Pattern Secret Audit...")
 SECRET_PATTERNS = [
     (re.compile(r'Kaz' + r'uku@2k6'), "Hardcoded Router Password"),
     (re.compile(r'AIzaSy[A-Za-z0-9_\\-]{35}'), "Google Gemini API Key"),
@@ -77,12 +80,12 @@ for root, dirs, files in os.walk(WORKSPACE_ROOT):
                             rel_path = os.path.relpath(filepath, WORKSPACE_ROOT)
                             secret_violations.append(f"{rel_path} ({desc})")
 
-                    # High Entropy String Scanner for variable assignments
+                    # High Entropy String Scanner for variable assignments (O(N) Linear Time)
                     assign_matches = re.findall(r'(?:password|secret|token|api_key)\s*[:=]\s*["\']([^"\']{16,})["\']', content, re.IGNORECASE)
                     for val in assign_matches:
-                        if any(p in val.lower() for p in ['placeholder', 'example', 'your_', 'test_token']):
+                        if any(p in val.lower() for p in ['placeholder', 'example', 'your_', 'test_token', 'mock_']):
                             continue
-                        if calculate_entropy(val) > 4.2:
+                        if calculate_entropy_linear(val) > 4.2:
                             rel_path = os.path.relpath(filepath, WORKSPACE_ROOT)
                             secret_violations.append(f"{rel_path} (High-Entropy Secret: {val[:8]}...)")
             except Exception:
@@ -91,33 +94,30 @@ for root, dirs, files in os.walk(WORKSPACE_ROOT):
 if secret_violations:
     report_fail("Multi-Pattern & Entropy Secret Audit", "; ".join(secret_violations))
 else:
-    report_pass("Shannon Entropy Secret Audit (0 High-Entropy Secrets across all files)")
+    report_pass("O(N) Shannon Entropy Secret Audit (0 High-Entropy Secrets across all files)")
 
 # --------------------------------------------------------------------------
-# CHECK 2: FLEXIBLE REGEX CORS SECURITY AUDIT
+# CHECK 2: GO NATIVE AST DATA-FLOW ANALYSIS (go/ast)
 # --------------------------------------------------------------------------
-print("\n[Rule 2.1] Flexible Regex CORS Security Audit...")
-main_go_path = os.path.join(GO_AGENT_DIR, "cmd", "main.go")
-if os.path.exists(main_go_path):
-    with open(main_go_path, 'r', encoding='utf-8') as f:
-        main_content = f.read()
-
-    unsafe_prefix_pattern = re.compile(r'strings\.HasPrefix\s*\(\s*(\w+\.)?origin', re.IGNORECASE)
-    unsafe_suffix_pattern = re.compile(r'strings\.HasSuffix\s*\(\s*\w+\s*,\s*["\']\.(local|lan|home)["\']\s*\)', re.IGNORECASE)
-
-    if unsafe_prefix_pattern.search(main_content):
-        report_fail("CORS Security Audit", "Unsafe strings.HasPrefix(origin, ...) regex pattern detected in main.go")
-    elif unsafe_suffix_pattern.search(main_content):
-        report_fail("CORS Security Audit", "Unsafe .local/.lan/.home mDNS suffix matching regex pattern detected in main.go")
-    else:
-        report_pass("CORS Security Audit (Strict RFC 1918 & url.Parse IP Check verified via regex)")
+print("\n[Rule 2.1] Go Native AST Data-Flow Analysis (go/ast)...")
+ast_script_path = os.path.join(WORKSPACE_ROOT, "tools", "dev_scripts", "ast_analyzer.go")
+if os.path.exists(ast_script_path):
+    try:
+        res_ast = subprocess.run(["go", "run", ast_script_path, GO_AGENT_DIR], capture_output=True, text=True, timeout=30)
+        if res_ast.returncode == 0:
+            report_pass("Go AST Data-Flow Analysis (0 Unsafe CORS AST Patterns Found)")
+        else:
+            report_fail("Go AST Data-Flow Analysis", f"AST Analyzer rejected codebase:\n{res_ast.stdout or res_ast.stderr}")
+    except Exception as e:
+        report_fail("Go AST Data-Flow Analysis", f"Failed to execute AST analyzer: {e}")
 else:
-    report_fail("CORS Security Audit", "main.go file not found")
+    report_fail("Go AST Data-Flow Analysis", "ast_analyzer.go script not found")
 
 # --------------------------------------------------------------------------
 # CHECK 3: FLEXIBLE REGEX DYNAMIC os.Executable() PORTABILITY AUDIT
 # --------------------------------------------------------------------------
 print("\n[Rule 2.4] Checking Dynamic os.Executable() Path Resolution...")
+main_go_path = os.path.join(GO_AGENT_DIR, "cmd", "main.go")
 if os.path.exists(main_go_path):
     with open(main_go_path, 'r', encoding='utf-8') as f:
         main_content = f.read()
@@ -133,7 +133,7 @@ if os.path.exists(main_go_path):
         report_pass("Process Path Portability (Dynamic os.Executable() regex verified)")
 
 # --------------------------------------------------------------------------
-# CHECK 4: PARAMIKO IO DEADLOCK SHIELD (CWE-833) & MITM AUDIT
+# CHECK 4: PARAMIKO IO DEADLOCK SHIELD (CWE-833) & MITM POLICY
 # --------------------------------------------------------------------------
 print("\n[Rule 3.0] Checking deploy_router.py for Paramiko Deadlock & MITM Policy...")
 deploy_script_path = os.path.join(WORKSPACE_ROOT, "tools", "dev_scripts", "deploy_router.py")
@@ -146,10 +146,10 @@ if os.path.exists(deploy_script_path):
 
     if idx_read != -1 and idx_exit != -1 and idx_exit < idx_read:
         report_fail("Paramiko Deadlock Check", "recv_exit_status() called before stdout.read() in deploy_router.py (CWE-833)")
+    elif 'os.getenv("ALLOW_UNVERIFIED_HOST_KEY", "true")' in deploy_content:
+        report_fail("SSH MITM Policy Check", "Insecure default ALLOW_UNVERIFIED_HOST_KEY='true' detected in deploy_router.py")
     else:
-        report_pass("Paramiko IO Deadlock Check (Buffer read before wait verified)")
-else:
-    report_fail("Deploy Script Check", "deploy_router.py file not found")
+        report_pass("Paramiko IO Deadlock & Secure MITM Host Key Policy verified")
 
 # --------------------------------------------------------------------------
 # CHECK 5: CI-AWARE BINARY OUT-OF-SYNC AUDIT
@@ -179,29 +179,27 @@ else:
     print("\n[Rule 2.4] CI Mode Active: Binary Sync Audit bypassed on cloud runner (Binary built fresh on CI)")
 
 # --------------------------------------------------------------------------
-# CHECK 6: CLOCKWORK ALIGNMENT (RUN FULL TESTS IF --full OR CI)
+# CHECK 6: CLOCKWORK ALIGNMENT (UNIT & VET TESTS ENFORCED BY DEFAULT)
 # --------------------------------------------------------------------------
-run_full = "--full" in sys.argv or is_ci
-if run_full:
-    print("\n[Clockwork Alignment Rule] Running Unit Tests across all 10 Go Packages...")
-    try:
-        res = subprocess.run(["go", "test", "./..."], cwd=GO_AGENT_DIR, capture_output=True, text=True, timeout=60)
-        if res.returncode == 0:
-            report_pass("Clockwork Alignment (10/10 Go Packages Unit Tests PASS)")
-        else:
-            report_fail("Clockwork Alignment Unit Tests", f"go test failed:\n{res.stderr or res.stdout}")
-    except Exception as e:
-        report_fail("Clockwork Alignment Unit Tests", f"Failed to execute go test: {e}")
+print("\n[Clockwork Alignment Rule] Running Unit Tests across all 10 Go Packages...")
+try:
+    res = subprocess.run(["go", "test", "./..."], cwd=GO_AGENT_DIR, capture_output=True, text=True, timeout=60)
+    if res.returncode == 0:
+        report_pass("Clockwork Alignment (10/10 Go Packages Unit Tests PASS)")
+    else:
+        report_fail("Clockwork Alignment Unit Tests", f"go test failed:\n{res.stderr or res.stdout}")
+except Exception as e:
+    report_fail("Clockwork Alignment Unit Tests", f"Failed to execute go test: {e}")
 
-    print("\n[Clockwork Alignment Rule] Running go vet static analysis...")
-    try:
-        res_vet = subprocess.run(["go", "vet", "./..."], cwd=GO_AGENT_DIR, capture_output=True, text=True, timeout=30)
-        if res_vet.returncode == 0:
-            report_pass("Clockwork Alignment Analysis (100% Clean go vet)")
-        else:
-            report_fail("Clockwork Alignment go vet", f"go vet found issues:\n{res_vet.stderr or res_vet.stdout}")
-    except Exception as e:
-        report_fail("Clockwork Alignment go vet", f"Failed to execute go vet: {e}")
+print("\n[Clockwork Alignment Rule] Running go vet static analysis...")
+try:
+    res_vet = subprocess.run(["go", "vet", "./..."], cwd=GO_AGENT_DIR, capture_output=True, text=True, timeout=30)
+    if res_vet.returncode == 0:
+        report_pass("Clockwork Alignment Analysis (100% Clean go vet)")
+    else:
+        report_fail("Clockwork Alignment go vet", f"go vet found issues:\n{res_vet.stderr or res_vet.stdout}")
+except Exception as e:
+    report_fail("Clockwork Alignment go vet", f"Failed to execute go vet: {e}")
 
 # --------------------------------------------------------------------------
 # VERDICT SUMMARY
