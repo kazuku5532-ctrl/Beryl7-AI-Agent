@@ -14,6 +14,8 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+var ErrStoreClosed = fmt.Errorf("skillstore: database connection is closed")
+
 type Skill struct {
 	ID           string    `json:"id"`
 	Action       string    `json:"action"`
@@ -31,6 +33,7 @@ type SkillStore struct {
 	dbPath        string
 	lastPruneTime time.Time
 	maxSkills     int
+	closed        bool
 }
 
 func New(dbPath string) (*SkillStore, error) {
@@ -179,6 +182,10 @@ func (s *SkillStore) SaveOrUpdateSkill(sk *Skill, isSuccess bool, alpha float64)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	if s.closed || s.db == nil {
+		return ErrStoreClosed
+	}
+
 	now := time.Now().Unix()
 	if sk.CreatedAt.IsZero() {
 		sk.CreatedAt = time.Now()
@@ -320,6 +327,10 @@ func (s *SkillStore) GetTopSkillsSummaryForAnomaly(anomalyType string, limit int
 func (s *SkillStore) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.closed {
+		return nil
+	}
+	s.closed = true
 	if s.db != nil {
 		_ = s.db.Close()
 	}

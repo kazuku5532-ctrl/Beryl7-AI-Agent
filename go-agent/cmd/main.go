@@ -63,9 +63,13 @@ var configMu sync.RWMutex
 var cfgAtomic atomic.Value
 var activeServer *http.Server
 var activeStore *skillstore.SkillStore
+var activeWatchdog *watchdog.Watchdog
 var restartSignalChan = make(chan string, 1)
 
 func PerformGracefulProcessRestart(reason string) {
+	if activeWatchdog != nil {
+		activeWatchdog.Suspend()
+	}
 	select {
 	case restartSignalChan <- reason:
 		logger.Warn("Triggered process restart signal [%s] -> delegating execution to main thread...", reason)
@@ -78,6 +82,23 @@ func isLocalhostRequest(r *http.Request) bool {
 	if r == nil {
 		return false
 	}
+
+	// 1. If forwarded by a Reverse Proxy (Nginx/uHTTPd/LuCI), check the forwarded client IP
+	for _, header := range []string{"X-Forwarded-For", "X-Real-IP"} {
+		if val := r.Header.Get(header); val != "" {
+			clientIPStr := strings.TrimSpace(strings.Split(val, ",")[0])
+			clientIPStr = strings.Trim(clientIPStr, "[]")
+			if strings.HasPrefix(clientIPStr, "::ffff:") {
+				clientIPStr = strings.TrimPrefix(clientIPStr, "::ffff:")
+			}
+			clientIP := net.ParseIP(clientIPStr)
+			if clientIP == nil || (!clientIP.IsLoopback() && (clientIP.To4() == nil || !clientIP.To4().IsLoopback())) {
+				return false // Request originated from WAN/LAN through reverse proxy -> Enforcement Auth required!
+			}
+		}
+	}
+
+	// 2. Direct socket connection check
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		host = r.RemoteAddr
@@ -193,6 +214,7 @@ func main() {
 	activeStore = store
 
 	wd := watchdog.New(cfg.CheckpointPath)
+	activeWatchdog = wd
 	collector := telemetry.NewCollector()
 	logParser := parser.NewParser()
 	execEngine := executor.New()
@@ -279,9 +301,8 @@ func main() {
 			return
 		case reason := <-restartSignalChan:
 			logger.Warn("Main thread processing restart signal [%s]...", reason)
-			time.Sleep(2 * time.Second) // Flush pending HTTP responses
 
-			ctxHTTP, cancelHTTP := context.WithTimeout(context.Background(), 2*time.Second)
+			ctxHTTP, cancelHTTP := context.WithTimeout(context.Background(), 3*time.Second)
 			if activeServer != nil {
 				_ = activeServer.Shutdown(ctxHTTP)
 			}

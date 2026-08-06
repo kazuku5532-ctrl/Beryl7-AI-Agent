@@ -30,6 +30,7 @@ type Watchdog struct {
 	safeModeActive   bool
 	successfulChecks int
 	rollbackWindow   time.Duration
+	suspended        bool
 }
 
 func New(checkpointPath string) *Watchdog {
@@ -47,9 +48,26 @@ func New(checkpointPath string) *Watchdog {
 	return w
 }
 
+func (w *Watchdog) Suspend() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.suspended = true
+	logger.Info("Watchdog timer suspended during process restart/reload.")
+}
+
+func (w *Watchdog) Resume() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.suspended = false
+	logger.Info("Watchdog timer resumed.")
+}
+
 func (w *Watchdog) IsSafeMode() bool {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	if w.suspended {
+		return false
+	}
 	return w.safeModeActive
 }
 
