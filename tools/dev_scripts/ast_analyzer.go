@@ -20,8 +20,7 @@ func main() {
 	fset := token.NewFileSet()
 
 	var hasUnsafeCORS bool
-	var hasUnsafePrefix bool
-	var hasUnsafeSuffix bool
+	var violations []string
 
 	err := filepath.Walk(targetPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() || !strings.HasSuffix(path, ".go") {
@@ -39,28 +38,19 @@ func main() {
 				return true
 			}
 
-			// Check for strings.HasPrefix or strings.HasSuffix calls on CORS origin
+			// AST Data-Flow Inspection: Check for unsafe strings.HasPrefix or strings.HasSuffix calls on CORS origin
 			if sel, ok := call.Fun.(*ast.SelectorExpr); ok {
 				if pkg, ok := sel.X.(*ast.Ident); ok && pkg.Name == "strings" {
-					if sel.Sel.Name == "HasPrefix" {
-						if len(call.Args) > 0 {
-							argStr := fmt.Sprintf("%v", call.Args[0])
+					funcName := sel.Sel.Name
+					if funcName == "HasPrefix" || funcName == "HasSuffix" {
+						for _, arg := range call.Args {
+							argStr := fmt.Sprintf("%v", arg)
 							if strings.Contains(strings.ToLower(argStr), "origin") {
-								hasUnsafePrefix = true
 								hasUnsafeCORS = true
-								fmt.Printf("❌ [AST-FAIL] %s:%d: Unsafe strings.HasPrefix check on origin\n", path, fset.Position(call.Pos()).Line)
-							}
-						}
-					}
-					if sel.Sel.Name == "HasSuffix" {
-						if len(call.Args) > 1 {
-							if lit, ok := call.Args[1].(*ast.BasicLit); ok {
-								val := strings.ToLower(lit.Value)
-								if strings.Contains(val, ".local") || strings.Contains(val, ".lan") || strings.Contains(val, ".home") {
-									hasUnsafeSuffix = true
-									hasUnsafeCORS = true
-									fmt.Printf("❌ [AST-FAIL] %s:%d: Unsafe mDNS strings.HasSuffix check on %s\n", path, fset.Position(call.Pos()).Line, val)
-								}
+								pos := fset.Position(call.Pos())
+								msg := fmt.Sprintf("❌ [AST-FAIL] %s:%d: Unsafe strings.%s check on CORS origin variable (%s)", path, pos.Line, funcName, argStr)
+								violations = append(violations, msg)
+								fmt.Println(msg)
 							}
 						}
 					}
@@ -77,7 +67,7 @@ func main() {
 	}
 
 	if hasUnsafeCORS {
-		fmt.Printf("AST Verification Verdict: REJECTED (Unsafe CORS AST Patterns Found - Prefix: %v, Suffix: %v)\n", hasUnsafePrefix, hasUnsafeSuffix)
+		fmt.Printf("AST Verification Verdict: REJECTED (%d Unsafe CORS AST Data-Flow Patterns Found)\n", len(violations))
 		os.Exit(1)
 	}
 
