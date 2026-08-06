@@ -158,7 +158,7 @@ func (e *Executor) actionRestartInterface(ctx context.Context, target string, pa
 		return fmt.Errorf("unapproved interface target: %s", iface)
 	}
 	logger.Info("Executing OpenWrt interface restart on [%s]...", iface)
-	_ = runSystemCmd(ctx, "/sbin/ifdown", iface)
+	_ = runSystemCmd(ctx, "/sbin/ifdown", iface) // nolint:errcheck (non-fatal, ifup follows)
 	time.Sleep(1 * time.Second)
 	return runSystemCmd(ctx, "/sbin/ifup", iface)
 }
@@ -189,8 +189,8 @@ func (e *Executor) actionOptimizeWifiChannel(ctx context.Context, target string,
 	}
 
 	logger.Info("Executing OpenWrt UCI Wi-Fi channel optimization: section=%s, channel=%s...", radioSection, chStr)
-	_ = runSystemCmd(ctx, "/sbin/uci", "set", fmt.Sprintf("wireless.%s.channel=%s", radioSection, chStr))
-	_ = runSystemCmd(ctx, "/sbin/uci", "commit", "wireless")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", fmt.Sprintf("wireless.%s.channel=%s", radioSection, chStr)) // nolint:errcheck (non-fatal)
+	_ = runSystemCmd(ctx, "/sbin/uci", "commit", "wireless")                                              // nolint:errcheck (non-fatal)
 	return nil
 }
 

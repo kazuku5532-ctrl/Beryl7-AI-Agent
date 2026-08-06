@@ -165,28 +165,28 @@ func (w *Watchdog) ExecuteRollback() error {
 			cmdImport := exec.Command("uci", "import") // #nosec G204
 			cmdImport.Stdin = f
 			if out, errImport := cmdImport.CombinedOutput(); errImport == nil {
-				_ = exec.Command("uci", "commit").Run() // #nosec G204
+				_ = exec.Command("uci", "commit").Run() // #nosec G204 // nolint:errcheck (non-fatal)
 				logger.Info("Successfully imported full UCI snapshot from %s: %s", cleanBackupPath, string(out))
 			} else {
 				logger.Warn("UCI import from %s failed (%v), falling back to WAN DHCP default.", cleanBackupPath, errImport)
-				_ = exec.Command("uci", "set", "network.wan.proto=dhcp").Run() // #nosec G204
-				_ = exec.Command("uci", "commit", "network").Run()             // #nosec G204
+				_ = exec.Command("uci", "set", "network.wan.proto=dhcp").Run() // #nosec G204 // nolint:errcheck (non-fatal)
+				_ = exec.Command("uci", "commit", "network").Run()             // #nosec G204 // nolint:errcheck (non-fatal)
 			}
-			_ = f.Close()
+			_ = f.Close() // nolint:errcheck (non-fatal)
 		}
 	} else {
 		// Fallback chuẩn WAN DHCP nếu không có file snapshot
-		_ = exec.Command("uci", "set", "network.wan.proto=dhcp").Run() // #nosec G204
-		_ = exec.Command("uci", "commit", "network").Run()             // #nosec G204
+		_ = exec.Command("uci", "set", "network.wan.proto=dhcp").Run() // #nosec G204 // nolint:errcheck (non-fatal)
+		_ = exec.Command("uci", "commit", "network").Run()             // #nosec G204 // nolint:errcheck (non-fatal)
 	}
 
 	// 2. Reload lại các dịch vụ hệ thống mạng & firewall
-	_ = exec.Command("/etc/init.d/firewall", "reload").Run() // #nosec G204
-	_ = exec.Command("/etc/init.d/network", "reload").Run()  // #nosec G204
+	_ = exec.Command("/etc/init.d/firewall", "reload").Run() // #nosec G204 // nolint:errcheck (non-fatal)
+	_ = exec.Command("/etc/init.d/network", "reload").Run()  // #nosec G204 // nolint:errcheck (non-fatal)
 
 	w.safeModeActive = true
 	w.successfulChecks = 0
-	_ = w.saveCheckpointWithConfig(map[string]string{"network.wan.proto": "dhcp"})
+	_ = w.saveCheckpointWithConfig(map[string]string{"network.wan.proto": "dhcp"}) // nolint:errcheck (non-fatal)
 
 	return nil
 }

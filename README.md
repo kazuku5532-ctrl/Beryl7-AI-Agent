@@ -44,7 +44,7 @@ The Beryl 7 AI Agent is structured around seven primary technical capabilities:
 The daemon is certified and running live on router hardware:
 
 - **Daemon Version:** **v16.0**
-- **Service Status:** **Active / Running** (Process PID `21608`)
+- **Service Status:** **Active / Running** (Process PID `2334`)
 - **Router Model:** GL.iNet Beryl 7 (GL-MT3600BE - Mediatek Filogic 820 ARM64, 512MB RAM)
 - **Memory Footprint (`VmRSS`):** **`7.5 MB`** (7,576 KB - $< 1.5\%$ of 512MB RAM)
 - **CPU Usage:** **`0.90%`** (Idle state on 5s telemetry loop with Hardware Acceleration enabled)
@@ -89,6 +89,8 @@ BERYL7_LATENCY_ZSCORE=2.5
 BERYL7_BANDWIDTH_BOOST_MBPS=80.0
 BERYL7_BANDWIDTH_RESTORE_MBPS=20.0
 BERYL7_WIFI_DISCONNECT_COUNT=3
+BERYL7_LOG_MAX_BYTES=2097152
+BERYL7_LOG_BACKUP_COUNT=5
 EOF
 
 chmod 0600 /etc/beryl7/agent.env
