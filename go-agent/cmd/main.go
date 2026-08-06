@@ -78,14 +78,19 @@ func PerformGracefulProcessRestart(reason string) {
 	}
 }
 
-func isLocalhostRequest(r *http.Request) bool {
+func isLocalhostRequest(r *http.Request, cfg *config.Config) bool {
 	if r == nil {
+		return false
+	}
+	if cfg != nil && cfg.DisableLocalhostBypass {
 		return false
 	}
 
 	// 1. If forwarded by a Reverse Proxy (Nginx/uHTTPd/LuCI), verify EVERY IP in the proxy header chain
+	hasProxyHeader := false
 	for _, header := range []string{"X-Forwarded-For", "X-Real-IP"} {
 		if val := r.Header.Get(header); val != "" {
+			hasProxyHeader = true
 			parts := strings.Split(val, ",")
 			for _, part := range parts {
 				clientIPStr := strings.Trim(strings.TrimSpace(part), "[]")
@@ -98,6 +103,11 @@ func isLocalhostRequest(r *http.Request) bool {
 				}
 			}
 		}
+	}
+
+	// Reverse proxy headers present without explicit BERYL7_TRUST_REVERSE_PROXY=1 configuration -> Enforcement Auth required!
+	if hasProxyHeader && (cfg == nil || !cfg.TrustReverseProxy) {
+		return false
 	}
 
 	// 2. Direct socket connection check
@@ -127,7 +137,7 @@ func isLocalhostRequest(r *http.Request) bool {
 
 func validateTokenRole(r *http.Request, authHeader string, cfg *config.Config) (string, bool) {
 	// 1. Localhost Bypass: Requests originating from loopback (127.0.0.1 / ::1) automatically bypass Auth for local CLI operations
-	if isLocalhostRequest(r) {
+	if isLocalhostRequest(r, cfg) {
 		return "admin", true
 	}
 
@@ -303,6 +313,7 @@ func main() {
 			return
 		case reason := <-restartSignalChan:
 			logger.Warn("Main thread processing restart signal [%s]...", reason)
+			cancel() // Cancel main context to signal all async goroutines to exit via ctx.Done()
 
 			ctxHTTP, cancelHTTP := context.WithTimeout(context.Background(), 3*time.Second)
 			if activeServer != nil {
@@ -955,7 +966,7 @@ func StartHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 		}
 		authHdr := r.Header.Get("Authorization")
 		role, valid := validateTokenRole(r, authHdr, cfg)
-		if (!isLocalhostRequest(r) && authHdr == "") || !valid || role == "unknown" || (role == "viewer" && !isLocalhostRequest(r)) {
+		if (!isLocalhostRequest(r, cfg) && authHdr == "") || !valid || role == "unknown" || (role == "viewer" && !isLocalhostRequest(r, cfg)) {
 			http.Error(w, `{"error":"Unauthorized: Operator or Admin Auth Token required to access system logs"}`, http.StatusUnauthorized)
 			return
 		}

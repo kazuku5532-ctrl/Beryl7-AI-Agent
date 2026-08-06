@@ -12,6 +12,7 @@ import threading
 import urllib.request
 import paramiko
 
+# STRICT ENFORCEMENT: ZERO HARDCODED SECRETS ALLOWED IN REPOSITORY.
 ROUTER_IP = os.getenv("ROUTER_IP", "192.168.8.1")
 ROUTER_USER = os.getenv("ROUTER_USER", "root")
 ROUTER_PASS = os.getenv("ROUTER_PASS", "")

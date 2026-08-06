@@ -40,6 +40,8 @@ type Config struct {
 	WiFiDisconnectCount int
 	LogMaxBytes         int64
 	LogBackupCount      int
+	TrustReverseProxy   bool
+	DisableLocalhostBypass bool
 	apiKeyAtomic      atomic.Value
 }
 
@@ -207,6 +209,12 @@ func LoadConfig() (*Config, error) {
 		} else {
 			logger.Warn("Invalid integer value for BERYL7_LOG_BACKUP_COUNT: '%s'. Keeping default %d", val, cfg.LogBackupCount)
 		}
+	}
+	if val := os.Getenv("BERYL7_TRUST_REVERSE_PROXY"); val == "1" || strings.ToLower(val) == "true" {
+		cfg.TrustReverseProxy = true
+	}
+	if val := os.Getenv("BERYL7_DISABLE_LOCALHOST_BYPASS"); val == "1" || strings.ToLower(val) == "true" {
+		cfg.DisableLocalhostBypass = true
 	}
 	if val := os.Getenv("BERYL7_SKILLSTORE_PATH"); val != "" {
 		cfg.SkillStorePath = strings.TrimSpace(val)
