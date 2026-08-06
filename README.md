@@ -44,7 +44,7 @@ The Beryl 7 AI Agent is structured around seven primary technical capabilities:
 The daemon is certified and running live on router hardware:
 
 - **Daemon Version:** **v16.0**
-- **Service Status:** **Active / Running** (Process PID `6937`)
+- **Service Status:** **Active / Running** (Process PID `2451`)
 - **Router Model:** GL.iNet Beryl 7 (GL-MT3600BE - Mediatek Filogic 820 ARM64, 512MB RAM)
 - **Memory Footprint (`VmRSS`):** **`7.5 MB`** (7,576 KB - $< 1.5\%$ of 512MB RAM)
 - **CPU Usage:** **`0.90%`** (Idle state on 5s telemetry loop with Hardware Acceleration enabled)
@@ -68,18 +68,24 @@ The daemon is certified and running live on router hardware:
 
 ## 🔑 Configuration & Environment Variables
 
-### 1. Environment File (`/etc/beryl7/agent.env`)
+### 1. Environment File (`/etc/beryl7/agent.env`) & Secure Key File (`/etc/beryl7/agent.key`)
 
-Create or edit the secure environment file on the router with restricted file permissions (`0600`):
+Create or edit the secure environment file on the router with restricted file permissions (`0600`).
+- **Single-Token Mode (Home/Personal Use):** If `APPROVE_TOKEN` is left empty or omitted, `AUTH_TOKEN` acts as a single unified token for both Admin and Operator tasks.
+- **Secure Key Storage:** To prevent plaintext API key exposure, store `GEMINI_API_KEY` in `/etc/beryl7/agent.key` with `chmod 0400` permissions.
 
 ```bash
+# 1. Secure API Key File (chmod 0400)
+echo "your_gemini_api_key_here" > /etc/beryl7/agent.key
+chmod 0400 /etc/beryl7/agent.key
+
+# 2. Main Environment File (chmod 0600)
 cat <<EOF > /etc/beryl7/agent.env
 AUTH_TOKEN=your_admin_secret_token
-APPROVE_TOKEN=your_operator_approve_token
+APPROVE_TOKEN=your_operator_approve_token  # Optional: Leave empty for Single-Token Mode
 LOG_LEVEL=INFO
 HEALTH_PORT=8888
 BIND_HOST=127.0.0.1
-GEMINI_API_KEY=your_gemini_api_key_here
 
 # Dynamic Anomaly Thresholds (Optional Overrides)
 BERYL7_RAM_EXHAUSTION_PCT=92.0
@@ -96,7 +102,12 @@ EOF
 chmod 0600 /etc/beryl7/agent.env
 ```
 
-### 2. Verify RBAC Endpoints with `curl`
+### 2. Standalone Web Dashboard (Zero Docker/Prometheus Overhead)
+
+For home and single-user environments, view real-time router telemetry, CPU/RAM charts, and system status directly in any web browser without external Docker or Prometheus servers:
+- **Standalone Dashboard URL:** [http://192.168.8.1:8888](http://192.168.8.1:8888)
+
+### 3. Verify Endpoints with `curl`
 
 ```bash
 # 1. Unauthenticated / Viewer Access (Read-Only Health Check)
@@ -112,6 +123,13 @@ curl -s -X POST http://192.168.8.1:8888/api/approve \
 curl -s -X POST http://192.168.8.1:8888/api/config/reload \
   -H "Authorization: Bearer $AUTH_TOKEN"
 ```
+
+---
+
+## 🛠️ Developer & CI Tooling Disclosure
+
+- **Zero Router Python Dependencies:** The router runs a single static Go binary (`/usr/bin/beryl7-agent`). Zero Python runtime or libraries are required on OpenWrt.
+- **Workstation Scripts:** Helper scripts located in `tools/dev_scripts/` are strictly for workstation development, HIL testing, and CI automation.
 
 ---
 

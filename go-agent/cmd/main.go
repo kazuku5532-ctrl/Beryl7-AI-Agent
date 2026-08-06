@@ -70,11 +70,16 @@ func validateTokenRole(authHeader string, cfg *config.Config) (string, bool) {
 	approveToken := cfg.ApproveToken
 	configMu.RUnlock()
 
+	// 1. Check Operator Token
 	if approveToken != "" && subtle.ConstantTimeCompare([]byte(token), []byte(approveToken)) == 1 {
 		return "operator", true
 	}
 
+	// 2. Check Admin Token (In Single-Token mode when approveToken is empty/unconfigured, Admin Token grants full Operator + Admin access)
 	if authToken != "" && subtle.ConstantTimeCompare([]byte(token), []byte(authToken)) == 1 {
+		if approveToken == "" {
+			return "operator", true
+		}
 		return "admin", true
 	}
 

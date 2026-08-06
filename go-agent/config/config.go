@@ -229,7 +229,7 @@ func LoadConfig() (*Config, error) {
 	}
 
 	if cfg.ApproveToken == "" || cfg.ApproveToken == cfg.AuthToken {
-		logger.Warn("SECURITY WARNING: APPROVE_TOKEN is not set or identical to AUTH_TOKEN! /api/approve endpoint will be disabled (Fail-Closed).")
+		logger.Info("Single-Token Mode Active: APPROVE_TOKEN is empty; AUTH_TOKEN will be used for both Admin and Operator tasks.")
 	}
 
 	return cfg, nil

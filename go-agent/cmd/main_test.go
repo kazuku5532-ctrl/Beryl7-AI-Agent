@@ -43,6 +43,16 @@ func TestValidateTokenRole(t *testing.T) {
 	if valid && role != "unknown" {
 		t.Errorf("Expected unknown role for invalid token, got role=%s valid=%v", role, valid)
 	}
+
+	// Single-Token Mode Test
+	singleCfg := &config.Config{
+		AuthToken:    "single-secret-token",
+		ApproveToken: "",
+	}
+	role, valid = validateTokenRole("Bearer single-secret-token", singleCfg)
+	if !valid || role != "operator" {
+		t.Errorf("Expected operator role in Single-Token mode, got role=%s valid=%v", role, valid)
+	}
 }
 
 func TestHealthCheckServerEndpoints(t *testing.T) {
