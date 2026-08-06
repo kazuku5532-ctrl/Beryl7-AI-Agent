@@ -1,49 +1,60 @@
 # 🤖 Agent Roles & Capabilities Specification (`AGENTS.md`)
 
-This document defines the specialized agent roles, audit protocols, and execution workflows for the **Beryl7-AI-Agent** repository.
+This document defines the specialized agent roles, audit protocols, emergency circuit breakers, and verification workflows for the **Beryl7-AI-Agent** repository.
 
 ---
 
 ## 🎯 Specialized Agent Roles
 
 ### 1. 🔍 Auditing Skill Agent (Chuyên gia Quét & Phân tích Lỗ hổng)
-- **Role:** Deep Codebase Security Auditor & Static Analysis Engineer.
+- **Role:** Static Analysis Auditor & Code Quality Verifier.
 - **Responsibilities:**
-  - Performs comprehensive, multi-dimensional code reviews across all repository files (`go-agent`, `scripts`, `tools`, `dashboard`, `docs`).
-  - Audits code against the **5-Point Security Checklist**:
-    1. **CORS & Domain Handling:** Enforces strict `url.Parse(origin)` domain verification (blocks `strings.HasPrefix` origin vulnerability).
-    2. **Secret & Key Protection:** Enforces O(N) Shannon Entropy scanning for high-entropy tokens and hardcoded clear-text secrets.
-    3. **IP Boundary Security:** Enforces loopback and IPv4-mapped IPv6 bounds checking (`net.ParseIP().IsLoopback()`).
-    4. **Process Lifecycle Integrity:** Ensures process restarts (`syscall.Exec` / init scripts) are triggered when binaries or configs are updated.
-    5. **Socket & Network Binding:** Validates socket lifecycle and hot-reload behavior.
-  - Generates clear, non-destructive audit reports identifying precise line numbers and remediation strategies.
+  - Audits repository files (`go-agent`, `scripts`, `tools`, `dashboard`, `docs`) against empirical static rules:
+    1. **CORS & Domain Handling:** Scans Go AST AST-Flow (`ast_analyzer.go`) for unsafe `strings.HasPrefix` on origin string expressions.
+    2. **Secret & Key Protection:** Runs linear O(N) Shannon Entropy scanner (`verify_rules.py`) for high-entropy assignment strings (>4.2 entropy) and plaintext password regex patterns.
+    3. **IP Boundary Security:** Checks IPv4-mapped IPv6 loopback bounds handling (`net.ParseIP().IsLoopback()`).
+    4. **Process Lifecycle Integrity:** Validates dynamic `os.Executable()` path resolution in `syscall.Exec`.
+    5. **Paramiko & SSH Security:** Verifies non-blocking SSH channel reading (`stdout.read()` before `recv_exit_status()`) to prevent CWE-833 deadlocks.
+  - Produces structured, non-destructive audit reports specifying file paths and exact violation reasons.
 
-### 2. ⚡ Execution Skill Agent (Chuyên gia Tự sửa, Kiểm thử & Push Code)
-- **Role:** High-Rigor Automated Refactoring & CI Integration Engineer.
+### 2. ⚡ Execution Skill Agent (Chuyên gia Sửa Lỗi, Kiểm Thử & Tích Hợp Code)
+- **Role:** High-Rigor Automated Refactoring & Verification Engineer.
 - **Responsibilities:**
-  - Applies targeted, non-breaking fixes to resolve all findings reported by the Auditing Agent.
-  - Runs continuous verification pipelines:
+  - Applies minimal, non-breaking refactoring fixes for findings from the Auditing Agent.
+  - Enforces Clean Workspace Rollback (`git reset --hard HEAD`) prior to attempting new fix strategies if verification fails.
+  - Runs continuous 3-phase verification:
     - `go test ./...` across all 10 Go packages in `go-agent/`.
     - `go vet ./...` static analysis.
     - `python tools/dev_scripts/verify_rules.py` system-wide constitutional verification.
-  - Commits verified code with clean, descriptive conventional commit messages.
-  - Pushes clean code directly to the remote repository on `origin/main` when all 100% PASS thresholds are satisfied.
+  - Enforces Max Iteration Circuit Breaker (Max 3 retries per issue).
+  - Creates isolated feature branches and Pull Requests with Human-in-the-Loop (HITL) approval gates before merging into `main` (mitigating CWE-1223 supply chain risks).
 
 ---
 
-## 🔄 Continuous Audit-Fix-Verify-Push Loop (Ralph / For Loop Protocol)
+## 🔄 Bounded Audit-Fix-Verify-Monitor Architecture (Ralph / Event-Driven Protocol)
 
 ```mermaid
 graph TD
-    A[Start Verification Loop] --> B[Auditing Skill Agent: Scan Repository]
-    B --> C{Any Vulnerabilities or Failures?}
-    C -- Yes --> D[Execution Skill Agent: Apply Refactor / Fix]
-    D --> E[Run Unit Tests: go test ./...]
-    E --> F[Run Static Check: go vet ./...]
-    F --> G[Run Constitutional Audit: verify_rules.py]
-    G --> H{All Checks Pass 100%?}
-    H -- No --> D
-    H -- Yes --> B
-    C -- No / 100% Clean --> I[Git Commit & Push to Github origin/main]
-    I --> J[Continuous Standing Monitoring]
+    A[Start Verification Pipeline] --> B[Auditing Skill Agent: Scan Codebase]
+    B --> C{Vulnerabilities or Failures Found?}
+    C -- No / 100% Clean --> I[Human-in-the-Loop Approval Gate]
+    I -- Approved --> J[Git PR Merge / Push to origin/main]
+    J --> K[Continuous Event-Driven & Cron Monitoring]
+    K -- Event / Schedule Trigger --> B
+    
+    C -- Yes --> D{Retry Counter < 3?}
+    D -- No (Max Exceeded) --> E[Emergency Circuit Breaker: Halt & Alert Human Operator]
+    D -- Yes --> F[Clean Workspace Rollback: git reset --hard]
+    F --> G[Execution Skill Agent: Apply Targeted Fix]
+    G --> H[Run Verification Pipeline: go test, go vet, verify_rules.py]
+    H --> B
 ```
+
+---
+
+## 🛡️ Circuit Breaker & Safety Guarantees
+
+1. **Max 3 Iterations Limit:** Prevents infinite feedback loops and API token exhaustion. Halts automatically after 3 failed attempts and alerts human operators.
+2. **Clean Workspace State Reset:** Executes `git reset --hard` before each retry attempt to prevent patch clutter and dirty state accumulation.
+3. **Human-in-the-Loop Security Gate:** Blocks direct unvetted pushes to `main` branch to prevent CWE-1223 supply chain vulnerabilities.
+4. **Event-Driven Continuous Loop:** Connects monitoring output back to the auditing scanner upon runtime telemetry anomalies or scheduled cron triggers.
