@@ -14,7 +14,11 @@ import paramiko
 
 ROUTER_IP = os.getenv("ROUTER_IP", "192.168.8.1")
 ROUTER_USER = os.getenv("ROUTER_USER", "root")
-ROUTER_PASS = os.getenv("ROUTER_PASS", "Kazuku@2k6")
+ROUTER_PASS = os.getenv("ROUTER_PASS", "")
+
+if not ROUTER_PASS:
+    print("Error: ROUTER_PASS environment variable is not set. Please set $env:ROUTER_PASS='your_password' before running.")
+    sys.exit(1)
 PORT = 8999
 LOCAL_IP = "192.168.8.102"
 

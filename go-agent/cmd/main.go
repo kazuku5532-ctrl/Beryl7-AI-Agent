@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -70,7 +71,14 @@ func isLocalhostRequest(r *http.Request) bool {
 		host = r.RemoteAddr
 	}
 	host = strings.Trim(strings.TrimSpace(host), "[]")
-	return host == "127.0.0.1" || host == "::1" || host == "localhost"
+	if strings.HasPrefix(host, "::ffff:") {
+		host = strings.TrimPrefix(host, "::ffff:")
+	}
+	if host == "127.0.0.1" || host == "::1" || host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func validateTokenRole(r *http.Request, authHeader string, cfg *config.Config) (string, bool) {
@@ -629,6 +637,10 @@ func FailsafeRecovery(level FailsafeLevel, cfg *config.Config) error {
 		logger.Warn("⚠️ Level 1 Failsafe: Restoring binary backup /usr/bin/beryl7-agent.backup...")
 		if _, err := os.Stat("/usr/bin/beryl7-agent.backup"); err == nil {
 			if err := os.Rename("/usr/bin/beryl7-agent.backup", "/usr/bin/beryl7-agent"); err == nil {
+				logger.Warn("Binary restored! Re-executing daemon service process...")
+				if runtime.GOOS == "linux" {
+					_ = exec.Command("/etc/init.d/beryl7-agent", "restart").Run() // #nosec G204 // nolint:errcheck (non-fatal)
+				}
 				return PostRollbackValidationChecklist(cfg)
 			}
 		}
@@ -704,9 +716,17 @@ func StartHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 					break
 				}
 			}
-			if !matched && (strings.HasPrefix(origin, "http://192.168.8.") || strings.HasPrefix(origin, "http://localhost") || strings.HasPrefix(origin, "http://127.0.0.1") || origin == "null") {
+			if !matched && origin != "null" {
+				if parsedURL, err := url.Parse(origin); err == nil {
+					hostname := parsedURL.Hostname()
+					if hostname == "127.0.0.1" || hostname == "localhost" || strings.HasPrefix(hostname, "192.168.8.") {
+						matched = true
+					}
+				}
+			} else if !matched && origin == "null" {
 				matched = true
 			}
+
 			defaultOrigin := fmt.Sprintf("http://192.168.8.1:%d", cfg.HealthPort)
 			if matched {
 				w.Header().Set("Access-Control-Allow-Origin", origin)
