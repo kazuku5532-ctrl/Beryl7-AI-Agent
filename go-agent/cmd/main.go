@@ -61,6 +61,18 @@ type PendingApproval struct {
 
 var configMu sync.RWMutex
 var cfgAtomic atomic.Value
+var activeServer *http.Server
+var activeStore *skillstore.SkillStore
+var restartSignalChan = make(chan string, 1)
+
+func PerformGracefulProcessRestart(reason string) {
+	select {
+	case restartSignalChan <- reason:
+		logger.Warn("Triggered process restart signal [%s] -> delegating execution to main thread...", reason)
+	default:
+		// Restart signal already pending
+	}
+}
 
 func isLocalhostRequest(r *http.Request) bool {
 	if r == nil {
@@ -178,6 +190,7 @@ func main() {
 		logger.Fatal("SkillStore Init Error: %v", err)
 	}
 	defer store.Close()
+	activeStore = store
 
 	wd := watchdog.New(cfg.CheckpointPath)
 	collector := telemetry.NewCollector()
@@ -199,6 +212,7 @@ func main() {
 	}
 
 	httpServer := StartHealthCheckServer(cfg, health, execEngine, store, aiClient, wd)
+	activeServer = httpServer
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
@@ -262,6 +276,36 @@ func main() {
 		select {
 		case <-ctx.Done():
 			logger.Info("Main loop exiting context done...")
+			return
+		case reason := <-restartSignalChan:
+			logger.Warn("Main thread processing restart signal [%s]...", reason)
+			time.Sleep(2 * time.Second) // Flush pending HTTP responses
+
+			ctxHTTP, cancelHTTP := context.WithTimeout(context.Background(), 2*time.Second)
+			if activeServer != nil {
+				_ = activeServer.Shutdown(ctxHTTP)
+			}
+			cancelHTTP()
+
+			if activeStore != nil {
+				_ = activeStore.Close()
+			}
+			logger.Flush()
+
+			if runtime.GOOS == "linux" {
+				ctxCmd, cancelCmd := context.WithTimeout(context.Background(), 5*time.Second)
+				cmd := exec.CommandContext(ctxCmd, "/etc/init.d/beryl7-agent", "restart")
+				errCmd := cmd.Run()
+				cancelCmd()
+
+				if errCmd != nil {
+					logger.Warn("Procd restart failed or not managing process (%v). Executing main thread fallback syscall.Exec...", errCmd)
+					_ = syscall.Exec("/usr/bin/beryl7-agent", os.Args, os.Environ()) // #nosec G204 // nolint:errcheck
+				}
+				os.Exit(0)
+			} else {
+				os.Exit(0)
+			}
 			return
 		case <-backupTicker.C:
 			if backupErr := store.BackupDatabase(); backupErr != nil {
@@ -640,46 +684,14 @@ func PostUpgradeValidation(cfg *config.Config) error {
 	return nil
 }
 
-func PerformGracefulProcessRestart(store *skillstore.SkillStore, httpServer *http.Server) {
-	go func() {
-		time.Sleep(3 * time.Second)
-		logger.Warn("Initiating Graceful Process Restart (closing DB & sockets before process re-execution)...")
-
-		if httpServer != nil {
-			ctxHTTP, cancelHTTP := context.WithTimeout(context.Background(), 2*time.Second)
-			_ = httpServer.Shutdown(ctxHTTP)
-			cancelHTTP()
-		}
-
-		if store != nil {
-			_ = store.Close()
-		}
-
-		logger.Flush()
-
-		if runtime.GOOS == "linux" {
-			ctxCmd, cancelCmd := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancelCmd()
-
-			cmd := exec.CommandContext(ctxCmd, "/etc/init.d/beryl7-agent", "restart")
-			if err := cmd.Run(); err != nil {
-				logger.Warn("Procd restart failed or not managing process (%v). Performing fallback syscall.Exec process replacement...", err)
-				_ = syscall.Exec("/usr/bin/beryl7-agent", os.Args, os.Environ()) // #nosec G204 // nolint:errcheck (non-fatal)
-			}
-		}
-	}()
-}
-
 func FailsafeRecovery(level FailsafeLevel, cfg *config.Config) error {
 	switch level {
 	case FailsafeLevel1:
 		logger.Warn("⚠️ Level 1 Failsafe: Restoring binary backup /usr/bin/beryl7-agent.backup...")
 		if _, err := os.Stat("/usr/bin/beryl7-agent.backup"); err == nil {
 			if err := os.Rename("/usr/bin/beryl7-agent.backup", "/usr/bin/beryl7-agent"); err == nil {
-				logger.Warn("Binary restored! Re-executing daemon service process into RAM...")
-				if runtime.GOOS == "linux" {
-					PerformGracefulProcessRestart(nil, nil)
-				}
+				logger.Warn("Binary restored! Delegating process re-execution to main thread...")
+				PerformGracefulProcessRestart("failsafe_recovery")
 				return PostRollbackValidationChecklist(cfg)
 			}
 		}
@@ -1016,7 +1028,7 @@ func StartHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 		}
 
 		if netChanged {
-			PerformGracefulProcessRestart(store, nil)
+			PerformGracefulProcessRestart("config_net_reload")
 		}
 	})
 
