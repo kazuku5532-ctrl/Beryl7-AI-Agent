@@ -83,17 +83,19 @@ func isLocalhostRequest(r *http.Request) bool {
 		return false
 	}
 
-	// 1. If forwarded by a Reverse Proxy (Nginx/uHTTPd/LuCI), check the forwarded client IP
+	// 1. If forwarded by a Reverse Proxy (Nginx/uHTTPd/LuCI), verify EVERY IP in the proxy header chain
 	for _, header := range []string{"X-Forwarded-For", "X-Real-IP"} {
 		if val := r.Header.Get(header); val != "" {
-			clientIPStr := strings.TrimSpace(strings.Split(val, ",")[0])
-			clientIPStr = strings.Trim(clientIPStr, "[]")
-			if strings.HasPrefix(clientIPStr, "::ffff:") {
-				clientIPStr = strings.TrimPrefix(clientIPStr, "::ffff:")
-			}
-			clientIP := net.ParseIP(clientIPStr)
-			if clientIP == nil || (!clientIP.IsLoopback() && (clientIP.To4() == nil || !clientIP.To4().IsLoopback())) {
-				return false // Request originated from WAN/LAN through reverse proxy -> Enforcement Auth required!
+			parts := strings.Split(val, ",")
+			for _, part := range parts {
+				clientIPStr := strings.Trim(strings.TrimSpace(part), "[]")
+				if strings.HasPrefix(clientIPStr, "::ffff:") {
+					clientIPStr = strings.TrimPrefix(clientIPStr, "::ffff:")
+				}
+				clientIP := net.ParseIP(clientIPStr)
+				if clientIP == nil || (!clientIP.IsLoopback() && (clientIP.To4() == nil || !clientIP.To4().IsLoopback())) {
+					return false // Any non-loopback IP in proxy header chain -> Enforcement Auth required!
+				}
 			}
 		}
 	}
@@ -482,7 +484,12 @@ func main() {
 								logger.Error("Recovered panic in verifyAndRecordSkillAsync: %v", r)
 							}
 						}()
-						time.Sleep(3 * time.Second) // Settling period bất đồng bộ trong goroutine riêng
+						select {
+						case <-ctx.Done():
+							logger.Info("Async skill verification cancelled via context done.")
+							return
+						case <-time.After(3 * time.Second):
+						}
 						verifiedSuccess := verifyActionSuccess()
 						collector.RecordHealOutcome(verifiedSuccess)
 						_ = store.SaveOrUpdateSkill(sk, verifiedSuccess, currentAlpha)
@@ -641,6 +648,10 @@ func acquirePIDLock(pidPath string) error {
 	if content, err := os.ReadFile(cleanPath); err == nil && len(content) > 0 {
 		var oldPID int
 		if _, parseErr := fmt.Sscanf(string(content), "%d", &oldPID); parseErr == nil && oldPID > 0 {
+			if oldPID == os.Getpid() {
+				logger.Info("PID lock verified for current process self-exec (PID %d)", oldPID)
+				return nil
+			}
 			if checkPIDAlive(oldPID) {
 				return fmt.Errorf("beryl7-agent is already running with PID %d", oldPID)
 			}
