@@ -48,7 +48,7 @@ func main() {
 							if strings.Contains(strings.ToLower(argStr), "origin") {
 								hasUnsafePrefix = true
 								hasUnsafeCORS = true
-								fmt.Printf("❌ [AST AST-FAIL] %s:%d: Unsafe strings.HasPrefix check on origin\n", path, fset.Position(call.Pos()).Line)
+								fmt.Printf("❌ [AST-FAIL] %s:%d: Unsafe strings.HasPrefix check on origin\n", path, fset.Position(call.Pos()).Line)
 							}
 						}
 					}
