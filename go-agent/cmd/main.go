@@ -78,7 +78,16 @@ func isLocalhostRequest(r *http.Request) bool {
 		return true
 	}
 	ip := net.ParseIP(host)
-	return ip != nil && ip.IsLoopback()
+	if ip == nil {
+		return false
+	}
+	if ip.IsLoopback() {
+		return true
+	}
+	if ip4 := ip.To4(); ip4 != nil {
+		return ip4.IsLoopback()
+	}
+	return false
 }
 
 func validateTokenRole(r *http.Request, authHeader string, cfg *config.Config) (string, bool) {
@@ -637,9 +646,14 @@ func FailsafeRecovery(level FailsafeLevel, cfg *config.Config) error {
 		logger.Warn("⚠️ Level 1 Failsafe: Restoring binary backup /usr/bin/beryl7-agent.backup...")
 		if _, err := os.Stat("/usr/bin/beryl7-agent.backup"); err == nil {
 			if err := os.Rename("/usr/bin/beryl7-agent.backup", "/usr/bin/beryl7-agent"); err == nil {
-				logger.Warn("Binary restored! Re-executing daemon service process...")
+				logger.Warn("Binary restored! Re-executing daemon service process into RAM...")
 				if runtime.GOOS == "linux" {
-					_ = exec.Command("/etc/init.d/beryl7-agent", "restart").Run() // #nosec G204 // nolint:errcheck (non-fatal)
+					go func() {
+						time.Sleep(1 * time.Second)
+						if errExec := exec.Command("/etc/init.d/beryl7-agent", "restart").Run(); errExec != nil {
+							_ = syscall.Exec("/usr/bin/beryl7-agent", os.Args, os.Environ()) // #nosec G204 // nolint:errcheck (non-fatal)
+						}
+					}()
 				}
 				return PostRollbackValidationChecklist(cfg)
 			}
@@ -964,20 +978,27 @@ func StartHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 		logger.Info("Goroutine-Safe Live Config Reload Completed Successfully by role [%s]!", role)
 		msg := "Configuration reloaded in-memory without service interruption"
 		if netChanged {
-			msg += ". Auto-restarting daemon service in 1s to re-bind listener socket to new IP/Port."
-			go func() {
-				time.Sleep(1 * time.Second)
-				logger.Warn("Re-binding HTTP listener socket via daemon service restart...")
-				if runtime.GOOS == "linux" {
-					_ = exec.Command("/etc/init.d/beryl7-agent", "restart").Run() // #nosec G204 // nolint:errcheck (non-fatal)
-				}
-			}()
+			msg += ". Auto-restarting daemon service in 3s to re-bind listener socket to new IP/Port."
 		}
 		_ = json.NewEncoder(w).Encode(map[string]string{
 			"status":  "success",
 			"role":    role,
 			"message": msg,
 		})
+
+		if flusher, ok := w.(http.Flusher); ok {
+			flusher.Flush()
+		}
+
+		if netChanged {
+			go func() {
+				time.Sleep(3 * time.Second)
+				logger.Warn("Re-binding HTTP listener socket via daemon service restart...")
+				if runtime.GOOS == "linux" {
+					_ = exec.Command("/etc/init.d/beryl7-agent", "restart").Run() // #nosec G204 // nolint:errcheck (non-fatal)
+				}
+			}()
+		}
 	})
 
 	// Endpoint 6: Operator Approval Endpoint (/api/approve)
