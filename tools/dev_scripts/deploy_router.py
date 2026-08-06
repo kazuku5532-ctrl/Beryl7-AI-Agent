@@ -32,9 +32,9 @@ ssh.connect(ROUTER_IP, username=ROUTER_USER, password=ROUTER_PASS, timeout=10)
 
 def run_ssh(cmd, check_status=True):
     stdin, stdout, stderr = ssh.exec_command(cmd)
-    exit_status = stdout.channel.recv_exit_status()
     out = stdout.read().decode('utf-8', errors='ignore').strip()
     err = stderr.read().decode('utf-8', errors='ignore').strip()
+    exit_status = stdout.channel.recv_exit_status()
     if check_status and exit_status != 0:
         print(f"SSH Command Failed (exit code {exit_status}): {cmd}\nStderr: {err}")
         ssh.close()
@@ -47,22 +47,28 @@ run_ssh("killall -9 beryl7-agent 2>/dev/null || true", check_status=False)
 print("[2/5] Creating binary backup at /usr/bin/beryl7-agent.backup...")
 run_ssh("cp /usr/bin/beryl7-agent /usr/bin/beryl7-agent.backup 2>/dev/null || true", check_status=False)
 
-print("[3/5] Uploading compiled ARM64 binary via encrypted SSH SCP protocol...")
+print("[3/5] Uploading compiled ARM64 binary via encrypted SSH channel (SCP / SFTP)...")
 try:
     with scp.SCPClient(ssh.get_transport()) as scp_client:
         scp_client.put(BINARY_PATH, "/tmp/beryl7-agent-new")
     print("Binary uploaded successfully via SCP.")
-except Exception as e:
-    print(f"SCP Upload Failed: {e}")
-    ssh.close()
-    sys.exit(1)
+except Exception as e_scp:
+    try:
+        sftp = ssh.open_sftp()
+        sftp.put(BINARY_PATH, "/tmp/beryl7-agent-new")
+        sftp.close()
+        print("Binary uploaded successfully via SFTP.")
+    except Exception as e_sftp:
+        print(f"File Transfer Failed - SCP ({e_scp}), SFTP ({e_sftp})")
+        ssh.close()
+        sys.exit(1)
 
 print("[4/5] Moving binary, setting permissions, and starting procd daemon...")
 run_ssh("mv /tmp/beryl7-agent-new /usr/bin/beryl7-agent")
 run_ssh("chmod +x /usr/bin/beryl7-agent")
 
-# Native OpenWrt Procd service start, with fallback to standalone nohup
-start_out = run_ssh("if [ -f /etc/init.d/beryl7-agent ]; then /etc/init.d/beryl7-agent restart; else nohup /usr/bin/beryl7-agent -config /etc/beryl7/agent.env > /var/log/beryl7-agent-nohup.log 2>&1 & fi")
+# Native OpenWrt Procd service start (checking executable permission -x), with fallback to standalone nohup
+start_out = run_ssh("if [ -x /etc/init.d/beryl7-agent ]; then /etc/init.d/beryl7-agent restart; else nohup /usr/bin/beryl7-agent -config /etc/beryl7/agent.env > /var/log/beryl7-agent-nohup.log 2>&1 & fi")
 print("Daemon Start Output:", start_out)
 
 time.sleep(3)

@@ -780,38 +780,7 @@ func isLANOrLoopbackIP(ip net.IP) bool {
 	if ip == nil {
 		return false
 	}
-	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
-		return true
-	}
-
-	ifaces, err := net.Interfaces()
-	if err == nil {
-		for _, iface := range ifaces {
-			name := strings.ToLower(iface.Name)
-			if strings.Contains(name, "wan") || strings.Contains(name, "pppoe") {
-				continue // Explicitly ignore WAN interfaces (eth1, pppoe-wan, etc.)
-			}
-			addrs, errAddr := iface.Addrs()
-			if errAddr != nil {
-				continue
-			}
-			for _, addr := range addrs {
-				var ifaceIP net.IP
-				switch v := addr.(type) {
-				case *net.IPNet:
-					ifaceIP = v.IP
-				case *net.IPAddr:
-					ifaceIP = v.IP
-				}
-				if ifaceIP != nil && (ifaceIP.IsLoopback() || ifaceIP.IsPrivate()) {
-					if ifaceIP.Equal(ip) {
-						return true
-					}
-				}
-			}
-		}
-	}
-	return false
+	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast()
 }
 
 func StartHealthCheckServer(cfg *config.Config, health *HealthState, execEngine *executor.Executor, store *skillstore.SkillStore, aiClient *ai.AIClient, wd *watchdog.Watchdog) *http.Server {
