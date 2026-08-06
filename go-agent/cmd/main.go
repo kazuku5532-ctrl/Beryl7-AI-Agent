@@ -780,26 +780,33 @@ func isLANOrLoopbackIP(ip net.IP) bool {
 	if ip == nil {
 		return false
 	}
-	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() {
+	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
 		return true
 	}
+
 	ifaces, err := net.Interfaces()
 	if err == nil {
 		for _, iface := range ifaces {
+			name := strings.ToLower(iface.Name)
+			if strings.Contains(name, "wan") || strings.Contains(name, "pppoe") {
+				continue // Explicitly ignore WAN interfaces (eth1, pppoe-wan, etc.)
+			}
 			addrs, errAddr := iface.Addrs()
 			if errAddr != nil {
 				continue
 			}
 			for _, addr := range addrs {
-				var ipNet *net.IPNet
+				var ifaceIP net.IP
 				switch v := addr.(type) {
 				case *net.IPNet:
-					ipNet = v
+					ifaceIP = v.IP
 				case *net.IPAddr:
-					ipNet = &net.IPNet{IP: v.IP, Mask: net.CIDRMask(32, 32)}
+					ifaceIP = v.IP
 				}
-				if ipNet != nil && ipNet.Contains(ip) {
-					return true
+				if ifaceIP != nil && (ifaceIP.IsLoopback() || ifaceIP.IsPrivate()) {
+					if ifaceIP.Equal(ip) {
+						return true
+					}
 				}
 			}
 		}
