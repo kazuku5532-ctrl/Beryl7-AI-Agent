@@ -649,7 +649,7 @@ func FailsafeRecovery(level FailsafeLevel, cfg *config.Config) error {
 				logger.Warn("Binary restored! Re-executing daemon service process into RAM...")
 				if runtime.GOOS == "linux" {
 					go func() {
-						time.Sleep(1 * time.Second)
+						time.Sleep(3 * time.Second)
 						if errExec := exec.Command("/etc/init.d/beryl7-agent", "restart").Run(); errExec != nil {
 							_ = syscall.Exec("/usr/bin/beryl7-agent", os.Args, os.Environ()) // #nosec G204 // nolint:errcheck (non-fatal)
 						}
@@ -993,9 +993,11 @@ func StartHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 		if netChanged {
 			go func() {
 				time.Sleep(3 * time.Second)
-				logger.Warn("Re-binding HTTP listener socket via daemon service restart...")
+				logger.Warn("Re-binding HTTP listener socket via daemon service restart / syscall.Exec...")
 				if runtime.GOOS == "linux" {
-					_ = exec.Command("/etc/init.d/beryl7-agent", "restart").Run() // #nosec G204 // nolint:errcheck (non-fatal)
+					if errExec := exec.Command("/etc/init.d/beryl7-agent", "restart").Run(); errExec != nil {
+						_ = syscall.Exec("/usr/bin/beryl7-agent", os.Args, os.Environ()) // #nosec G204 // nolint:errcheck (non-fatal)
+					}
 				}
 			}()
 		}
