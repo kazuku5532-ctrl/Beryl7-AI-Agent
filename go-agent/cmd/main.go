@@ -327,15 +327,8 @@ func main() {
 			logger.Flush()
 
 			if runtime.GOOS == "linux" {
-				ctxCmd, cancelCmd := context.WithTimeout(context.Background(), 5*time.Second)
-				cmd := exec.CommandContext(ctxCmd, "/etc/init.d/beryl7-agent", "restart")
-				errCmd := cmd.Run()
-				cancelCmd()
-
-				if errCmd != nil {
-					logger.Warn("Procd restart failed or not managing process (%v). Executing main thread fallback syscall.Exec...", errCmd)
-					_ = syscall.Exec("/usr/bin/beryl7-agent", os.Args, os.Environ()) // #nosec G204 // nolint:errcheck
-				}
+				logger.Warn("Re-executing daemon process image in-place into RAM via syscall.Exec...")
+				_ = syscall.Exec("/usr/bin/beryl7-agent", os.Args, os.Environ()) // #nosec G204 // nolint:errcheck
 				os.Exit(0)
 			} else {
 				os.Exit(0)
@@ -820,8 +813,13 @@ func StartHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 			if !matched && origin != "null" {
 				if parsedURL, err := url.Parse(origin); err == nil {
 					hostname := parsedURL.Hostname()
+					hLower := strings.ToLower(hostname)
 					ip := net.ParseIP(hostname)
-					if hostname == "localhost" || (ip != nil && isLANOrLoopbackIP(ip)) {
+					if hostname == "localhost" ||
+						strings.HasSuffix(hLower, ".lan") ||
+						strings.HasSuffix(hLower, ".local") ||
+						strings.HasSuffix(hLower, ".home") ||
+						(ip != nil && isLANOrLoopbackIP(ip)) {
 						matched = true
 					}
 				}

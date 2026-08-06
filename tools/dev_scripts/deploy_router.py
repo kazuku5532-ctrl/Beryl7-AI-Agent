@@ -8,7 +8,6 @@ import os
 import sys
 import time
 import paramiko
-import scp
 
 # STRICT ENFORCEMENT: ZERO HARDCODED SECRETS ALLOWED IN REPOSITORY.
 ROUTER_IP = os.getenv("ROUTER_IP", "192.168.8.1")
@@ -47,19 +46,21 @@ run_ssh("killall -9 beryl7-agent 2>/dev/null || true", check_status=False)
 print("[2/5] Creating binary backup at /usr/bin/beryl7-agent.backup...")
 run_ssh("cp /usr/bin/beryl7-agent /usr/bin/beryl7-agent.backup 2>/dev/null || true", check_status=False)
 
-print("[3/5] Uploading compiled ARM64 binary via encrypted SSH channel (SCP / SFTP)...")
+print("[3/5] Uploading compiled ARM64 binary via encrypted SSH channel (SFTP / SCP)...")
 try:
-    with scp.SCPClient(ssh.get_transport()) as scp_client:
-        scp_client.put(BINARY_PATH, "/tmp/beryl7-agent-new")
-    print("Binary uploaded successfully via SCP.")
-except Exception as e_scp:
+    sftp = ssh.open_sftp()
+    sftp.put(BINARY_PATH, "/tmp/beryl7-agent-new")
+    sftp.close()
+    print("Binary uploaded successfully via SFTP.")
+except Exception as e_sftp:
+    print(f"SFTP Subsystem not active on OpenWrt Dropbear ({e_sftp}) -> Falling back to SCP...")
     try:
-        sftp = ssh.open_sftp()
-        sftp.put(BINARY_PATH, "/tmp/beryl7-agent-new")
-        sftp.close()
-        print("Binary uploaded successfully via SFTP.")
-    except Exception as e_sftp:
-        print(f"File Transfer Failed - SCP ({e_scp}), SFTP ({e_sftp})")
+        import scp
+        with scp.SCPClient(ssh.get_transport()) as scp_client:
+            scp_client.put(BINARY_PATH, "/tmp/beryl7-agent-new")
+        print("Binary uploaded successfully via SCP.")
+    except Exception as e_scp:
+        print(f"File Transfer Failed - SFTP ({e_sftp}), SCP ({e_scp})")
         ssh.close()
         sys.exit(1)
 
