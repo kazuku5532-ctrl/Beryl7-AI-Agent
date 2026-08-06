@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """
 Development & CI Helper Script: Deploy Compiled Go ARM64 Binary to OpenWrt Router
-STRICTLY FOR WORKSTATION / CI USAGE. ZERO PYTHON REQUIRED ON ROUTER.
-SECURE SSH SCP DIRECT TRANSFER & NATIVE PROCD SERVICE MANAGEMENT.
+STRICTLY FOR WORKSTATION / CI USAGE. ZERO EXTRA LIBRARIES REQUIRED (100% NATIVE PARAMIKO).
 """
 import os
 import sys
@@ -46,23 +45,24 @@ run_ssh("killall -9 beryl7-agent 2>/dev/null || true", check_status=False)
 print("[2/5] Creating binary backup at /usr/bin/beryl7-agent.backup...")
 run_ssh("cp /usr/bin/beryl7-agent /usr/bin/beryl7-agent.backup 2>/dev/null || true", check_status=False)
 
-print("[3/5] Uploading compiled ARM64 binary via encrypted SSH channel (SFTP / SCP)...")
+print("[3/5] Uploading compiled ARM64 binary via native Paramiko SSH binary stream...")
 try:
-    sftp = ssh.open_sftp()
-    sftp.put(BINARY_PATH, "/tmp/beryl7-agent-new")
-    sftp.close()
-    print("Binary uploaded successfully via SFTP.")
-except Exception as e_sftp:
-    print(f"SFTP Subsystem not active on OpenWrt Dropbear ({e_sftp}) -> Falling back to SCP...")
-    try:
-        import scp
-        with scp.SCPClient(ssh.get_transport()) as scp_client:
-            scp_client.put(BINARY_PATH, "/tmp/beryl7-agent-new")
-        print("Binary uploaded successfully via SCP.")
-    except Exception as e_scp:
-        print(f"File Transfer Failed - SFTP ({e_sftp}), SCP ({e_scp})")
+    stdin, stdout, stderr = ssh.exec_command("cat > /tmp/beryl7-agent-new")
+    with open(BINARY_PATH, "rb") as f:
+        stdin.write(f.read())
+    stdin.close()
+    out = stdout.read().decode('utf-8', errors='ignore').strip()
+    err = stderr.read().decode('utf-8', errors='ignore').strip()
+    exit_status = stdout.channel.recv_exit_status()
+    if exit_status != 0:
+        print(f"Binary Upload Failed (exit status {exit_status}): {err}")
         ssh.close()
         sys.exit(1)
+    print("Binary uploaded successfully via native Paramiko SSH stream.")
+except Exception as e:
+    print(f"File Transfer Failed: {e}")
+    ssh.close()
+    sys.exit(1)
 
 print("[4/5] Moving binary, setting permissions, and starting procd daemon...")
 run_ssh("mv /tmp/beryl7-agent-new /usr/bin/beryl7-agent")

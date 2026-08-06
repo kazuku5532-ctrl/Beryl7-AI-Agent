@@ -327,8 +327,12 @@ func main() {
 			logger.Flush()
 
 			if runtime.GOOS == "linux" {
-				logger.Warn("Re-executing daemon process image in-place into RAM via syscall.Exec...")
-				_ = syscall.Exec("/usr/bin/beryl7-agent", os.Args, os.Environ()) // #nosec G204 // nolint:errcheck
+				execPath, execErr := os.Executable()
+				if execErr != nil || execPath == "" {
+					execPath = "/usr/bin/beryl7-agent"
+				}
+				logger.Warn("Re-executing daemon process image [%s] in-place into RAM via syscall.Exec...", execPath)
+				_ = syscall.Exec(execPath, os.Args, os.Environ()) // #nosec G204 // nolint:errcheck
 				os.Exit(0)
 			} else {
 				os.Exit(0)
@@ -813,13 +817,8 @@ func StartHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 			if !matched && origin != "null" {
 				if parsedURL, err := url.Parse(origin); err == nil {
 					hostname := parsedURL.Hostname()
-					hLower := strings.ToLower(hostname)
 					ip := net.ParseIP(hostname)
-					if hostname == "localhost" ||
-						strings.HasSuffix(hLower, ".lan") ||
-						strings.HasSuffix(hLower, ".local") ||
-						strings.HasSuffix(hLower, ".home") ||
-						(ip != nil && isLANOrLoopbackIP(ip)) {
+					if hostname == "localhost" || (ip != nil && isLANOrLoopbackIP(ip)) {
 						matched = true
 					}
 				}
