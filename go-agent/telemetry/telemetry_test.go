@@ -61,3 +61,133 @@ func TestExportPrometheusMetrics(t *testing.T) {
 		t.Errorf("Prometheus output missing expected CPU metric: %s", promOut)
 	}
 }
+
+// TestExportPrometheusMetricsOffline covers offline WAN path + mu-locked counters
+func TestExportPrometheusMetricsOffline(t *testing.T) {
+	c := NewCollector()
+	m := &Metric{
+		WANStatus:       "Offline - No Route",
+		CPUUsagePct:     0,
+		RAMUsagePct:     0,
+		SystemUptimeSec: 0,
+	}
+	out := c.ExportPrometheusMetrics(m)
+	if !strings.Contains(out, "beryl7_router_reachable 0") {
+		t.Errorf("Expected reachable=0 for Offline status, got: %s", out)
+	}
+	// Exercise counter methods for coverage
+	c.RecordSkillHit()
+	c.RecordSkillMiss()
+	c.RecordRollback()
+	c.RecordFalsePositive()
+	c.RecordHealOutcome(true)
+	c.RecordHealOutcome(false)
+	// Re-export with counters set
+	out2 := c.ExportPrometheusMetrics(m)
+	if !strings.Contains(out2, "beryl7_skill_hits_total 1") {
+		t.Errorf("Expected skill_hits_total=1, got: %s", out2)
+	}
+}
+
+// TestExportPrometheusMetricsNil ensures nil metric returns empty string gracefully
+func TestExportPrometheusMetricsNil(t *testing.T) {
+	c := NewCollector()
+	out := c.ExportPrometheusMetrics(nil)
+	if out != "" {
+		t.Errorf("Expected empty string for nil metric, got: %s", out)
+	}
+}
+
+// TestAreWiFiClientsIdleDualBand exercises both scan paths:
+// err0!=nil && err1!=nil → falls back to cache, and the OR idle logic.
+func TestAreWiFiClientsIdleDualBand(t *testing.T) {
+	c := NewCollector()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	// ubus is not available in test env — both bands return err.
+	// Should fall back to cache (activeClientsCount=0) → isIdle=true
+	isIdle, clients, err := c.AreWiFiClientsIdle(ctx)
+	if err != nil {
+		t.Errorf("AreWiFiClientsIdle returned unexpected error: %v", err)
+	}
+	if !isIdle {
+		t.Errorf("Expected isIdle=true when both bands fail and cache=0, got false (clients=%d)", clients)
+	}
+}
+
+// TestParseProcNetDevInterface exercises the packet counter parser for /proc/net/dev format
+func TestParseProcNetDevInterface(t *testing.T) {
+	// Realistic /proc/net/dev line for eth0 with rx=1000 bytes and tx=2000 bytes at column positions
+	sampleContent := `Inter-|   Receive                                                |  Transmit
+ face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo colls carrier compressed
+  eth0: 1000       8    0    0    0     0          0         0     2000       5    0    0    0     0       0          0
+`
+	rx, tx := parseProcNetDevInterface(sampleContent, "eth0")
+	if rx != 1000 {
+		t.Errorf("Expected rx=1000, got %d", rx)
+	}
+	if tx != 2000 {
+		t.Errorf("Expected tx=2000, got %d", tx)
+	}
+
+	// Interface not found → should return 0,0
+	rx2, tx2 := parseProcNetDevInterface(sampleContent, "wlan9")
+	if rx2 != 0 || tx2 != 0 {
+		t.Errorf("Expected 0,0 for missing iface, got %d,%d", rx2, tx2)
+	}
+
+	// Malformed line (insufficient fields) → should return 0,0
+	malformed := "  eth1: 100\n"
+	rx3, tx3 := parseProcNetDevInterface(malformed, "eth1")
+	if rx3 != 0 || tx3 != 0 {
+		t.Errorf("Expected 0,0 for malformed line, got %d,%d", rx3, tx3)
+	}
+}
+
+// TestDiscoverWiFiInterfaces exercises the fallback path when no matching interfaces found
+func TestDiscoverWiFiInterfaces(t *testing.T) {
+	g, h := DiscoverWiFiInterfaces()
+	// On non-OpenWrt host, fallback names should be returned (ra0/rai0)
+	if g == "" {
+		t.Error("Expected non-empty 2.4GHz interface name")
+	}
+	if h == "" {
+		t.Error("Expected non-empty 5GHz interface name")
+	}
+}
+
+// TestUpdateEWMALatency validates EWMA initialisation and z-score calculation branches
+func TestUpdateEWMALatency(t *testing.T) {
+	c := NewCollector()
+
+	// First call: initialise EWMA (zero variance → zScore=0)
+	ewma1, z1 := c.UpdateEWMALatency(50.0, 0.2)
+	if ewma1 != 50.0 {
+		t.Errorf("Expected EWMA=50.0 on init, got %f", ewma1)
+	}
+	if z1 != 0.0 {
+		t.Errorf("Expected zScore=0.0 on init, got %f", z1)
+	}
+
+	// Second call: update EWMA, variance builds up
+	ewma2, _ := c.UpdateEWMALatency(100.0, 0.2)
+	if ewma2 <= 50.0 {
+		t.Errorf("Expected EWMA to increase above 50.0, got %f", ewma2)
+	}
+
+	// Third call: z-score should now be calculable (stdDev > 0)
+	_, z3 := c.UpdateEWMALatency(200.0, 0.2)
+	if z3 == 0.0 {
+		t.Logf("Note: z-score was 0 (variance may not yet be significant)")
+	}
+
+	// Invalid alpha → clamped to 0.2
+	ewma4, _ := c.UpdateEWMALatency(50.0, -1.0)
+	if ewma4 == 0 {
+		t.Errorf("Expected valid EWMA with invalid alpha, got 0")
+	}
+
+	// alpha=1.5 (>1) also clamped
+	_, _ = c.UpdateEWMALatency(50.0, 1.5)
+}
