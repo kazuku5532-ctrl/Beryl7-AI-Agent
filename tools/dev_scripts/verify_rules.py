@@ -70,7 +70,7 @@ for root, dirs, files in os.walk(WORKSPACE_ROOT):
         if f.endswith(('.go', '.py', '.json', '.yaml', '.yml', '.conf', '.md', '.env.example', '.sh')):
             filepath = os.path.join(root, f)
             try:
-                with open(filepath, 'r', encoding='utf-8') as file_obj:
+                with open(filepath, 'r', encoding='utf-8', errors='ignore') as file_obj:
                     content = file_obj.read()
                     
                     # Pattern matches
@@ -88,8 +88,8 @@ for root, dirs, files in os.walk(WORKSPACE_ROOT):
                         if calculate_entropy_linear(val) > 4.2:
                             rel_path = os.path.relpath(filepath, WORKSPACE_ROOT)
                             secret_violations.append(f"{rel_path} (High-Entropy Secret: {val[:8]}...)")
-            except (OSError, UnicodeError) as file_err:
-                print(f"  ⚠️ Warning: Skipping unreadable file {filepath}: {file_err}")
+            except OSError as io_err:
+                print(f"  ⚠️ Warning: Unable to open physical file {filepath}: {io_err}")
 
 if secret_violations:
     report_fail("Multi-Pattern & Entropy Secret Audit", "; ".join(secret_violations))
