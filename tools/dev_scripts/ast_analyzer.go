@@ -28,25 +28,27 @@ func isExprTainted(fset *token.FileSet, expr ast.Expr, taintedVars map[string]bo
 		return false
 	}
 
-	// 1. Direct Identifier check against tainted variable set
+	// 1. Direct Identifier check against exact tainted variable set or exact "origin" / "Origin" name
 	if ident, ok := expr.(*ast.Ident); ok {
-		if taintedVars[ident.Name] || strings.ToLower(ident.Name) == "origin" {
+		lowerName := strings.ToLower(ident.Name)
+		if taintedVars[ident.Name] || lowerName == "origin" {
 			return true
 		}
 		return false
 	}
 
-	// 2. Selector Expression check (e.g., req.Origin or r.Header.Get("Origin"))
+	// 2. Selector Expression check for exact Origin headers (e.g., req.Header.Get("Origin") or r.Header.Get("origin"))
 	raw := strings.ToLower(strings.TrimSpace(renderNode(fset, expr)))
-	if raw == "origin" || strings.HasSuffix(raw, ".origin") || strings.Contains(raw, `header.get("origin")`) {
+	if raw == "origin" || strings.HasSuffix(raw, ".origin") || strings.Contains(raw, `header.get("origin")`) || strings.Contains(raw, `header.get('origin')`) {
 		return true
 	}
 
-	// 3. Inspect AST sub-nodes for any tainted identifier usage
+	// 3. Inspect AST sub-nodes for EXACT tainted identifiers (never substrings like "originalPath")
 	var foundTaint bool
 	ast.Inspect(expr, func(n ast.Node) bool {
 		if ident, ok := n.(*ast.Ident); ok {
-			if taintedVars[ident.Name] || strings.ToLower(ident.Name) == "origin" {
+			lowerName := strings.ToLower(ident.Name)
+			if taintedVars[ident.Name] || lowerName == "origin" {
 				foundTaint = true
 				return false
 			}
@@ -70,6 +72,11 @@ func resolveConstValue(expr ast.Expr, constMap map[string]string) string {
 		}
 	}
 	return ""
+}
+
+type assignStmtPair struct {
+	lhsName string
+	rhs     ast.Expr
 }
 
 func main() {
@@ -112,62 +119,58 @@ func main() {
 			return true
 		})
 
-		// Second Pass: Inspect function declarations with multi-tier transitive taint propagation & var declaration support
+		// Second Pass: High-Performance Worklist Data-Flow Taint Propagation & CORS Inspection
 		ast.Inspect(node, func(n ast.Node) bool {
 			fn, okFn := n.(*ast.FuncDecl)
 			if !okFn {
 				return true
 			}
 
-			// Local Taint Map per function declaration
 			taintedVars := make(map[string]bool)
+			var statements []assignStmtPair
 
-			// Multi-pass fixed-point taint propagation loop
+			// 1. Single AST Pass: Collect all assignment/declaration statements into an in-memory Worklist
+			ast.Inspect(fn.Body, func(inner ast.Node) bool {
+				if inner == nil {
+					return true
+				}
+
+				if assign, okAssign := inner.(*ast.AssignStmt); okAssign {
+					for i, rhs := range assign.Rhs {
+						if i < len(assign.Lhs) {
+							if ident, okId := assign.Lhs[i].(*ast.Ident); okId {
+								statements = append(statements, assignStmtPair{lhsName: ident.Name, rhs: rhs})
+							}
+						}
+					}
+				}
+
+				if declStmt, okDecl := inner.(*ast.DeclStmt); okDecl {
+					if genDecl, okGen := declStmt.Decl.(*ast.GenDecl); okGen && genDecl.Tok == token.VAR {
+						for _, spec := range genDecl.Specs {
+							if valSpec, okVal := spec.(*ast.ValueSpec); okVal {
+								for i, val := range valSpec.Values {
+									if i < len(valSpec.Names) {
+										statements = append(statements, assignStmtPair{lhsName: valSpec.Names[i].Name, rhs: val})
+									}
+								}
+							}
+						}
+					}
+				}
+				return true
+			})
+
+			// 2. High-Speed Worklist Propagation (Iterates over RAM slice, 0 AST re-traversals!)
 			changed := true
 			for changed {
 				changed = false
-				ast.Inspect(fn.Body, func(inner ast.Node) bool {
-					if inner == nil {
-						return true
+				for _, stmt := range statements {
+					if !taintedVars[stmt.lhsName] && isExprTainted(fset, stmt.rhs, taintedVars) {
+						taintedVars[stmt.lhsName] = true
+						changed = true
 					}
-
-					// Check 1: Variable Assignments (e.g. o1 := r.Header.Get("Origin") or o2 := o1)
-					if assign, okAssign := inner.(*ast.AssignStmt); okAssign {
-						for i, rhs := range assign.Rhs {
-							if isExprTainted(fset, rhs, taintedVars) {
-								if i < len(assign.Lhs) {
-									if ident, okId := assign.Lhs[i].(*ast.Ident); okId {
-										if !taintedVars[ident.Name] {
-											taintedVars[ident.Name] = true
-											changed = true
-										}
-									}
-								}
-							}
-						}
-					}
-
-					// Check 2: Var Declarations (e.g. var o = r.Header.Get("Origin") or var o2 = o1)
-					if declStmt, okDecl := inner.(*ast.DeclStmt); okDecl {
-						if genDecl, okGen := declStmt.Decl.(*ast.GenDecl); okGen && genDecl.Tok == token.VAR {
-							for _, spec := range genDecl.Specs {
-								if valSpec, okVal := spec.(*ast.ValueSpec); okVal {
-									for i, val := range valSpec.Values {
-										if isExprTainted(fset, val, taintedVars) {
-											if i < len(valSpec.Names) {
-												if !taintedVars[valSpec.Names[i].Name] {
-													taintedVars[valSpec.Names[i].Name] = true
-													changed = true
-												}
-											}
-										}
-									}
-								}
-							}
-						}
-					}
-					return true
-				})
+				}
 			}
 
 			// Final Pass: Inspect strings.HasPrefix and strings.HasSuffix calls on tainted expressions

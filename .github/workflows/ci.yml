@@ -35,7 +35,7 @@ jobs:
       - name: Run gosec (Go AST Security & Command Injection Audit)
         run: |
           cd go-agent
-          $(go env GOPATH)/bin/gosec -exclude=G104 ./...
+          $(go env GOPATH)/bin/gosec ./...
 
       - name: Run bandit (Python AST Security Audit)
         run: |
