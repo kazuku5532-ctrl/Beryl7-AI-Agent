@@ -52,8 +52,16 @@ func isHeaderGetCall(fset *token.FileSet, call *ast.CallExpr, constMap map[strin
 		argVal := resolveConstValue(call.Args[0], constMap)
 		if argVal == "origin" {
 			receiverRaw := strings.ToLower(renderNode(fset, sel.X))
+			// [Fix 4] Resolve *ast.Ident receiver (e.g. h.Get, hdr.Get)
 			if ident, okId := sel.X.(*ast.Ident); okId {
 				if headerVars[ident.Name] || headerFieldNames[ident.Name] || strings.Contains(receiverRaw, "header") || strings.HasSuffix(receiverRaw, ".h") || strings.Contains(receiverRaw, "hdr") || strings.Contains(receiverRaw, "head") {
+					return true
+				}
+			}
+			// [Fix 4] Resolve *ast.SelectorExpr receiver (e.g. req.Hdr.Get, w.Request.Header.Get)
+			// Catches custom structs where the Header field name does NOT contain "header"
+			if selExpr, okSE := sel.X.(*ast.SelectorExpr); okSE {
+				if headerVars[selExpr.Sel.Name] || headerFieldNames[selExpr.Sel.Name] || strings.Contains(receiverRaw, "header") || strings.Contains(receiverRaw, "hdr") || strings.Contains(receiverRaw, "head") {
 					return true
 				}
 			}
@@ -76,8 +84,16 @@ func isHeaderIndexExpr(fset *token.FileSet, indexExpr *ast.IndexExpr, constMap m
 	idxVal := resolveConstValue(indexExpr.Index, constMap)
 	if idxVal == "origin" {
 		receiverRaw := strings.ToLower(renderNode(fset, indexExpr.X))
+		// [Fix 5] Resolve *ast.Ident receiver (e.g. h["Origin"], hdr["Origin"])
 		if ident, okId := indexExpr.X.(*ast.Ident); okId {
 			if headerVars[ident.Name] || headerFieldNames[ident.Name] || strings.Contains(receiverRaw, "header") || strings.HasSuffix(receiverRaw, ".h") || strings.Contains(receiverRaw, "hdr") || strings.Contains(receiverRaw, "head") {
+				return true
+			}
+		}
+		// [Fix 5] Resolve *ast.SelectorExpr receiver (e.g. req.Hdr["Origin"], ctx.Request.Header["Origin"])
+		// Catches custom structs where the Header field is accessed via a selector chain
+		if selExpr, okSE := indexExpr.X.(*ast.SelectorExpr); okSE {
+			if headerVars[selExpr.Sel.Name] || headerFieldNames[selExpr.Sel.Name] || strings.Contains(receiverRaw, "header") || strings.Contains(receiverRaw, "hdr") || strings.Contains(receiverRaw, "head") {
 				return true
 			}
 		}
@@ -217,7 +233,24 @@ func main() {
 				for _, spec := range genDecl.Specs {
 					if valSpec, okVal := spec.(*ast.ValueSpec); okVal {
 						if len(valSpec.Values) > 0 {
-							lastValues = valSpec.Values
+							// [Fix 6] Validate that the current row has at least one resolvable string value.
+							// If ALL values in this row are non-string (e.g. someNumber = 123), reset lastValues
+							// to nil so they do NOT propagate as implicit repeated values for the next row.
+							// Failing to do this causes False Positives: a later `otherVar` with no explicit
+							// value would inherit "origin" from a previous string const row.
+							hasAnyStringVal := false
+							for _, v := range valSpec.Values {
+								if resolveConstValue(v, constMap) != "" {
+									hasAnyStringVal = true
+									break
+								}
+							}
+							if hasAnyStringVal {
+								lastValues = valSpec.Values
+							} else {
+								// Non-string row (e.g. iota, numeric literal) — break the implicit chain
+								lastValues = nil
+							}
 						}
 						for i, name := range valSpec.Names {
 							var valExpr ast.Expr

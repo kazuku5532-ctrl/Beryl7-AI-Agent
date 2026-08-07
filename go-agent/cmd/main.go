@@ -357,8 +357,11 @@ func main() {
 
 			if runtime.GOOS == "linux" {
 				execPath, execErr := os.Executable()
+				// [Fix 2] Never exec a hardcoded path — if os.Executable() fails we cannot safely determine
+				// which binary to replace ourselves with. Exit cleanly so procd/init restarts us correctly.
 				if execErr != nil || execPath == "" {
-					execPath = "/usr/bin/beryl7-agent"
+					logger.Error("CRITICAL: os.Executable() failed during process restart [err=%v]. Halting to allow procd/init respawn.", execErr)
+					os.Exit(1)
 				}
 				logger.Warn("Re-executing daemon process image [%s] in-place into RAM via syscall.Exec...", execPath)
 				// #nosec G204, G702
