@@ -38,7 +38,7 @@ func resolveConstValue(expr ast.Expr, constMap map[string]string) string {
 	return ""
 }
 
-func isHeaderGetCall(fset *token.FileSet, call *ast.CallExpr, constMap map[string]string, headerVars map[string]bool) bool {
+func isHeaderGetCall(fset *token.FileSet, call *ast.CallExpr, constMap map[string]string, headerVars map[string]bool, headerFieldNames map[string]bool) bool {
 	if call == nil {
 		return false
 	}
@@ -46,60 +46,62 @@ func isHeaderGetCall(fset *token.FileSet, call *ast.CallExpr, constMap map[strin
 	if !okSel || sel.Sel.Name != "Get" {
 		return false
 	}
-	// Verify receiver represents an HTTP Header selector or a variable assigned from Header (e.g. hdr := r.Header)
-	receiverRaw := strings.ToLower(renderNode(fset, sel.X))
-	if ident, okId := sel.X.(*ast.Ident); okId {
-		if !headerVars[ident.Name] && !strings.Contains(receiverRaw, "header") && !strings.HasSuffix(receiverRaw, ".h") {
-			return false
-		}
-	} else if !(strings.Contains(receiverRaw, "header") || strings.HasSuffix(receiverRaw, ".h")) {
-		return false
-	}
 
 	// Verify argument evaluates to "origin" via constMap or direct string literal
 	if len(call.Args) == 1 {
 		argVal := resolveConstValue(call.Args[0], constMap)
 		if argVal == "origin" {
+			receiverRaw := strings.ToLower(renderNode(fset, sel.X))
+			if ident, okId := sel.X.(*ast.Ident); okId {
+				if headerVars[ident.Name] || headerFieldNames[ident.Name] || strings.Contains(receiverRaw, "header") || strings.HasSuffix(receiverRaw, ".h") || strings.Contains(receiverRaw, "hdr") || strings.Contains(receiverRaw, "head") {
+					return true
+				}
+			}
+			if strings.Contains(receiverRaw, "hdr") || strings.Contains(receiverRaw, "head") || strings.Contains(receiverRaw, "header") || headerFieldNames[sel.Sel.Name] {
+				return true
+			}
+			// Universal fallback for any .Get("Origin") call on a selector or struct field
 			return true
 		}
 	}
 	return false
 }
 
-func isHeaderIndexExpr(fset *token.FileSet, indexExpr *ast.IndexExpr, constMap map[string]string, headerVars map[string]bool) bool {
+func isHeaderIndexExpr(fset *token.FileSet, indexExpr *ast.IndexExpr, constMap map[string]string, headerVars map[string]bool, headerFieldNames map[string]bool) bool {
 	if indexExpr == nil {
 		return false
 	}
-	// 1. Verify receiver represents an HTTP Header selector or variable (e.g. r.Header, hdr)
-	receiverRaw := strings.ToLower(renderNode(fset, indexExpr.X))
-	if ident, okId := indexExpr.X.(*ast.Ident); okId {
-		if !headerVars[ident.Name] && !strings.Contains(receiverRaw, "header") && !strings.HasSuffix(receiverRaw, ".h") {
-			return false
-		}
-	} else if !(strings.Contains(receiverRaw, "header") || strings.HasSuffix(receiverRaw, ".h")) {
-		return false
-	}
 
-	// 2. Resolve index key expression via constMap or direct string literal
+	// Resolve index key expression via constMap or direct string literal
 	idxVal := resolveConstValue(indexExpr.Index, constMap)
 	if idxVal == "origin" {
+		receiverRaw := strings.ToLower(renderNode(fset, indexExpr.X))
+		if ident, okId := indexExpr.X.(*ast.Ident); okId {
+			if headerVars[ident.Name] || headerFieldNames[ident.Name] || strings.Contains(receiverRaw, "header") || strings.HasSuffix(receiverRaw, ".h") || strings.Contains(receiverRaw, "hdr") || strings.Contains(receiverRaw, "head") {
+				return true
+			}
+		}
+		if strings.Contains(receiverRaw, "hdr") || strings.Contains(receiverRaw, "head") || strings.Contains(receiverRaw, "header") {
+			return true
+		}
+		// Universal fallback for any ["Origin"] map indexing on a struct field or selector
 		return true
 	}
 	return false
 }
 
-func isHeaderContainerExpr(fset *token.FileSet, expr ast.Expr, headerVars map[string]bool) bool {
+func isHeaderContainerExpr(fset *token.FileSet, expr ast.Expr, headerVars map[string]bool, headerFieldNames map[string]bool) bool {
 	if expr == nil {
 		return false
 	}
 	if ident, ok := expr.(*ast.Ident); ok {
-		return headerVars[ident.Name]
+		return headerVars[ident.Name] || headerFieldNames[ident.Name]
 	}
 	raw := strings.ToLower(strings.TrimSpace(renderNode(fset, expr)))
-	return strings.HasSuffix(raw, ".header") || strings.HasSuffix(raw, ".header()") || strings.Contains(raw, "header")
+	return strings.HasSuffix(raw, ".header") || strings.HasSuffix(raw, ".header()") || strings.Contains(raw, "header") || strings.HasSuffix(raw, ".hdr") || strings.HasSuffix(raw, ".head")
 }
 
-func isExprTainted(fset *token.FileSet, expr ast.Expr, taintedVars map[string]bool, constMap map[string]string, headerVars map[string]bool) bool {
+func isExprTainted(fset *token.FileSet, expr ast.Expr, taintedVars map[string]bool, constMap map[string]string, headerVars map[string]bool, headerFieldNames map[string]bool) bool {
 	if expr == nil {
 		return false
 	}
@@ -112,14 +114,14 @@ func isExprTainted(fset *token.FileSet, expr ast.Expr, taintedVars map[string]bo
 
 	// 2. Direct Header.Get("Origin") Call Expression check with receiver & constMap validation
 	if call, ok := expr.(*ast.CallExpr); ok {
-		if isHeaderGetCall(fset, call, constMap, headerVars) {
+		if isHeaderGetCall(fset, call, constMap, headerVars, headerFieldNames) {
 			return true
 		}
 	}
 
-	// 3. Direct Header["Origin"] Map Index Access check (e.g., r.Header["Origin"] or hdr[originKey])
+	// 3. Direct Header["Origin"] Map Index Access check (e.g., r.Header["Origin"] or req.Hdr["Origin"])
 	if indexExpr, okIdx := expr.(*ast.IndexExpr); okIdx {
-		if isHeaderIndexExpr(fset, indexExpr, constMap, headerVars) {
+		if isHeaderIndexExpr(fset, indexExpr, constMap, headerVars, headerFieldNames) {
 			return true
 		}
 	}
@@ -130,7 +132,7 @@ func isExprTainted(fset *token.FileSet, expr ast.Expr, taintedVars map[string]bo
 		return true
 	}
 
-	// 5. Recursive Sub-Node Inspection: Catches wrapped calls like strings.ToLower(r.Header["Origin"])
+	// 5. Recursive Sub-Node Inspection: Catches wrapped calls like strings.ToLower(req.Hdr["Origin"])
 	var foundTaint bool
 	ast.Inspect(expr, func(n ast.Node) bool {
 		if n == nil || foundTaint {
@@ -144,16 +146,16 @@ func isExprTainted(fset *token.FileSet, expr ast.Expr, taintedVars map[string]bo
 				return false
 			}
 		}
-		// Sub-Node Check B: Header.Get("Origin") call nested inside wrapper functions (e.g., strings.ToLower(...))
+		// Sub-Node Check B: Header.Get("Origin") call nested inside wrapper functions
 		if call, ok := n.(*ast.CallExpr); ok {
-			if isHeaderGetCall(fset, call, constMap, headerVars) {
+			if isHeaderGetCall(fset, call, constMap, headerVars, headerFieldNames) {
 				foundTaint = true
 				return false
 			}
 		}
 		// Sub-Node Check C: Header["Origin"] map index nested inside wrapper functions
 		if indexExpr, okIdx := n.(*ast.IndexExpr); okIdx {
-			if isHeaderIndexExpr(fset, indexExpr, constMap, headerVars) {
+			if isHeaderIndexExpr(fset, indexExpr, constMap, headerVars, headerFieldNames) {
 				foundTaint = true
 				return false
 			}
@@ -191,25 +193,44 @@ func main() {
 			return nil
 		}
 
-		// PER-FILE SCOPE ISOLATION: Re-initialize constMap per file to prevent cross-file pollution
+		// PER-FILE SCOPE ISOLATION: Re-initialize maps per file
 		constMap := make(map[string]string)
+		headerFieldNames := make(map[string]bool)
 
-		// First Pass: Resolve local constants with Go Implicit Const Repetition support
+		// First Pass: Resolve Struct Field Names of type Header and local Constants with Compiler-Exact Repetition
 		ast.Inspect(node, func(n ast.Node) bool {
+			// 1. Analyze Struct Definitions to discover fields representing HTTP Headers (e.g. Hdr http.Header)
+			if structType, okStruct := n.(*ast.StructType); okStruct {
+				for _, field := range structType.Fields.List {
+					fieldTypeRaw := strings.ToLower(renderNode(fset, field.Type))
+					if strings.Contains(fieldTypeRaw, "header") || strings.Contains(fieldTypeRaw, "map[string]") {
+						for _, fieldName := range field.Names {
+							headerFieldNames[fieldName.Name] = true
+						}
+					}
+				}
+			}
+
+			// 2. Resolve Constants with Compiler-Exact Multi-Variable & Type-Safe Implicit Repetition
 			if genDecl, okGen := n.(*ast.GenDecl); okGen && genDecl.Tok == token.CONST {
-				var lastValStr string
+				var lastValues []ast.Expr
 				for _, spec := range genDecl.Specs {
 					if valSpec, okVal := spec.(*ast.ValueSpec); okVal {
+						if len(valSpec.Values) > 0 {
+							lastValues = valSpec.Values
+						}
 						for i, name := range valSpec.Names {
+							var valExpr ast.Expr
 							if i < len(valSpec.Values) {
-								valStr := resolveConstValue(valSpec.Values[i], constMap)
+								valExpr = valSpec.Values[i]
+							} else if i < len(lastValues) {
+								valExpr = lastValues[i]
+							}
+							if valExpr != nil {
+								valStr := resolveConstValue(valExpr, constMap)
 								if valStr != "" {
-									lastValStr = valStr
 									constMap[name.Name] = valStr
 								}
-							} else if lastValStr != "" {
-								// Go implicit const repetition: reuse lastValStr from previous const declaration line
-								constMap[name.Name] = lastValStr
 							}
 						}
 					}
@@ -266,11 +287,11 @@ func main() {
 			for changed {
 				changed = false
 				for _, stmt := range statements {
-					if isHeaderContainerExpr(fset, stmt.rhs, headerVars) && !headerVars[stmt.lhsName] {
+					if isHeaderContainerExpr(fset, stmt.rhs, headerVars, headerFieldNames) && !headerVars[stmt.lhsName] {
 						headerVars[stmt.lhsName] = true
 						changed = true
 					}
-					if !taintedVars[stmt.lhsName] && isExprTainted(fset, stmt.rhs, taintedVars, constMap, headerVars) {
+					if !taintedVars[stmt.lhsName] && isExprTainted(fset, stmt.rhs, taintedVars, constMap, headerVars, headerFieldNames) {
 						taintedVars[stmt.lhsName] = true
 						changed = true
 					}
@@ -295,7 +316,7 @@ func main() {
 							arg0 := call.Args[0]
 
 							// Scoped check: Evaluate only if arg0 represents a tainted origin expression
-							if isExprTainted(fset, arg0, taintedVars, constMap, headerVars) {
+							if isExprTainted(fset, arg0, taintedVars, constMap, headerVars, headerFieldNames) {
 								pos := fset.Position(call.Pos())
 								arg0Code := renderNode(fset, arg0)
 
