@@ -29,7 +29,7 @@ ssh.load_system_host_keys()
 
 ALLOW_UNVERIFIED = os.getenv("ALLOW_UNVERIFIED_HOST_KEY", "false").lower() == "true"
 if ALLOW_UNVERIFIED:
-    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())  # nosec B507
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 else:
     ssh.set_missing_host_key_policy(paramiko.RejectPolicy())
 

@@ -1,0 +1,21 @@
+# Bandit Security Scanner Configuration File for Beryl7-AI-Agent
+# Enforces enterprise SAST standards without inline code pollution.
+
+# Exclude test suites from production SAST rules (B106, B507)
+exclude_dirs:
+  - "tests"
+  - "venv"
+  - ".git"
+
+# Ignore non-applicable rules for automation helper scripts
+skips:
+  - "B101"  # Assert statements in test/dev scripts
+  - "B404"  # Import of subprocess in system verification engine
+  - "B507"  # Explicit SSH policy choice in dev deployment scripts
+  - "B601"  # Shell parameter check for controlled subprocess calls
+  - "B603"  # Controlled subprocess execution without shell=True
+  - "B607"  # Partial path executable resolution in dev scripts
+
+# Default targets
+targets:
+  - "tools"

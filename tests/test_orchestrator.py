@@ -17,7 +17,7 @@ class TestSelfEvolvingAgentOrchestrator(unittest.TestCase):
         self.orchestrator = SelfEvolvingAgentOrchestrator(
             hostname="192.168.8.1",
             username="root",
-            password="placeholder_test_password",  # nosec B106
+            password="placeholder_test_password",
             db_path=":memory:",
             dry_run=True
         )

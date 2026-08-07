@@ -7,13 +7,15 @@ CONCURRENT_CLIENTS = 100
 TOTAL_REQUESTS = 500
 
 def fetch_health():
+    if not (TARGET_URL.startswith("http://") or TARGET_URL.startswith("https://")):
+        raise ValueError(f"Disallowed URL scheme in load target: {TARGET_URL}")
     start = time.time()
     try:
-        req = urllib.request.urlopen(TARGET_URL, timeout=2.0)  # nosec B310
+        req = urllib.request.urlopen(TARGET_URL, timeout=2.0)
         code = req.getcode()
         duration = (time.time() - start) * 1000
         return code == 200, duration
-    except Exception as e:  # nosec B110
+    except (urllib.error.URLError, OSError) as e:
         return False, (time.time() - start) * 1000
 
 def run_stress_test():

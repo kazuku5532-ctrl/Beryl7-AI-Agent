@@ -14,7 +14,7 @@ import os
 import sys
 import re
 import math
-import subprocess  # nosec B404
+import subprocess
 from collections import Counter
 
 if sys.platform == "win32":
@@ -70,7 +70,7 @@ for root, dirs, files in os.walk(WORKSPACE_ROOT):
         if f.endswith(('.go', '.py', '.json', '.yaml', '.yml', '.conf', '.md', '.env.example', '.sh')):
             filepath = os.path.join(root, f)
             try:
-                with open(filepath, 'r', encoding='utf-8', errors='ignore') as file_obj:
+                with open(filepath, 'r', encoding='utf-8') as file_obj:
                     content = file_obj.read()
                     
                     # Pattern matches
@@ -88,8 +88,8 @@ for root, dirs, files in os.walk(WORKSPACE_ROOT):
                         if calculate_entropy_linear(val) > 4.2:
                             rel_path = os.path.relpath(filepath, WORKSPACE_ROOT)
                             secret_violations.append(f"{rel_path} (High-Entropy Secret: {val[:8]}...)")
-            except Exception as read_err:  # nosec B110
-                _ = read_err
+            except (OSError, UnicodeError) as file_err:
+                print(f"  ⚠️ Warning: Skipping unreadable file {filepath}: {file_err}")
 
 if secret_violations:
     report_fail("Multi-Pattern & Entropy Secret Audit", "; ".join(secret_violations))
@@ -103,7 +103,7 @@ print("\n[Rule 2.1] Go Native AST Data-Flow Analysis (go/ast)...")
 ast_script_path = os.path.join(WORKSPACE_ROOT, "tools", "dev_scripts", "ast_analyzer.go")
 if os.path.exists(ast_script_path):
     try:
-        res_ast = subprocess.run(["go", "run", ast_script_path, GO_AGENT_DIR], capture_output=True, text=True, timeout=30)  # nosec B603 B607
+        res_ast = subprocess.run(["go", "run", ast_script_path, GO_AGENT_DIR], capture_output=True, text=True, timeout=30)
         if res_ast.returncode == 0:
             report_pass("Go AST Data-Flow Analysis (0 Unsafe CORS AST Patterns Found)")
         else:
@@ -183,7 +183,7 @@ else:
 # --------------------------------------------------------------------------
 print("\n[Clockwork Alignment Rule] Running Unit Tests across all 10 Go Packages...")
 try:
-    res = subprocess.run(["go", "test", "./..."], cwd=GO_AGENT_DIR, capture_output=True, text=True, timeout=60)  # nosec B603 B607
+    res = subprocess.run(["go", "test", "./..."], cwd=GO_AGENT_DIR, capture_output=True, text=True, timeout=60)
     if res.returncode == 0:
         report_pass("Clockwork Alignment (10/10 Go Packages Unit Tests PASS)")
     else:
@@ -193,7 +193,7 @@ except Exception as e:
 
 print("\n[Clockwork Alignment Rule] Running go vet static analysis...")
 try:
-    res_vet = subprocess.run(["go", "vet", "./..."], cwd=GO_AGENT_DIR, capture_output=True, text=True, timeout=30)  # nosec B603 B607
+    res_vet = subprocess.run(["go", "vet", "./..."], cwd=GO_AGENT_DIR, capture_output=True, text=True, timeout=30)
     if res_vet.returncode == 0:
         report_pass("Clockwork Alignment Analysis (100% Clean go vet)")
     else:
