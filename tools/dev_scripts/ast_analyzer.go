@@ -13,6 +13,9 @@ import (
 )
 
 func renderNode(fset *token.FileSet, node ast.Node) string {
+	if node == nil {
+		return ""
+	}
 	var buf bytes.Buffer
 	if err := printer.Fprint(&buf, fset, node); err != nil {
 		return ""
@@ -20,24 +23,38 @@ func renderNode(fset *token.FileSet, node ast.Node) string {
 	return buf.String()
 }
 
-func isOriginExpr(fset *token.FileSet, expr ast.Expr, taintedVars map[string]bool) bool {
+func isExprTainted(fset *token.FileSet, expr ast.Expr, taintedVars map[string]bool) bool {
 	if expr == nil {
 		return false
 	}
-	raw := strings.ToLower(strings.TrimSpace(renderNode(fset, expr)))
-	
-	// Check direct identifier or selector matching
-	if strings.Contains(raw, "origin") {
-		return true
-	}
-	
-	// Check if identifier is in the function local tainted variable map
+
+	// 1. Direct Identifier check against tainted variable set
 	if ident, ok := expr.(*ast.Ident); ok {
-		if taintedVars[ident.Name] {
+		if taintedVars[ident.Name] || strings.ToLower(ident.Name) == "origin" {
 			return true
 		}
+		return false
 	}
-	return false
+
+	// 2. Selector Expression check (e.g., req.Origin or r.Header.Get("Origin"))
+	raw := strings.ToLower(strings.TrimSpace(renderNode(fset, expr)))
+	if raw == "origin" || strings.HasSuffix(raw, ".origin") || strings.Contains(raw, `header.get("origin")`) {
+		return true
+	}
+
+	// 3. Inspect AST sub-nodes for any tainted identifier usage
+	var foundTaint bool
+	ast.Inspect(expr, func(n ast.Node) bool {
+		if ident, ok := n.(*ast.Ident); ok {
+			if taintedVars[ident.Name] || strings.ToLower(ident.Name) == "origin" {
+				foundTaint = true
+				return false
+			}
+		}
+		return true
+	})
+
+	return foundTaint
 }
 
 func resolveConstValue(expr ast.Expr, constMap map[string]string) string {
@@ -95,7 +112,7 @@ func main() {
 			return true
 		})
 
-		// Second Pass: Inspect function declarations and AST call expressions with intra-procedural taint tracking
+		// Second Pass: Inspect function declarations with multi-tier transitive taint propagation & var declaration support
 		ast.Inspect(node, func(n ast.Node) bool {
 			fn, okFn := n.(*ast.FuncDecl)
 			if !okFn {
@@ -106,11 +123,14 @@ func main() {
 			taintedVars := make(map[string]bool)
 
 			ast.Inspect(fn.Body, func(inner ast.Node) bool {
-				// Track variable assignments (e.g., originHeader := r.Header.Get("Origin"))
+				if inner == nil {
+					return true
+				}
+
+				// Check 1: Variable Assignments (e.g. o1 := r.Header.Get("Origin") or o2 := o1)
 				if assign, okAssign := inner.(*ast.AssignStmt); okAssign {
 					for i, rhs := range assign.Rhs {
-						rhsCode := strings.ToLower(renderNode(fset, rhs))
-						if strings.Contains(rhsCode, "origin") {
+						if isExprTainted(fset, rhs, taintedVars) {
 							if i < len(assign.Lhs) {
 								if ident, okId := assign.Lhs[i].(*ast.Ident); okId {
 									taintedVars[ident.Name] = true
@@ -120,7 +140,24 @@ func main() {
 					}
 				}
 
-				// Inspect strings.HasPrefix and strings.HasSuffix calls
+				// Check 2: Var Declarations (e.g. var o = r.Header.Get("Origin") or var o2 = o1)
+				if declStmt, okDecl := inner.(*ast.DeclStmt); okDecl {
+					if genDecl, okGen := declStmt.Decl.(*ast.GenDecl); okGen && genDecl.Tok == token.VAR {
+						for _, spec := range genDecl.Specs {
+							if valSpec, okVal := spec.(*ast.ValueSpec); okVal {
+								for i, val := range valSpec.Values {
+									if isExprTainted(fset, val, taintedVars) {
+										if i < len(valSpec.Names) {
+											taintedVars[valSpec.Names[i].Name] = true
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+
+				// Check 3: Inspect strings.HasPrefix and strings.HasSuffix calls on tainted expressions
 				call, okCall := inner.(*ast.CallExpr)
 				if !okCall {
 					return true
@@ -133,8 +170,8 @@ func main() {
 						if (funcName == "HasPrefix" || funcName == "HasSuffix") && len(call.Args) >= 2 {
 							arg0 := call.Args[0]
 
-							// Scoped check: Evaluate only if arg0 represents a tainted or origin expression
-							if isOriginExpr(fset, arg0, taintedVars) {
+							// Scoped check: Evaluate only if arg0 represents a tainted origin expression
+							if isExprTainted(fset, arg0, taintedVars) {
 								pos := fset.Position(call.Pos())
 								arg0Code := renderNode(fset, arg0)
 
