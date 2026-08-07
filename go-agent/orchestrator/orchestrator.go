@@ -67,8 +67,13 @@ func NewOrchestrator(
 
 	// Wire state machine transitions to event bus events
 	eventBus.Subscribe(EventAnomalyDetected, o.handleAnomalyDetected)
+	// [Fix 5] Handle AI recommendation event to transition to StateApproving
+	eventBus.Subscribe(EventActionRecommended, o.handleActionRecommended)
 	eventBus.Subscribe(EventActionApproved, o.handleActionApproved)
 	eventBus.Subscribe(EventActionExecuted, o.handleActionExecuted)
+	// [Fix 3] Handle verification outcomes to prevent permanent StateVerifying deadlocks
+	eventBus.Subscribe(EventVerificationPassed, o.handleVerificationPassed)
+	eventBus.Subscribe(EventVerificationFailed, o.handleVerificationFailed)
 	eventBus.Subscribe(EventSafeModeTriggered, o.handleSafeModeTriggered)
 
 	return o
@@ -118,6 +123,11 @@ func (o *Orchestrator) handleAnomalyDetected(event *Event) {
 	o.TransitionTo(StateAnalyzing, fmt.Sprintf("Anomaly detected from %s", event.Source))
 }
 
+// [Fix 5] Transition to StateApproving when AI recommends an action
+func (o *Orchestrator) handleActionRecommended(event *Event) {
+	o.TransitionTo(StateApproving, "Action recommended by AI engine, awaiting approval gate")
+}
+
 func (o *Orchestrator) handleActionApproved(event *Event) {
 	o.TransitionTo(StateExecuting, "Action approved by policy/operator")
 }
@@ -126,11 +136,31 @@ func (o *Orchestrator) handleActionExecuted(event *Event) {
 	o.TransitionTo(StateVerifying, "Action executed, awaiting telemetry verification")
 }
 
+// [Fix 3] Transition back to StateIdle when verification passes, preventing permanent deadlock
+func (o *Orchestrator) handleVerificationPassed(event *Event) {
+	o.TransitionTo(StateIdle, "Verification passed, returning to idle monitoring state")
+}
+
+// [Fix 3] Handle verification failures gracefully by returning to StateIdle or entering StateSafeMode
+func (o *Orchestrator) handleVerificationFailed(event *Event) {
+	if event != nil && event.Data != nil {
+		if safeMode, ok := event.Data["safe_mode"].(bool); ok && safeMode {
+			o.TransitionTo(StateSafeMode, "Verification failed critically, entering Safe Mode")
+			return
+		}
+	}
+	o.TransitionTo(StateIdle, "Verification failed non-critically, returning to idle state")
+}
+
 func (o *Orchestrator) handleSafeModeTriggered(event *Event) {
 	o.TransitionTo(StateSafeMode, "Watchdog guardrail triggered Safe Mode")
 }
 
+// [Fix 4] Stop clears event bus subscribers to prevent ghost handlers and memory leaks on orchestrator restart
 func (o *Orchestrator) Stop() {
+	if o.eventBus != nil {
+		o.eventBus.ClearSubscribers()
+	}
 	if o.writerQueue != nil {
 		o.writerQueue.Stop()
 	}

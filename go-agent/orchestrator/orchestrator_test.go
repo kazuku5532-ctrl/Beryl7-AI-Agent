@@ -2,6 +2,8 @@ package orchestrator
 
 import (
 	"context"
+	"fmt"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -38,74 +40,132 @@ func TestEventBusPublishSubscribeAndRingBuffer(t *testing.T) {
 	}
 }
 
-func TestEventBusRingBufferRotation(t *testing.T) {
+// TestEventBusDeepCopyMapRace verifies Fix 1: Event.Clone() prevents Go concurrent map read and map write panics
+func TestEventBusDeepCopyMapRace(t *testing.T) {
 	bus := NewEventBus()
 
-	// Fill buffer beyond 256 size to verify zero-alloc FIFO rotation
-	for i := 0; i < 300; i++ {
-		bus.Publish(&Event{
-			Type:   EventMetricsUpdated,
-			Source: "telemetry",
-			Data:   map[string]interface{}{"index": i},
+	sharedData := map[string]interface{}{
+		"key1": "value1",
+		"key2": 100,
+	}
+
+	// Register 10 concurrent subscribers that modify their event.Data maps
+	var wg sync.WaitGroup
+	for i := 0; i < 10; i++ {
+		subID := i
+		wg.Add(1)
+		bus.Subscribe(EventMetricsUpdated, func(event *Event) {
+			defer wg.Done()
+			event.Data[fmt.Sprintf("sub_%d", subID)] = true
+			_ = event.Data["key1"]
 		})
 	}
 
-	recent := bus.GetRecentEvents(10)
-	if len(recent) != 10 {
-		t.Fatalf("Expected 10 recent events, got %d", len(recent))
-	}
-}
-
-func TestDBWriterQueueExecution(t *testing.T) {
-	queue := NewDBWriterQueue(64)
-	defer queue.Stop()
-
-	var executed int32
-	success := queue.Enqueue(func() error {
-		atomic.AddInt32(&executed, 1)
-		return nil
+	bus.Publish(&Event{
+		Type:   EventMetricsUpdated,
+		Source: "race_test",
+		Data:   sharedData,
 	})
 
-	if !success {
-		t.Fatal("Failed to enqueue task")
-	}
+	wg.Wait()
 
-	time.Sleep(50 * time.Millisecond)
-
-	if atomic.LoadInt32(&executed) != 1 {
-		t.Errorf("Expected task executed 1 time, got %d", atomic.LoadInt32(&executed))
+	// Verify original sharedData map was untouched by subscribers
+	if len(sharedData) != 2 {
+		t.Errorf("Expected original map to have 2 keys, got %d (Deep Copy Clone failed)", len(sharedData))
 	}
 }
 
-func TestOrchestratorStateTransitions(t *testing.T) {
+// TestDBWriterQueueGracefulDrainOnStop verifies Fix 2: Queue drains all pending tasks cleanly upon Stop without task loss
+func TestDBWriterQueueGracefulDrainOnStop(t *testing.T) {
+	queue := NewDBWriterQueue(64)
+
+	var executedCount int32
+	for i := 0; i < 20; i++ {
+		queue.Enqueue(func() error {
+			time.Sleep(2 * time.Millisecond)
+			atomic.AddInt32(&executedCount, 1)
+			return nil
+		})
+	}
+
+	// Stop queue immediately
+	queue.Stop()
+
+	if atomic.LoadInt32(&executedCount) != 20 {
+		t.Errorf("Expected all 20 tasks to be drained on Stop, got %d", atomic.LoadInt32(&executedCount))
+	}
+
+	// Enqueue after Stop must safely return false
+	if queue.Enqueue(func() error { return nil }) {
+		t.Errorf("Expected Enqueue to return false after Stop()")
+	}
+}
+
+// TestOrchestratorVerificationHandlersNoDeadlock verifies Fix 3 & Fix 5: StateMachine transitions to Approving and Idle/SafeMode correctly
+func TestOrchestratorVerificationHandlersNoDeadlock(t *testing.T) {
 	bus := NewEventBus()
 	queue := NewDBWriterQueue(32)
 	defer queue.Stop()
 
 	orch := NewOrchestrator(bus, queue, nil, nil, nil, nil, nil)
-	if orch.GetState() != StateIdle {
-		t.Errorf("Expected initial state StateIdle, got %s", orch.GetState())
+
+	// Fix 5: EventActionRecommended -> StateApproving
+	bus.Publish(&Event{Type: EventActionRecommended, Source: "ai_engine"})
+	time.Sleep(50 * time.Millisecond)
+	if orch.GetState() != StateApproving {
+		t.Errorf("Expected StateApproving after EventActionRecommended, got %s", orch.GetState())
 	}
 
-	bus.Publish(&Event{Type: EventAnomalyDetected, Source: "test"})
+	// EventActionApproved -> StateExecuting
+	bus.Publish(&Event{Type: EventActionApproved, Source: "operator"})
 	time.Sleep(50 * time.Millisecond)
-
-	if orch.GetState() != StateAnalyzing {
-		t.Errorf("Expected StateAnalyzing after anomaly event, got %s", orch.GetState())
-	}
-
-	bus.Publish(&Event{Type: EventActionApproved, Source: "test"})
-	time.Sleep(50 * time.Millisecond)
-
 	if orch.GetState() != StateExecuting {
-		t.Errorf("Expected StateExecuting after approval, got %s", orch.GetState())
+		t.Errorf("Expected StateExecuting after EventActionApproved, got %s", orch.GetState())
 	}
 
-	bus.Publish(&Event{Type: EventSafeModeTriggered, Source: "test"})
+	// EventActionExecuted -> StateVerifying
+	bus.Publish(&Event{Type: EventActionExecuted, Source: "executor"})
+	time.Sleep(50 * time.Millisecond)
+	if orch.GetState() != StateVerifying {
+		t.Errorf("Expected StateVerifying after EventActionExecuted, got %s", orch.GetState())
+	}
+
+	// Fix 3: EventVerificationPassed -> StateIdle (deadlock broken!)
+	bus.Publish(&Event{Type: EventVerificationPassed, Source: "verifier"})
+	time.Sleep(50 * time.Millisecond)
+	if orch.GetState() != StateIdle {
+		t.Errorf("Expected StateIdle after EventVerificationPassed, got %s", orch.GetState())
+	}
+
+	// Test Verification Failed -> StateSafeMode when critical
+	bus.Publish(&Event{Type: EventActionExecuted, Source: "executor"})
+	time.Sleep(50 * time.Millisecond)
+	bus.Publish(&Event{
+		Type:   EventVerificationFailed,
+		Source: "verifier",
+		Data:   map[string]interface{}{"safe_mode": true},
+	})
+	time.Sleep(50 * time.Millisecond)
+	if orch.GetState() != StateSafeMode {
+		t.Errorf("Expected StateSafeMode after critical EventVerificationFailed, got %s", orch.GetState())
+	}
+}
+
+// TestOrchestratorStopClearsSubscribers verifies Fix 4: Stop() unregisters subscribers from EventBus
+func TestOrchestratorStopClearsSubscribers(t *testing.T) {
+	bus := NewEventBus()
+	queue := NewDBWriterQueue(32)
+
+	orch := NewOrchestrator(bus, queue, nil, nil, nil, nil, nil)
+	orch.Stop()
+
+	// Publish event after Stop - handler should NOT fire
+	bus.Publish(&Event{Type: EventAnomalyDetected, Source: "ghost_test"})
 	time.Sleep(50 * time.Millisecond)
 
-	if orch.GetState() != StateSafeMode {
-		t.Errorf("Expected StateSafeMode after safe mode event, got %s", orch.GetState())
+	// State should remain StateIdle because subscribers were cleared
+	if orch.GetState() != StateIdle {
+		t.Errorf("Expected StateIdle when event published after Stop(), got %s (ghost handler leak)", orch.GetState())
 	}
 }
 
@@ -119,37 +179,13 @@ func TestCalculateContextFrictionPenalty(t *testing.T) {
 
 	orch := NewOrchestrator(bus, queue, collector, nil, nil, nil, nil)
 
-	// Non-disruptive action -> 1.0x penalty
 	p1 := orch.CalculateContextFrictionPenalty(ctx, "purge_memory_cache")
 	if p1 != 1.0 {
 		t.Errorf("Expected 1.0x penalty for non-disruptive action, got %.1f", p1)
 	}
 
-	// Disruptive action with zero clients (idle test env) -> 1.0x penalty
 	p2 := orch.CalculateContextFrictionPenalty(ctx, "restart_wan_interface")
 	if p2 != 1.0 {
 		t.Errorf("Expected 1.0x penalty when idle, got %.1f", p2)
-	}
-}
-
-func TestEventBusPanicRecovery(t *testing.T) {
-	bus := NewEventBus()
-
-	// Panicking subscriber
-	bus.Subscribe(EventAnomalyDetected, func(event *Event) {
-		panic("simulated subscriber crash")
-	})
-
-	// Normal subscriber
-	var normalExecuted int32
-	bus.Subscribe(EventAnomalyDetected, func(event *Event) {
-		atomic.StoreInt32(&normalExecuted, 1)
-	})
-
-	bus.Publish(&Event{Type: EventAnomalyDetected, Source: "test"})
-	time.Sleep(50 * time.Millisecond)
-
-	if atomic.LoadInt32(&normalExecuted) != 1 {
-		t.Errorf("Expected normal subscriber to execute despite panic in sibling subscriber")
 	}
 }

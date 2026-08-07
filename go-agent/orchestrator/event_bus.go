@@ -29,6 +29,27 @@ type Event struct {
 	Correlation string                 `json:"correlation"`
 }
 
+// [Fix 1] Deep Copy Event & Data Map to prevent Go concurrent map read and map write runtime panics
+func (e *Event) Clone() *Event {
+	if e == nil {
+		return nil
+	}
+	cloned := &Event{
+		Type:        e.Type,
+		Source:      e.Source,
+		Timestamp:   e.Timestamp,
+		Priority:    e.Priority,
+		Correlation: e.Correlation,
+	}
+	if e.Data != nil {
+		cloned.Data = make(map[string]interface{}, len(e.Data))
+		for k, v := range e.Data {
+			cloned.Data[k] = v
+		}
+	}
+	return cloned
+}
+
 type EventSubscriber func(event *Event)
 
 const DefaultRingBufferSize = 256
@@ -55,7 +76,14 @@ func (eb *EventBus) Subscribe(eventType EventType, subscriber EventSubscriber) {
 	eb.subscribers[eventType] = append(eb.subscribers[eventType], subscriber)
 }
 
-// Publish broadcasts an event to subscribers and records it in the zero-alloc ring buffer
+// [Fix 4] ClearSubscribers wipes all registered subscribers to prevent ghost handlers & memory leaks on orchestrator restart/reload
+func (eb *EventBus) ClearSubscribers() {
+	eb.mu.Lock()
+	defer eb.mu.Unlock()
+	eb.subscribers = make(map[EventType][]EventSubscriber)
+}
+
+// Publish broadcasts an event clone to subscribers and records a clone in the ring buffer (Fix 1: Concurrency Race Protection)
 func (eb *EventBus) Publish(event *Event) {
 	if event == nil || event.Type == "" {
 		logger.Warn("EventBus: ignored invalid nil or empty event")
@@ -66,9 +94,11 @@ func (eb *EventBus) Publish(event *Event) {
 		event.Timestamp = time.Now()
 	}
 
+	// Clone event before storing in ring buffer and dispatching to prevent shared map mutations across goroutines
+	eventClone := event.Clone()
+
 	eb.mu.Lock()
-	// Zero-allocation ring buffer storage (overwrites oldest entry at head when full)
-	eb.ringBuffer[eb.head] = event
+	eb.ringBuffer[eb.head] = eventClone
 	eb.head = (eb.head + 1) % DefaultRingBufferSize
 	if eb.count < DefaultRingBufferSize {
 		eb.count++
@@ -78,21 +108,22 @@ func (eb *EventBus) Publish(event *Event) {
 	copy(subsCopy, eb.subscribers[event.Type])
 	eb.mu.Unlock()
 
-	// Dispatch to subscribers asynchronously with panic recovery
+	// Dispatch isolated event clones to subscribers asynchronously with panic recovery
 	for _, subscriber := range subsCopy {
 		sub := subscriber
+		subEvent := eventClone.Clone()
 		go func() {
 			defer func() {
 				if r := recover(); r != nil {
-					logger.Error("EventBus: subscriber panic recovered [event=%s, err=%v]", event.Type, r)
+					logger.Error("EventBus: subscriber panic recovered [event=%s, err=%v]", subEvent.Type, r)
 				}
 			}()
-			sub(event)
+			sub(subEvent)
 		}()
 	}
 }
 
-// GetRecentEvents returns up to limit recent events from the ring buffer without dynamic allocations during steady state
+// GetRecentEvents returns up to limit recent events from the ring buffer safely cloned
 func (eb *EventBus) GetRecentEvents(limit int) []*Event {
 	eb.mu.RLock()
 	defer eb.mu.RUnlock()
@@ -108,7 +139,7 @@ func (eb *EventBus) GetRecentEvents(limit int) []*Event {
 	start := (eb.head - limit + DefaultRingBufferSize) % DefaultRingBufferSize
 	for i := 0; i < limit; i++ {
 		idx := (start + i) % DefaultRingBufferSize
-		result[i] = eb.ringBuffer[idx]
+		result[i] = eb.ringBuffer[idx].Clone()
 	}
 	return result
 }
