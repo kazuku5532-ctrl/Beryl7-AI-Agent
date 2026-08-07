@@ -50,6 +50,24 @@ func New(dbPath string) (*SkillStore, error) {
 	return s, nil
 }
 
+func NewHybrid(ramPath, flashPath string) (*SkillStore, error) {
+	cleanRAM := filepath.Clean(ramPath)
+	cleanFlash := filepath.Clean(flashPath)
+
+	_ = os.MkdirAll(filepath.Dir(cleanRAM), 0755)
+
+	// If working RAM DB doesn't exist, restore from persistent Flash DB
+	if _, errRAM := os.Stat(cleanRAM); os.IsNotExist(errRAM) {
+		if flashData, errFlash := os.ReadFile(cleanFlash); errFlash == nil && len(flashData) > 0 { // #nosec G304, G703
+			if errWrite := os.WriteFile(cleanRAM, flashData, 0600); errWrite == nil {
+				logger.Info("HYBRID STORE: Restored SkillStore from NAND Flash (%s) to RAM tmpfs working DB (%s)", cleanFlash, cleanRAM)
+			}
+		}
+	}
+
+	return New(cleanRAM)
+}
+
 func (s *SkillStore) OpenAndInit() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -342,6 +360,46 @@ func (s *SkillStore) GetTopSkillsSummaryForAnomaly(anomalyType string, limit int
 		}
 	}
 	return sb.String()
+}
+
+func (s *SkillStore) FlushToPersistent(persistentPath string) error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.closed || s.db == nil {
+		return ErrStoreClosed
+	}
+
+	cleanPersistent := filepath.Clean(persistentPath)
+	if err := os.MkdirAll(filepath.Dir(cleanPersistent), 0755); err != nil {
+		return fmt.Errorf("failed to create directory for persistent DB: %w", err)
+	}
+
+	// 1. Force WAL Checkpoint to flush pending WAL frames into main DB file
+	if _, err := s.db.Exec("PRAGMA wal_checkpoint(FULL);"); err != nil {
+		logger.Warn("PRAGMA wal_checkpoint error during flush: %v", err)
+	}
+
+	// 2. Read working DB file bytes from RAM tmpfs
+	data, err := os.ReadFile(filepath.Clean(s.dbPath)) // #nosec G304, G703
+	if err != nil {
+		return fmt.Errorf("failed to read RAM working database: %w", err)
+	}
+	if len(data) == 0 {
+		return fmt.Errorf("working database file is empty")
+	}
+
+	// 3. Write atomically to persistent Flash storage (/etc/beryl7/skills.db)
+	tmpPath := fmt.Sprintf("%s.tmp.%d", cleanPersistent, time.Now().UnixNano())
+	if err := os.WriteFile(tmpPath, data, 0600); err != nil {
+		return fmt.Errorf("failed to write tmp persistent database: %w", err)
+	}
+	if err := os.Rename(tmpPath, cleanPersistent); err != nil {
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("failed to atomic rename persistent database: %w", err)
+	}
+
+	logger.Info("HYBRID STORE: Flushed SkillStore RAM DB (%d bytes) to persistent Flash (%s)", len(data), cleanPersistent)
+	return nil
 }
 
 func (s *SkillStore) Close() error {

@@ -491,3 +491,24 @@ func (t *TelemetryCollector) UpdateEWMALatency(currentLat float64, alpha float64
 	return t.ewmaLatency, zScore
 }
 
+func (t *TelemetryCollector) AreWiFiClientsIdle(ctx context.Context) (bool, int, error) {
+	t.mu.Lock()
+	dlMbps := t.lastCollect
+	t.mu.Unlock()
+
+	out, err := t.CallUbusExec(ctx, "hostapd.wlan0", "get_clients")
+	if err != nil {
+		out, err = t.CallUbusExec(ctx, "hostapd.wlan1", "get_clients")
+	}
+
+	activeClients := 0
+	if err == nil && out != "" {
+		matches := regexp.MustCompile(`"([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}"`).FindAllString(out, -1)
+		activeClients = len(matches)
+	}
+
+	// Client Idle Window Check: active bandwidth total < 0.5 Mbps or 0 active clients
+	isIdle := activeClients == 0 || (dlMbps.IsZero())
+	return isIdle, activeClients, nil
+}
+

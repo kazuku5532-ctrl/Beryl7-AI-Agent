@@ -222,12 +222,25 @@ func main() {
 	}
 	defer os.Remove(pidPath)
 
-	store, err := skillstore.New(cfg.SkillStorePath)
+	// Hybrid Store Initialization: Working DB in RAM /tmp/skills.db (zero NAND Flash wear), persistent backup in Flash
+	ramDBPath := "/tmp/skills.db"
+	store, err := skillstore.NewHybrid(ramDBPath, cfg.SkillStorePath)
 	if err != nil {
-		logger.Fatal("SkillStore Init Error: %v", err)
+		logger.Fatal("SkillStore Hybrid Init Error: %v", err)
 	}
 	defer store.Close()
 	activeStore = store
+
+	// Periodic 12-Hour Async Flush-to-Flash to preserve learned skills permanently
+	go func() {
+		ticker := time.NewTicker(12 * time.Hour)
+		defer ticker.Stop()
+		for range ticker.C {
+			if flushErr := store.FlushToPersistent(cfg.SkillStorePath); flushErr != nil {
+				logger.Warn("Periodic SkillStore Flush-to-Flash error: %v", flushErr)
+			}
+		}
+	}()
 
 	wd := watchdog.New(cfg.CheckpointPath)
 	activeWatchdog = wd
@@ -273,6 +286,11 @@ func main() {
 			logger.Error("HTTP server shutdown error: %v", err)
 		}
 		cancelHTTP()
+
+		// Hardware NAND Flash Protection: Flush RAM DB to persistent /etc/beryl7/skills.db on shutdown
+		if flushErr := store.FlushToPersistent(cfg.SkillStorePath); flushErr != nil {
+			logger.Warn("Shutdown SkillStore Flush-to-Flash error: %v", flushErr)
+		}
 
 		if err := store.Close(); err != nil {
 			logger.Error("SkillStore database close error: %v", err)
