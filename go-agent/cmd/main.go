@@ -15,6 +15,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -174,6 +175,10 @@ func validateTokenRole(r *http.Request, authHeader string, cfg *config.Config) (
 }
 
 func main() {
+	// Roadmap Section 5: Embedded RAM Optimization (15MiB RAM Limit, GOGC=20)
+	debug.SetMemoryLimit(15 * 1024 * 1024)
+	debug.SetGCPercent(20)
+
 	setOOMScore()
 
 	configMu.Lock()
@@ -527,8 +532,20 @@ func main() {
 					continue
 				}
 
-				topExemplars := store.GetTopSkillsSummaryForAnomaly(anomalyType, 3)
-				aiResp, aiErr := aiClient.AnalyzeAnomalyWithContext(ctx, anomalyType, anomalyDesc, liveLogSample, topExemplars)
+				// Roadmap Section 6: Local-First Autonomy - Lock Cloud AI API calls when WAN is offline
+				var aiResp *ai.AIResponse
+				var aiErr error
+				if anomalyType == "WAN_DROP" || strings.Contains(m.WANStatus, "Offline") {
+					logger.Warn("WAN is offline (%s). Locking Cloud AI API calls and triggering Local Heuristic Remediation...", m.WANStatus)
+					aiResp = &ai.AIResponse{
+						Action:     "restart_wan_interface",
+						Confidence: 0.95,
+						Reasoning:  "Local Offline Resilience: WAN interface down, executing direct local interface restart",
+					}
+				} else {
+					topExemplars := store.GetTopSkillsSummaryForAnomaly(anomalyType, 3)
+					aiResp, aiErr = aiClient.AnalyzeAnomalyWithContext(ctx, anomalyType, anomalyDesc, liveLogSample, topExemplars)
+				}
 
 				if aiErr == nil && aiResp != nil {
 					requiredThreshold := execEngine.GetActionRiskThreshold(aiResp.Action)
