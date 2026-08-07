@@ -10,11 +10,11 @@ Mọi đợt rà soát mã nguồn bắt buộc phải kiểm tra thủ công 5 
 
 1. **🌐 Strict URL & Origin Host Matching (An toàn CORS/Domain):**
    - CẤM MẠNH BẠO việc dùng `strings.HasPrefix` để soi URL / Origin.
-   - BẮT BUỘC dùng `url.Parse(origin)` và kiểm tra chính xác `u.Hostname()` để tránh các lỗ hổng bypass dạng `http://localhost.attacker.com`.
+   - BẮT BUỘC dùng `url.Parse(origin)` và kiểm tra chính xác `u.Hostname()` để tránh các lỗ hổng bypass dạng `http://localhost.attacker.com` (CWE-290 protection).
 
 2. **🔑 Zero Hardcoded Plaintext Credentials (An toàn Secret):**
    - CẤM chứa bất kỳ mật khẩu, token, API Key dạng chuỗi thô (clear-text) trong BẤT KỲ tệp tin nào (kể cả script dev, script test hay file phụ trợ trong `tools/`).
-   - Bắt buộc nạp 100% qua biến môi trường hoặc tệp ẩn phân quyền `0400`/`0600`.
+   - Bắt buộc nạp 100% qua biến môi trường hoặc tệp ẩn phân quyền `0400`/`0600` (Linear O(N) Shannon Entropy scanner).
 
 3. **🪲 IP Dual-Stack & Loopback Boundary (Boundary IPv4/IPv6):**
    - Kiểm tra các truy cập cục bộ phải xử lý triệt để IPv4-mapped IPv6 (`::ffff:127.0.0.1`, `::ffff:7f00:1`).
@@ -46,8 +46,8 @@ Không bao giờ tuyên bố nhiệm vụ hoàn thành khi chưa trải qua đ�
 Mọi đợt phát triển, tái cấu trúc hoặc sửa lỗi bắt buộc phải vượt qua 6 chốt chặn sau:
 
 1. **Complete Self-Management Framework:** Tối ưu hóa 5 nhánh tự trị (Optimizing, Securing, Smoothing, Healing, Configuring) không để lọt hạt sạn kỹ thuật.
-2. **Security & Entropy Audit:** 0% secret thô, kiểm tra CORS theo RFC 1918 qua `url.Parse`, enforce Paramiko SSH `RejectPolicy` (CWE-290 protection).
+2. **Security & Entropy Audit:** 0% secret thô, kiểm tra CORS theo RFC 1918 qua `url.Parse` (CWE-290), enforce Paramiko SSH `RejectPolicy` mặc định chống Man-in-the-Middle (CWE-300/CWE-200).
 3. **Process & RAM Lifecycle:** Sử dụng `os.Executable()` path resolution động, `syscall.Exec` nạp binary vào RAM, hủy `context.Context` bất đồng bộ sạch sẽ.
-4. **Paramiko IO Safety:** Đọc `stdout.read()` và `stderr.read()` trước khi gọi `recv_exit_status()` (chống bế tắc CWE-833), 100% native SSH binary stream.
-5. **Clockwork Alignment:** 10/10 Go packages PASS `go test` và `go vet`, gosec G204 active.
-6. **Live Hardware Empirical Test:** Nạp trực tiếp lên GL-MT3600BE (Filogic 820 ARM64), duy trì VmRSS RAM < 16MB, CPU < 5%, HTTP 200 OK.
+4. **Paramiko IO Safety:** Đọc `stdout.read()` và `stderr.read()` trước khi gọi `recv_exit_status()` (chống bế tắc I/O CWE-833), stream binary SSH Paramiko.
+5. **Clockwork Alignment:** 10/10 Go packages PASS `go test` và `go vet`, kích hoạt SAST `gosec` G204 active.
+6. **Live Hardware Empirical Test:** Lắp ghép quy trình HIL (Hardware-in-the-Loop) nạp trực tiếp lên GL-MT3600BE (Filogic 820 ARM64), duy trì VmRSS RAM < 16MB, CPU < 5%, HTTP 200 OK.
