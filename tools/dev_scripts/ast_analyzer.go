@@ -23,6 +23,31 @@ func renderNode(fset *token.FileSet, node ast.Node) string {
 	return buf.String()
 }
 
+func isHeaderGetCall(fset *token.FileSet, call *ast.CallExpr) bool {
+	if call == nil {
+		return false
+	}
+	sel, okSel := call.Fun.(*ast.SelectorExpr)
+	if !okSel || sel.Sel.Name != "Get" {
+		return false
+	}
+	// Verify receiver represents an HTTP Header selector (e.g., r.Header, req.Header)
+	receiverRaw := strings.ToLower(renderNode(fset, sel.X))
+	if !(strings.Contains(receiverRaw, "header") || strings.HasSuffix(receiverRaw, ".h")) {
+		return false
+	}
+	// Verify argument evaluates to "origin"
+	if len(call.Args) == 1 {
+		if lit, okLit := call.Args[0].(*ast.BasicLit); okLit && lit.Kind == token.STRING {
+			cleanVal := strings.ToLower(strings.Trim(lit.Value, `"`+"`"+`'`))
+			if cleanVal == "origin" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func isExprTainted(fset *token.FileSet, expr ast.Expr, taintedVars map[string]bool) bool {
 	if expr == nil {
 		return false
@@ -31,23 +56,13 @@ func isExprTainted(fset *token.FileSet, expr ast.Expr, taintedVars map[string]bo
 	// 1. Direct Identifier check against exact tainted variable set or exact "origin" / "Origin" name
 	if ident, ok := expr.(*ast.Ident); ok {
 		lowerName := strings.ToLower(ident.Name)
-		if taintedVars[ident.Name] || lowerName == "origin" {
-			return true
-		}
-		return false
+		return taintedVars[ident.Name] || lowerName == "origin"
 	}
 
-	// 2. Native AST Call Expression check for Header.Get("Origin") / Header.Get("origin")
+	// 2. Direct Header.Get("Origin") Call Expression check with type-aware receiver validation
 	if call, ok := expr.(*ast.CallExpr); ok {
-		if sel, okSel := call.Fun.(*ast.SelectorExpr); okSel && sel.Sel.Name == "Get" {
-			if len(call.Args) == 1 {
-				if lit, okLit := call.Args[0].(*ast.BasicLit); okLit && lit.Kind == token.STRING {
-					cleanVal := strings.ToLower(strings.Trim(lit.Value, `"`+"`"+`'`))
-					if cleanVal == "origin" {
-						return true
-					}
-				}
-			}
+		if isHeaderGetCall(fset, call) {
+			return true
 		}
 	}
 
@@ -57,12 +72,23 @@ func isExprTainted(fset *token.FileSet, expr ast.Expr, taintedVars map[string]bo
 		return true
 	}
 
-	// 4. Inspect AST sub-nodes for EXACT tainted identifiers (never substrings like "originalPath")
+	// 4. Recursive Sub-Node Inspection: Catches wrapped calls like strings.ToLower(r.Header.Get("Origin"))
 	var foundTaint bool
 	ast.Inspect(expr, func(n ast.Node) bool {
+		if n == nil || foundTaint {
+			return false
+		}
+		// Sub-Node Check A: Tainted identifier usage inside nested expression
 		if ident, ok := n.(*ast.Ident); ok {
 			lowerName := strings.ToLower(ident.Name)
 			if taintedVars[ident.Name] || lowerName == "origin" {
+				foundTaint = true
+				return false
+			}
+		}
+		// Sub-Node Check B: Header.Get("Origin") call nested inside wrapper functions (e.g., strings.ToLower(...))
+		if call, ok := n.(*ast.CallExpr); ok {
+			if isHeaderGetCall(fset, call) {
 				foundTaint = true
 				return false
 			}
