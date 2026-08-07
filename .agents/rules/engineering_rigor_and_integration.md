@@ -41,3 +41,13 @@ Không bao giờ tuyên bố nhiệm vụ hoàn thành khi chưa trải qua đ�
 ## 5. Thái độ Tiếp thu & Ngôn từ Khiêm tốn
 - Luôn giữ thái độ khiêm tốn, lắng nghe mọi góp ý của người dùng/reviewer.
 - Nhận thức rõ sơ suất, sửa đổi tận gốc và trình bày dựa trên dữ liệu thực chứng.
+
+## 6. Sáu Chốt Chặn Kỷ Luật Cứng (6 Strict Discipline Checkpoints)
+Mọi đợt phát triển, tái cấu trúc hoặc sửa lỗi bắt buộc phải vượt qua 6 chốt chặn sau:
+
+1. **Complete Self-Management Framework:** Tối ưu hóa 5 nhánh tự trị (Optimizing, Securing, Smoothing, Healing, Configuring) không để lọt hạt sạn kỹ thuật.
+2. **Security & Entropy Audit:** 0% secret thô, kiểm tra CORS theo RFC 1918 qua `url.Parse`, enforce Paramiko SSH `RejectPolicy` (CWE-290 protection).
+3. **Process & RAM Lifecycle:** Sử dụng `os.Executable()` path resolution động, `syscall.Exec` nạp binary vào RAM, hủy `context.Context` bất đồng bộ sạch sẽ.
+4. **Paramiko IO Safety:** Đọc `stdout.read()` và `stderr.read()` trước khi gọi `recv_exit_status()` (chống bế tắc CWE-833), 100% native SSH binary stream.
+5. **Clockwork Alignment:** 10/10 Go packages PASS `go test` và `go vet`, gosec G204 active.
+6. **Live Hardware Empirical Test:** Nạp trực tiếp lên GL-MT3600BE (Filogic 820 ARM64), duy trì VmRSS RAM < 16MB, CPU < 5%, HTTP 200 OK.
