@@ -184,11 +184,11 @@ else:
 # --------------------------------------------------------------------------
 # CHECK 6: CLOCKWORK ALIGNMENT (UNIT & VET TESTS ENFORCED BY DEFAULT)
 # --------------------------------------------------------------------------
-print("\n[Clockwork Alignment Rule] Running Unit Tests across all 10 Go Packages...")
+print("\n[Clockwork Alignment Rule] Running Unit Tests across all 11 Go Packages...")
 try:
     res = subprocess.run(["go", "test", "./..."], cwd=GO_AGENT_DIR, capture_output=True, text=True, timeout=60)
     if res.returncode == 0:
-        report_pass("Clockwork Alignment (10/10 Go Packages Unit Tests PASS)")
+        report_pass("Clockwork Alignment (11/11 Go Packages Unit Tests PASS)")
     else:
         report_fail("Clockwork Alignment Unit Tests", f"go test failed:\n{res.stderr or res.stdout}")
 except Exception as e:
