@@ -23,7 +23,22 @@ func renderNode(fset *token.FileSet, node ast.Node) string {
 	return buf.String()
 }
 
-func isHeaderGetCall(fset *token.FileSet, call *ast.CallExpr) bool {
+func resolveConstValue(expr ast.Expr, constMap map[string]string) string {
+	if expr == nil {
+		return ""
+	}
+	if lit, ok := expr.(*ast.BasicLit); ok && lit.Kind == token.STRING {
+		return strings.ToLower(strings.Trim(lit.Value, `"`+"`"+`'`))
+	}
+	if ident, ok := expr.(*ast.Ident); ok {
+		if val, exists := constMap[ident.Name]; exists {
+			return strings.ToLower(strings.Trim(val, `"`+"`"+`'`))
+		}
+	}
+	return ""
+}
+
+func isHeaderGetCall(fset *token.FileSet, call *ast.CallExpr, constMap map[string]string, headerVars map[string]bool) bool {
 	if call == nil {
 		return false
 	}
@@ -31,24 +46,38 @@ func isHeaderGetCall(fset *token.FileSet, call *ast.CallExpr) bool {
 	if !okSel || sel.Sel.Name != "Get" {
 		return false
 	}
-	// Verify receiver represents an HTTP Header selector (e.g., r.Header, req.Header)
+	// Verify receiver represents an HTTP Header selector or a variable assigned from Header (e.g. hdr := r.Header)
 	receiverRaw := strings.ToLower(renderNode(fset, sel.X))
-	if !(strings.Contains(receiverRaw, "header") || strings.HasSuffix(receiverRaw, ".h")) {
+	if ident, okId := sel.X.(*ast.Ident); okId {
+		if !headerVars[ident.Name] && !strings.Contains(receiverRaw, "header") && !strings.HasSuffix(receiverRaw, ".h") {
+			return false
+		}
+	} else if !(strings.Contains(receiverRaw, "header") || strings.HasSuffix(receiverRaw, ".h")) {
 		return false
 	}
-	// Verify argument evaluates to "origin"
+
+	// Verify argument evaluates to "origin" via constMap or direct string literal
 	if len(call.Args) == 1 {
-		if lit, okLit := call.Args[0].(*ast.BasicLit); okLit && lit.Kind == token.STRING {
-			cleanVal := strings.ToLower(strings.Trim(lit.Value, `"`+"`"+`'`))
-			if cleanVal == "origin" {
-				return true
-			}
+		argVal := resolveConstValue(call.Args[0], constMap)
+		if argVal == "origin" {
+			return true
 		}
 	}
 	return false
 }
 
-func isExprTainted(fset *token.FileSet, expr ast.Expr, taintedVars map[string]bool) bool {
+func isHeaderContainerExpr(fset *token.FileSet, expr ast.Expr, headerVars map[string]bool) bool {
+	if expr == nil {
+		return false
+	}
+	if ident, ok := expr.(*ast.Ident); ok {
+		return headerVars[ident.Name]
+	}
+	raw := strings.ToLower(strings.TrimSpace(renderNode(fset, expr)))
+	return strings.HasSuffix(raw, ".header") || strings.HasSuffix(raw, ".header()") || strings.Contains(raw, "header")
+}
+
+func isExprTainted(fset *token.FileSet, expr ast.Expr, taintedVars map[string]bool, constMap map[string]string, headerVars map[string]bool) bool {
 	if expr == nil {
 		return false
 	}
@@ -59,9 +88,9 @@ func isExprTainted(fset *token.FileSet, expr ast.Expr, taintedVars map[string]bo
 		return taintedVars[ident.Name] || lowerName == "origin"
 	}
 
-	// 2. Direct Header.Get("Origin") Call Expression check with type-aware receiver validation
+	// 2. Direct Header.Get("Origin") Call Expression check with receiver & constMap validation
 	if call, ok := expr.(*ast.CallExpr); ok {
-		if isHeaderGetCall(fset, call) {
+		if isHeaderGetCall(fset, call, constMap, headerVars) {
 			return true
 		}
 	}
@@ -72,7 +101,7 @@ func isExprTainted(fset *token.FileSet, expr ast.Expr, taintedVars map[string]bo
 		return true
 	}
 
-	// 4. Recursive Sub-Node Inspection: Catches wrapped calls like strings.ToLower(r.Header.Get("Origin"))
+	// 4. Recursive Sub-Node Inspection: Catches wrapped calls like strings.ToLower(hdr.Get(originKey))
 	var foundTaint bool
 	ast.Inspect(expr, func(n ast.Node) bool {
 		if n == nil || foundTaint {
@@ -88,7 +117,7 @@ func isExprTainted(fset *token.FileSet, expr ast.Expr, taintedVars map[string]bo
 		}
 		// Sub-Node Check B: Header.Get("Origin") call nested inside wrapper functions (e.g., strings.ToLower(...))
 		if call, ok := n.(*ast.CallExpr); ok {
-			if isHeaderGetCall(fset, call) {
+			if isHeaderGetCall(fset, call, constMap, headerVars) {
 				foundTaint = true
 				return false
 			}
@@ -97,21 +126,6 @@ func isExprTainted(fset *token.FileSet, expr ast.Expr, taintedVars map[string]bo
 	})
 
 	return foundTaint
-}
-
-func resolveConstValue(expr ast.Expr, constMap map[string]string) string {
-	if expr == nil {
-		return ""
-	}
-	if lit, ok := expr.(*ast.BasicLit); ok && lit.Kind == token.STRING {
-		return strings.ToLower(lit.Value)
-	}
-	if ident, ok := expr.(*ast.Ident); ok {
-		if val, exists := constMap[ident.Name]; exists {
-			return val
-		}
-	}
-	return ""
 }
 
 type assignStmtPair struct {
@@ -167,6 +181,7 @@ func main() {
 			}
 
 			taintedVars := make(map[string]bool)
+			headerVars := make(map[string]bool)
 			var statements []assignStmtPair
 
 			// 1. Single AST Pass: Collect all assignment/declaration statements into an in-memory Worklist
@@ -206,7 +221,11 @@ func main() {
 			for changed {
 				changed = false
 				for _, stmt := range statements {
-					if !taintedVars[stmt.lhsName] && isExprTainted(fset, stmt.rhs, taintedVars) {
+					if isHeaderContainerExpr(fset, stmt.rhs, headerVars) && !headerVars[stmt.lhsName] {
+						headerVars[stmt.lhsName] = true
+						changed = true
+					}
+					if !taintedVars[stmt.lhsName] && isExprTainted(fset, stmt.rhs, taintedVars, constMap, headerVars) {
 						taintedVars[stmt.lhsName] = true
 						changed = true
 					}
@@ -231,7 +250,7 @@ func main() {
 							arg0 := call.Args[0]
 
 							// Scoped check: Evaluate only if arg0 represents a tainted origin expression
-							if isExprTainted(fset, arg0, taintedVars) {
+							if isExprTainted(fset, arg0, taintedVars, constMap, headerVars) {
 								pos := fset.Position(call.Pos())
 								arg0Code := renderNode(fset, arg0)
 
