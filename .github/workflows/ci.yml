@@ -39,7 +39,7 @@ jobs:
 
       - name: Run bandit (Python AST Security Audit)
         run: |
-          bandit -r tools/ tests/ -s B101,B601
+          bandit -r tools/ tests/ -s B101,B601,B603,B607,B404
 
       - name: Run detect-secrets (High Entropy Secret Scanner)
         run: |

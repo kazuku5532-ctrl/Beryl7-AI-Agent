@@ -103,7 +103,7 @@ print("\n[Rule 2.1] Go Native AST Data-Flow Analysis (go/ast)...")
 ast_script_path = os.path.join(WORKSPACE_ROOT, "tools", "dev_scripts", "ast_analyzer.go")
 if os.path.exists(ast_script_path):
     try:
-        res_ast = subprocess.run(["go", "run", ast_script_path, GO_AGENT_DIR], capture_output=True, text=True, timeout=30)
+        res_ast = subprocess.run(["go", "run", ast_script_path, GO_AGENT_DIR], capture_output=True, text=True, timeout=30)  # nosec B603 B607
         if res_ast.returncode == 0:
             report_pass("Go AST Data-Flow Analysis (0 Unsafe CORS AST Patterns Found)")
         else:
@@ -183,7 +183,7 @@ else:
 # --------------------------------------------------------------------------
 print("\n[Clockwork Alignment Rule] Running Unit Tests across all 10 Go Packages...")
 try:
-    res = subprocess.run(["go", "test", "./..."], cwd=GO_AGENT_DIR, capture_output=True, text=True, timeout=60)
+    res = subprocess.run(["go", "test", "./..."], cwd=GO_AGENT_DIR, capture_output=True, text=True, timeout=60)  # nosec B603 B607
     if res.returncode == 0:
         report_pass("Clockwork Alignment (10/10 Go Packages Unit Tests PASS)")
     else:
@@ -193,7 +193,7 @@ except Exception as e:
 
 print("\n[Clockwork Alignment Rule] Running go vet static analysis...")
 try:
-    res_vet = subprocess.run(["go", "vet", "./..."], cwd=GO_AGENT_DIR, capture_output=True, text=True, timeout=30)
+    res_vet = subprocess.run(["go", "vet", "./..."], cwd=GO_AGENT_DIR, capture_output=True, text=True, timeout=30)  # nosec B603 B607
     if res_vet.returncode == 0:
         report_pass("Clockwork Alignment Analysis (100% Clean go vet)")
     else:
