@@ -37,13 +37,27 @@ func isExprTainted(fset *token.FileSet, expr ast.Expr, taintedVars map[string]bo
 		return false
 	}
 
-	// 2. Selector Expression check for exact Origin headers (e.g., req.Header.Get("Origin") or r.Header.Get("origin"))
+	// 2. Native AST Call Expression check for Header.Get("Origin") / Header.Get("origin")
+	if call, ok := expr.(*ast.CallExpr); ok {
+		if sel, okSel := call.Fun.(*ast.SelectorExpr); okSel && sel.Sel.Name == "Get" {
+			if len(call.Args) == 1 {
+				if lit, okLit := call.Args[0].(*ast.BasicLit); okLit && lit.Kind == token.STRING {
+					cleanVal := strings.ToLower(strings.Trim(lit.Value, `"`+"`"+`'`))
+					if cleanVal == "origin" {
+						return true
+					}
+				}
+			}
+		}
+	}
+
+	// 3. Clean Selector Expression check (e.g., req.Header.Get("origin") or r.Header.Get("origin"))
 	raw := strings.ToLower(strings.TrimSpace(renderNode(fset, expr)))
-	if raw == "origin" || strings.HasSuffix(raw, ".origin") || strings.Contains(raw, `header.get("origin")`) || strings.Contains(raw, `header.get('origin')`) {
+	if raw == "origin" || strings.HasSuffix(raw, ".origin") || strings.Contains(raw, `header.get("origin")`) {
 		return true
 	}
 
-	// 3. Inspect AST sub-nodes for EXACT tainted identifiers (never substrings like "originalPath")
+	// 4. Inspect AST sub-nodes for EXACT tainted identifiers (never substrings like "originalPath")
 	var foundTaint bool
 	ast.Inspect(expr, func(n ast.Node) bool {
 		if ident, ok := n.(*ast.Ident); ok {
