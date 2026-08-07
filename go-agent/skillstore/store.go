@@ -72,7 +72,8 @@ func (s *SkillStore) OpenAndInit() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	dsn := fmt.Sprintf("file:%s?cache=shared&mode=rwc", s.dbPath)
+	// [Fix 4] _busy_timeout=5000: SQLite queues for up to 5s on write-lock contention (VACUUM INTO, goroutine writes) instead of immediately returning SQLITE_BUSY
+	dsn := fmt.Sprintf("file:%s?cache=shared&mode=rwc&_busy_timeout=5000", s.dbPath)
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return fmt.Errorf("failed to open sqlite database: %w", err)

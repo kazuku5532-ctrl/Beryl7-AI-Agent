@@ -345,6 +345,12 @@ func main() {
 			cancelHTTP()
 
 			if activeStore != nil {
+				// [Fix 1] Emergency RAM→Flash flush: preserve all learned skills before process replacement
+				if cfgSnap, ok := cfgAtomic.Load().(*config.Config); ok && cfgSnap != nil && cfgSnap.SkillStorePath != "" {
+					if flushErr := activeStore.FlushToPersistent(cfgSnap.SkillStorePath); flushErr != nil {
+						logger.Error("Emergency pre-restart SkillStore flush failed: %v", flushErr)
+					}
+				}
 				_ = activeStore.Close()
 			}
 			logger.Flush()
@@ -823,6 +829,11 @@ func AutoRollback(cfg *config.Config) error {
 func isLANOrLoopbackIP(ip net.IP) bool {
 	if ip == nil {
 		return false
+	}
+	// [Fix 5] Unwrap IPv4-mapped IPv6 (e.g. ::ffff:192.168.8.100) to canonical 4-byte IPv4
+	// so IsPrivate()/IsLoopback() return correct results on all Go versions and prevent CORS leak to WAN
+	if ip4 := ip.To4(); ip4 != nil {
+		return ip4.IsLoopback() || ip4.IsPrivate() || ip4.IsLinkLocalUnicast() || ip4.IsLinkLocalMulticast()
 	}
 	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast()
 }

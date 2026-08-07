@@ -256,10 +256,10 @@ func EnsureSysupgradePreservation() error {
 	requiredEntries := []string{
 		"/etc/beryl7/agent.env",
 		"/etc/beryl7/agent.key",
+		"/etc/beryl7/skills.db", // [Fix 3] Preserve Agent's self-learned remediation skills across firmware upgrades
 		"/usr/bin/beryl7-agent",
 		"/etc/init.d/beryl7-agent",
 		"/root/.agent_checkpoint.uci",
-		"/root/skills.db",
 	}
 
 	data, err := os.ReadFile(sysupgradeConf)
