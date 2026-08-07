@@ -33,17 +33,20 @@ type Metric struct {
 }
 
 type TelemetryCollector struct {
-	mu             sync.Mutex
-	lastCollect    time.Time
-	lastRxBytes    uint64
-	lastTxBytes    uint64
-	prevCPUTotal   float64
-	prevCPUIdle    float64
-	lastFlapTime   time.Time
-	debounceWindow time.Duration
-	ubusPath          string
-	ewmaLatency       float64
-	ewmaVariance      float64
+	mu                  sync.Mutex
+	lastCollect         time.Time
+	lastRxBytes         uint64
+	lastTxBytes         uint64
+	lastDLMbps          float64
+	lastULMbps          float64
+	activeClientsCount  int
+	prevCPUTotal        float64
+	prevCPUIdle         float64
+	lastFlapTime        time.Time
+	debounceWindow      time.Duration
+	ubusPath            string
+	ewmaLatency         float64
+	ewmaVariance        float64
 	skillHitsTotal      int64
 	skillMissesTotal    int64
 	healSuccessTotal    int64
@@ -132,6 +135,9 @@ func (t *TelemetryCollector) CollectMetrics(ctx context.Context) *Metric {
 	}
 	t.lastRxBytes = rxBytes
 	t.lastTxBytes = txBytes
+	t.lastDLMbps = m.DownloadMbps
+	t.lastULMbps = m.UploadMbps
+	t.activeClientsCount = m.ActiveClients
 
 	return m
 }
@@ -491,9 +497,12 @@ func (t *TelemetryCollector) UpdateEWMALatency(currentLat float64, alpha float64
 	return t.ewmaLatency, zScore
 }
 
+var macAddrRegex = regexp.MustCompile(`"([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}"`)
+
 func (t *TelemetryCollector) AreWiFiClientsIdle(ctx context.Context) (bool, int, error) {
 	t.mu.Lock()
-	dlMbps := t.lastCollect
+	totalMbps := t.lastDLMbps + t.lastULMbps
+	cachedClients := t.activeClientsCount
 	t.mu.Unlock()
 
 	out, err := t.CallUbusExec(ctx, "hostapd.wlan0", "get_clients")
@@ -503,12 +512,14 @@ func (t *TelemetryCollector) AreWiFiClientsIdle(ctx context.Context) (bool, int,
 
 	activeClients := 0
 	if err == nil && out != "" {
-		matches := regexp.MustCompile(`"([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}"`).FindAllString(out, -1)
+		matches := macAddrRegex.FindAllString(out, -1)
 		activeClients = len(matches)
+	} else {
+		activeClients = cachedClients
 	}
 
-	// Client Idle Window Check: active bandwidth total < 0.5 Mbps or 0 active clients
-	isIdle := activeClients == 0 || (dlMbps.IsZero())
+	// Client Idle Window Check: active bandwidth total < 0.5 Mbps OR 0 active clients
+	isIdle := activeClients == 0 || totalMbps < 0.5
 	return isIdle, activeClients, nil
 }
 

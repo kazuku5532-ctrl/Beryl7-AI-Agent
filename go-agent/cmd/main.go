@@ -247,6 +247,7 @@ func main() {
 	collector := telemetry.NewCollector()
 	logParser := parser.NewParser()
 	execEngine := executor.New()
+	execEngine.SetTelemetryProvider(collector)
 	if cfg.GeminiAPIKey == "" {
 		logger.Warn("NOTICE: GEMINI_API_KEY is not set! Cloud AI Log Analysis disabled. Graceful degradation active: Local-First SQLite Self-Healing & Watchdog running 100%% normally.")
 	}

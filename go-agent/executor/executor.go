@@ -22,11 +22,20 @@ type ActionRequest struct {
 
 type ActionFunc func(ctx context.Context, target string, params map[string]interface{}) error
 
+type TelemetryProvider interface {
+	AreWiFiClientsIdle(ctx context.Context) (bool, int, error)
+}
+
 type Executor struct {
 	whitelist   map[string]ActionFunc
 	riskMatrix  map[string]float64
 	macRegex    *regexp.Regexp
 	validIfaces map[string]bool
+	telemetry   TelemetryProvider
+}
+
+func (e *Executor) SetTelemetryProvider(tp TelemetryProvider) {
+	e.telemetry = tp
 }
 
 func New() *Executor {
@@ -163,7 +172,22 @@ func (e *Executor) actionRestartInterface(ctx context.Context, target string, pa
 	return runSystemCmd(ctx, "/sbin/ifup", iface)
 }
 
+func (e *Executor) checkWiFiIdleGuard(ctx context.Context) error {
+	if e.telemetry != nil {
+		isIdle, activeClients, err := e.telemetry.AreWiFiClientsIdle(ctx)
+		if err == nil && !isIdle && activeClients > 0 {
+			logger.Warn("CLIENT IDLE WINDOW PROTECTION ACTIVE: Deferring Wi-Fi reload - %d active client(s) transferring traffic.", activeClients)
+			return fmt.Errorf("wifi reload deferred: %d active client(s) transferring traffic", activeClients)
+		}
+	}
+	return nil
+}
+
 func (e *Executor) actionOptimizeWifiChannel(ctx context.Context, target string, params map[string]interface{}) error {
+	if err := e.checkWiFiIdleGuard(ctx); err != nil {
+		return err
+	}
+
 	band, _ := params["band"].(string)
 	channelVal, _ := params["channel"]
 
@@ -256,6 +280,9 @@ func (e *Executor) actionSetWANMAC(ctx context.Context, target string, params ma
 }
 
 func (e *Executor) actionBoostWifiBandwidth(ctx context.Context, target string, params map[string]interface{}) error {
+	if err := e.checkWiFiIdleGuard(ctx); err != nil {
+		return err
+	}
 	logger.Info("DYNAMIC BOOST TRIGGERED: Preparing 160MHz Max Wi-Fi 7 Bandwidth on MT7993_1_2...")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.htmode=EHT160")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.noscan=1")
@@ -263,6 +290,9 @@ func (e *Executor) actionBoostWifiBandwidth(ctx context.Context, target string, 
 }
 
 func (e *Executor) actionRevertWifiBandwidth(ctx context.Context, target string, params map[string]interface{}) error {
+	if err := e.checkWiFiIdleGuard(ctx); err != nil {
+		return err
+	}
 	logger.Info("DYNAMIC BOOST COMPLETED: Reverting Wi-Fi 7 to Eco 80MHz Mode on MT7993_1_2...")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.htmode=HE80")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.noscan=0")
