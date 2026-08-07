@@ -100,7 +100,7 @@ func (s *SkillStore) OpenAndInit() error {
 
 		// 3. Khôi phục từ bản sao lưu snapshot (.bak) gần nhất nếu có
 		bakPath := filepath.Clean(fmt.Sprintf("%s.bak", s.dbPath))
-		if bakData, errBak := os.ReadFile(bakPath); errBak == nil && len(bakData) > 0 { // #nosec G304 G703
+		if bakData, errBak := os.ReadFile(bakPath); errBak == nil && len(bakData) > 0 { // #nosec G304, G703
 			if writeErr := os.WriteFile(filepath.Clean(s.dbPath), bakData, 0600); writeErr == nil { // #nosec G703
 				logger.Info("SUCCESSFULLY SALVAGED database from recent backup snapshot %s!", bakPath)
 			}

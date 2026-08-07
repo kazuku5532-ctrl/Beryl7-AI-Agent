@@ -277,7 +277,7 @@ func EnsureSysupgradePreservation() error {
 
 	if len(missing) > 0 {
 		cleanSysupgrade := filepath.Clean(sysupgradeConf)
-		f, err := os.OpenFile(cleanSysupgrade, os.O_APPEND|os.O_WRONLY, 0644) // #nosec G302 G304
+		f, err := os.OpenFile(cleanSysupgrade, os.O_APPEND|os.O_WRONLY, 0644) // #nosec G302, G304
 		if err != nil {
 			return err
 		}
@@ -305,7 +305,7 @@ func EnsureFilePermissions() error {
 		cleanPath := filepath.Clean(path)
 		if info, err := os.Stat(cleanPath); err == nil {
 			if info.Mode().Perm() != mode {
-				if err := os.Chmod(cleanPath, mode); err == nil { // #nosec G302 G306
+				if err := os.Chmod(cleanPath, mode); err == nil { // #nosec G302, G306
 					logger.Info("Restored permissions for %s to %04o", path, mode)
 				}
 			}
@@ -334,7 +334,8 @@ start_service() {
     procd_close_instance
 }
 `
-		if err := os.WriteFile(cleanPath, []byte(content), 0755); err == nil { // #nosec G306 G302
+		// #nosec G306
+		if err := os.WriteFile(cleanPath, []byte(content), 0755); err == nil { // #nosec G306
 			logger.Info("Auto-generated procd init service script at /etc/init.d/beryl7-agent")
 		}
 	}

@@ -336,7 +336,8 @@ func main() {
 					execPath = "/usr/bin/beryl7-agent"
 				}
 				logger.Warn("Re-executing daemon process image [%s] in-place into RAM via syscall.Exec...", execPath)
-				_ = syscall.Exec(execPath, os.Args, os.Environ()) // #nosec G204 G702 // nolint:errcheck
+				// #nosec G204, G702
+				_ = syscall.Exec(execPath, os.Args, os.Environ()) // #nosec G204, G702 // nolint:errcheck
 				os.Exit(0)
 			} else {
 				os.Exit(0)
@@ -639,7 +640,7 @@ func queuePendingApproval(resp *ai.AIResponse, required float64) {
 	}
 	data, err := json.MarshalIndent(pending, "", "  ")
 	if err == nil {
-		_ = os.WriteFile(filepath.Clean("/var/run/beryl7_pending_approval.json"), data, 0600) // #nosec G306 G304
+		_ = os.WriteFile(filepath.Clean("/var/run/beryl7_pending_approval.json"), data, 0600) // #nosec G306, G304
 		logger.Info("Saved pending approval request to /var/run/beryl7_pending_approval.json")
 	}
 }
@@ -647,7 +648,7 @@ func queuePendingApproval(resp *ai.AIResponse, required float64) {
 func recordApprovalAuditLog(action, remoteAddr string) {
 	auditLine := fmt.Sprintf("[%s] AUDIT: Operator approved action [%s] from %s\n", time.Now().Format(time.RFC3339), action, remoteAddr)
 	logFile := filepath.Clean("/var/log/beryl7_approval_audit.log")
-	f, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600) // #nosec G302 G304
+	f, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600) // #nosec G302, G304
 	if err == nil {
 		_, _ = f.WriteString(auditLine)
 		_ = f.Sync()
@@ -662,7 +663,7 @@ func saveUCICheckpoint(path string) {
 	cleanPath := filepath.Clean(path)
 	dir := filepath.Dir(cleanPath)
 	_ = os.MkdirAll(dir, 0700)
-	f, err := os.OpenFile(cleanPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600) // #nosec G302 G304
+	f, err := os.OpenFile(cleanPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600) // #nosec G302, G304
 	if err != nil {
 		logger.Warn("Failed to open checkpoint file %s: %v", cleanPath, err)
 		return
