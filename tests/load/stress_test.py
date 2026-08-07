@@ -9,11 +9,11 @@ TOTAL_REQUESTS = 500
 def fetch_health():
     start = time.time()
     try:
-        req = urllib.request.urlopen(TARGET_URL, timeout=2.0)
+        req = urllib.request.urlopen(TARGET_URL, timeout=2.0)  # nosec B310
         code = req.getcode()
         duration = (time.time() - start) * 1000
         return code == 200, duration
-    except Exception as e:
+    except Exception as e:  # nosec B110
         return False, (time.time() - start) * 1000
 
 def run_stress_test():

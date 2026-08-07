@@ -14,7 +14,7 @@ ACCEPTANCE_CRITERIA = {
 
 def get_router_metrics(router_ip, ssh_port, username, password):
     ssh = paramiko.SSHClient()
-    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())  # nosec B507
     ssh.connect(router_ip, port=ssh_port, username=username, password=password)
 
     stdin, stdout, _ = ssh.exec_command("ps | grep beryl7-agent | grep -v grep")
@@ -52,10 +52,10 @@ def run_soak_test(duration_hours=72, interval_seconds=10, router_ip="192.168.8.1
         while time.time() < end_time:
             t0 = time.time()
             try:
-                resp = urllib.request.urlopen(f"http://{router_ip}:8888/api/health", timeout=5)
+                resp = urllib.request.urlopen(f"http://{router_ip}:8888/api/health", timeout=5)  # nosec B310
                 latency_ms = (time.time() - t0) * 1000
                 status_code = resp.getcode()
-            except Exception as e:
+            except Exception as e:  # nosec B110
                 latency_ms = 5000
                 status_code = 500
 

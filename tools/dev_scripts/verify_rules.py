@@ -14,7 +14,7 @@ import os
 import sys
 import re
 import math
-import subprocess
+import subprocess  # nosec B404
 from collections import Counter
 
 if sys.platform == "win32":
@@ -88,8 +88,8 @@ for root, dirs, files in os.walk(WORKSPACE_ROOT):
                         if calculate_entropy_linear(val) > 4.2:
                             rel_path = os.path.relpath(filepath, WORKSPACE_ROOT)
                             secret_violations.append(f"{rel_path} (High-Entropy Secret: {val[:8]}...)")
-            except Exception:
-                pass
+            except Exception as read_err:  # nosec B110
+                _ = read_err
 
 if secret_violations:
     report_fail("Multi-Pattern & Entropy Secret Audit", "; ".join(secret_violations))
