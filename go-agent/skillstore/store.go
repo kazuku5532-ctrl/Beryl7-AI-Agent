@@ -54,7 +54,7 @@ func NewHybrid(ramPath, flashPath string) (*SkillStore, error) {
 	cleanRAM := filepath.Clean(ramPath)
 	cleanFlash := filepath.Clean(flashPath)
 
-	_ = os.MkdirAll(filepath.Dir(cleanRAM), 0755)
+	_ = os.MkdirAll(filepath.Dir(cleanRAM), 0750)
 
 	// If working RAM DB doesn't exist, restore from persistent Flash DB
 	if _, errRAM := os.Stat(cleanRAM); os.IsNotExist(errRAM) {
@@ -371,7 +371,7 @@ func (s *SkillStore) FlushToPersistent(persistentPath string) error {
 	}
 
 	cleanPersistent := filepath.Clean(persistentPath)
-	if err := os.MkdirAll(filepath.Dir(cleanPersistent), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(cleanPersistent), 0750); err != nil {
 		return fmt.Errorf("failed to create directory for persistent DB: %w", err)
 	}
 
@@ -379,7 +379,7 @@ func (s *SkillStore) FlushToPersistent(persistentPath string) error {
 	_ = os.Remove(tmpBackup)
 
 	// SQLite Native Atomic Snapshot: VACUUM INTO creates a transactionally consistent, uncorrupted snapshot file directly managed by SQLite
-	vacuumSQL := fmt.Sprintf("VACUUM INTO '%s'", strings.ReplaceAll(tmpBackup, "'", "''"))
+	vacuumSQL := fmt.Sprintf("VACUUM INTO '%s'", strings.ReplaceAll(tmpBackup, "'", "''")) // #nosec G201
 	if _, err := s.db.Exec(vacuumSQL); err != nil {
 		return fmt.Errorf("SQLite VACUUM INTO atomic backup failed: %w", err)
 	}
