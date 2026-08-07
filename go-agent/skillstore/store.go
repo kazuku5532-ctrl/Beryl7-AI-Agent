@@ -178,6 +178,26 @@ func (s *SkillStore) GetSkill(condition, actionName string) *Skill {
 	return &sk
 }
 
+func (s *SkillStore) GetBestSkillForAnomaly(condition string) *Skill {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if s.closed || s.db == nil {
+		return nil
+	}
+
+	row := s.db.QueryRow("SELECT id, action, condition_query, confidence, success_count, failure_count, created_at, last_used_at FROM skills WHERE condition_query = ? ORDER BY confidence DESC, success_count DESC LIMIT 1", condition)
+
+	var sk Skill
+	var created, lastUsed int64
+	if err := row.Scan(&sk.ID, &sk.Action, &sk.Condition, &sk.Confidence, &sk.SuccessCount, &sk.FailureCount, &created, &lastUsed); err != nil {
+		return nil
+	}
+	sk.CreatedAt = time.Unix(created, 0)
+	sk.LastUsedAt = time.Unix(lastUsed, 0)
+	return &sk
+}
+
 func (s *SkillStore) SaveOrUpdateSkill(sk *Skill, isSuccess bool, alpha float64) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

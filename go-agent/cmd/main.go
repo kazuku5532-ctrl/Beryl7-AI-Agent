@@ -175,8 +175,7 @@ func validateTokenRole(r *http.Request, authHeader string, cfg *config.Config) (
 }
 
 func main() {
-	// Roadmap Section 5: Embedded RAM Optimization (15MiB RAM Limit, GOGC=20)
-	debug.SetMemoryLimit(15 * 1024 * 1024)
+	// Portable GC tuning: Memory limits managed dynamically via OS environment (GOMEMLIMIT / Procd)
 	debug.SetGCPercent(20)
 
 	setOOMScore()
@@ -532,15 +531,26 @@ func main() {
 					continue
 				}
 
-				// Roadmap Section 6: Local-First Autonomy - Lock Cloud AI API calls when WAN is offline
+				// Local-First Autonomy: When offline, first query SQLite skills.db for historical learned skills!
 				var aiResp *ai.AIResponse
 				var aiErr error
 				if anomalyType == "WAN_DROP" || strings.Contains(m.WANStatus, "Offline") {
-					logger.Warn("WAN is offline (%s). Locking Cloud AI API calls and triggering Local Heuristic Remediation...", m.WANStatus)
-					aiResp = &ai.AIResponse{
-						Action:     "restart_wan_interface",
-						Confidence: 0.95,
-						Reasoning:  "Local Offline Resilience: WAN interface down, executing direct local interface restart",
+					logger.Warn("WAN is offline (%s). Locking Cloud AI calls and querying SQLite SkillStore...", m.WANStatus)
+					bestSkill := store.GetBestSkillForAnomaly(anomalyType)
+					if bestSkill != nil && bestSkill.Confidence >= 0.50 {
+						logger.Info("SQLite SkillStore Hit for Offline Anomaly [%s]: Using learned skill '%s' (Confidence=%.2f)", anomalyType, bestSkill.Action, bestSkill.Confidence)
+						aiResp = &ai.AIResponse{
+							Action:     bestSkill.Action,
+							Confidence: bestSkill.Confidence,
+							Reasoning:  fmt.Sprintf("Local SQLite SkillStore Brain Hit for offline anomaly %s", anomalyType),
+						}
+					} else {
+						logger.Info("No high-confidence skill in SQLite for [%s]. Falling back to default 'restart_wan_interface'", anomalyType)
+						aiResp = &ai.AIResponse{
+							Action:     "restart_wan_interface",
+							Confidence: 0.95,
+							Reasoning:  "Local Offline Fallback: WAN interface down, executing default interface restart",
+						}
 					}
 				} else {
 					topExemplars := store.GetTopSkillsSummaryForAnomaly(anomalyType, 3)
