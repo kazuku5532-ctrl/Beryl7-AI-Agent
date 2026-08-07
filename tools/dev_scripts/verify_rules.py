@@ -143,10 +143,11 @@ if os.path.exists(deploy_script_path):
 
     idx_read = deploy_content.find("stdout.read()")
     idx_exit = deploy_content.find("recv_exit_status()")
+    insecure_mitm_pattern = re.compile(r'ALLOW_UNVERIFIED_HOST_KEY["\']\s*,\s*["\']true["\']', re.IGNORECASE)
 
     if idx_read != -1 and idx_exit != -1 and idx_exit < idx_read:
         report_fail("Paramiko Deadlock Check", "recv_exit_status() called before stdout.read() in deploy_router.py (CWE-833)")
-    elif 'os.getenv("ALLOW_UNVERIFIED_HOST_KEY", "true")' in deploy_content:
+    elif insecure_mitm_pattern.search(deploy_content):
         report_fail("SSH MITM Policy Check", "Insecure default ALLOW_UNVERIFIED_HOST_KEY='true' detected in deploy_router.py")
     else:
         report_pass("Paramiko IO Deadlock & Secure MITM Host Key Policy verified")

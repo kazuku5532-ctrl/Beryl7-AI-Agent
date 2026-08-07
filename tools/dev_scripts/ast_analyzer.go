@@ -122,42 +122,59 @@ func main() {
 			// Local Taint Map per function declaration
 			taintedVars := make(map[string]bool)
 
-			ast.Inspect(fn.Body, func(inner ast.Node) bool {
-				if inner == nil {
-					return true
-				}
-
-				// Check 1: Variable Assignments (e.g. o1 := r.Header.Get("Origin") or o2 := o1)
-				if assign, okAssign := inner.(*ast.AssignStmt); okAssign {
-					for i, rhs := range assign.Rhs {
-						if isExprTainted(fset, rhs, taintedVars) {
-							if i < len(assign.Lhs) {
-								if ident, okId := assign.Lhs[i].(*ast.Ident); okId {
-									taintedVars[ident.Name] = true
-								}
-							}
-						}
+			// Multi-pass fixed-point taint propagation loop
+			changed := true
+			for changed {
+				changed = false
+				ast.Inspect(fn.Body, func(inner ast.Node) bool {
+					if inner == nil {
+						return true
 					}
-				}
 
-				// Check 2: Var Declarations (e.g. var o = r.Header.Get("Origin") or var o2 = o1)
-				if declStmt, okDecl := inner.(*ast.DeclStmt); okDecl {
-					if genDecl, okGen := declStmt.Decl.(*ast.GenDecl); okGen && genDecl.Tok == token.VAR {
-						for _, spec := range genDecl.Specs {
-							if valSpec, okVal := spec.(*ast.ValueSpec); okVal {
-								for i, val := range valSpec.Values {
-									if isExprTainted(fset, val, taintedVars) {
-										if i < len(valSpec.Names) {
-											taintedVars[valSpec.Names[i].Name] = true
+					// Check 1: Variable Assignments (e.g. o1 := r.Header.Get("Origin") or o2 := o1)
+					if assign, okAssign := inner.(*ast.AssignStmt); okAssign {
+						for i, rhs := range assign.Rhs {
+							if isExprTainted(fset, rhs, taintedVars) {
+								if i < len(assign.Lhs) {
+									if ident, okId := assign.Lhs[i].(*ast.Ident); okId {
+										if !taintedVars[ident.Name] {
+											taintedVars[ident.Name] = true
+											changed = true
 										}
 									}
 								}
 							}
 						}
 					}
-				}
 
-				// Check 3: Inspect strings.HasPrefix and strings.HasSuffix calls on tainted expressions
+					// Check 2: Var Declarations (e.g. var o = r.Header.Get("Origin") or var o2 = o1)
+					if declStmt, okDecl := inner.(*ast.DeclStmt); okDecl {
+						if genDecl, okGen := declStmt.Decl.(*ast.GenDecl); okGen && genDecl.Tok == token.VAR {
+							for _, spec := range genDecl.Specs {
+								if valSpec, okVal := spec.(*ast.ValueSpec); okVal {
+									for i, val := range valSpec.Values {
+										if isExprTainted(fset, val, taintedVars) {
+											if i < len(valSpec.Names) {
+												if !taintedVars[valSpec.Names[i].Name] {
+													taintedVars[valSpec.Names[i].Name] = true
+													changed = true
+												}
+											}
+										}
+									}
+								}
+							}
+						}
+					}
+					return true
+				})
+			}
+
+			// Final Pass: Inspect strings.HasPrefix and strings.HasSuffix calls on tainted expressions
+			ast.Inspect(fn.Body, func(inner ast.Node) bool {
+				if inner == nil {
+					return true
+				}
 				call, okCall := inner.(*ast.CallExpr)
 				if !okCall {
 					return true
