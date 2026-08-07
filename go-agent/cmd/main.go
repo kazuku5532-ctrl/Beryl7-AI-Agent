@@ -336,7 +336,7 @@ func main() {
 					execPath = "/usr/bin/beryl7-agent"
 				}
 				logger.Warn("Re-executing daemon process image [%s] in-place into RAM via syscall.Exec...", execPath)
-				_ = syscall.Exec(execPath, os.Args, os.Environ()) // #nosec G204 // nolint:errcheck
+				_ = syscall.Exec(execPath, os.Args, os.Environ()) // #nosec G204 G702 // nolint:errcheck
 				os.Exit(0)
 			} else {
 				os.Exit(0)
