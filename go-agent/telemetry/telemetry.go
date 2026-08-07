@@ -505,30 +505,29 @@ func (t *TelemetryCollector) AreWiFiClientsIdle(ctx context.Context) (bool, int,
 	cachedClients := t.activeClientsCount
 	t.mu.Unlock()
 
-	// [Fix 1] Always scan BOTH bands independently and accumulate totals.
-	// Scanning only wlan0 caused a critical blind spot: if 2.4GHz had 0 clients but
-	// 5GHz (wlan1) had active video-call traffic, the agent would falsely report
-	// "idle" and kick all 5GHz devices off the network during a Wi-Fi reload.
 	activeClients := 0
-	anyBandReachable := false
-	for _, iface := range []string{"hostapd.wlan0", "hostapd.wlan1"} {
-		out, err := t.CallUbusExec(ctx, iface, "get_clients")
-		if err == nil {
-			anyBandReachable = true
-			if out != "" {
-				matches := macAddrRegex.FindAllString(out, -1)
-				activeClients += len(matches)
-			}
-		}
+	var err0, err1 error
+	var out0, out1 string
+
+	// [Fix 1] Quét độc lập cả 2 băng tần để tránh bỏ sót clients:
+	// wlan0 thành công nhưng rỗng (0 clients 2.4GHz) KHÔNG được bỏ qua wlan1 (5GHz)
+	out0, err0 = t.CallUbusExec(ctx, "hostapd.wlan0", "get_clients")
+	if err0 == nil && out0 != "" {
+		activeClients += len(macAddrRegex.FindAllString(out0, -1))
 	}
 
-	// If neither band responded (e.g. ubus unavailable in dev env), fall back to cached telemetry count
-	if !anyBandReachable {
+	out1, err1 = t.CallUbusExec(ctx, "hostapd.wlan1", "get_clients")
+	if err1 == nil && out1 != "" {
+		activeClients += len(macAddrRegex.FindAllString(out1, -1))
+	}
+
+	// Chỉ fallback về cache khi cả hai băng tần đều lỗi truy vấn ubus
+	if err0 != nil && err1 != nil {
 		activeClients = cachedClients
 	}
 
-	// Client Idle Window Check: active bandwidth total < 0.5 Mbps AND 0 active clients across ALL bands
-	isIdle := activeClients == 0 && totalMbps < 0.5
+	// Client Idle Window Check: Tổng băng thông < 0.5 Mbps OR không có clients nào kết nối
+	isIdle := activeClients == 0 || totalMbps < 0.5
 	return isIdle, activeClients, nil
 }
 

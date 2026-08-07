@@ -25,16 +25,18 @@ GO_AGENT_DIR = os.path.join(WORKSPACE_ROOT, "go-agent")
 
 errors = []
 
-def calculate_entropy_linear(data):
+def calculate_entropy(data):
     """Calculates Shannon Entropy in O(N) linear time using collections.Counter."""
     if not data:
         return 0.0
+    from collections import Counter
+    import math
     length = float(len(data))
-    counts = Counter(data)
+    counts = Counter(data)  # O(N) character frequency — sử dụng Counter thay vì data.count(x) O(N²)
     entropy = 0.0
     for count in counts.values():
         p_x = float(count) / length
-        entropy -= p_x * math.log(p_x, 2)
+        entropy -= p_x * math.log2(p_x)
     return entropy
 
 def report_pass(check_name):
@@ -85,7 +87,7 @@ for root, dirs, files in os.walk(WORKSPACE_ROOT):
                     for val in assign_matches:
                         if any(p in val.lower() for p in ['placeholder', 'example', 'your_', 'test_token', 'mock_']):
                             continue
-                        if calculate_entropy_linear(val) > 4.2:
+                        if calculate_entropy(val) > 4.2:
                             rel_path = os.path.relpath(filepath, WORKSPACE_ROOT)
                             secret_violations.append(f"{rel_path} (High-Entropy Secret: {val[:8]}...)")
             except OSError as io_err:

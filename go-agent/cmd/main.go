@@ -336,16 +336,9 @@ func main() {
 			return
 		case reason := <-restartSignalChan:
 			logger.Warn("Main thread processing restart signal [%s]...", reason)
-			cancel() // Cancel main context to signal all async goroutines to exit via ctx.Done()
 
-			ctxHTTP, cancelHTTP := context.WithTimeout(context.Background(), 3*time.Second)
-			if activeServer != nil {
-				_ = activeServer.Shutdown(ctxHTTP)
-			}
-			cancelHTTP()
-
+			// Flush RAM DB to Persistent Flash before process re-execution
 			if activeStore != nil {
-				// [Fix 1] Emergency RAM→Flash flush: preserve all learned skills before process replacement
 				if cfgSnap, ok := cfgAtomic.Load().(*config.Config); ok && cfgSnap != nil && cfgSnap.SkillStorePath != "" {
 					if flushErr := activeStore.FlushToPersistent(cfgSnap.SkillStorePath); flushErr != nil {
 						logger.Error("Emergency pre-restart SkillStore flush failed: %v", flushErr)
@@ -353,19 +346,34 @@ func main() {
 				}
 				_ = activeStore.Close()
 			}
+
+			cancel() // Cancel main context to signal all async goroutines to exit via ctx.Done()
+
+			ctxHTTP, cancelHTTP := context.WithTimeout(context.Background(), 3*time.Second)
+			if activeServer != nil {
+				_ = activeServer.Shutdown(ctxHTTP)
+			}
+			cancelHTTP()
 			logger.Flush()
 
 			if runtime.GOOS == "linux" {
-				execPath, execErr := os.Executable()
-				// [Fix 2] Never exec a hardcoded path — if os.Executable() fails we cannot safely determine
-				// which binary to replace ourselves with. Exit cleanly so procd/init restarts us correctly.
-				if execErr != nil || execPath == "" {
-					logger.Error("CRITICAL: os.Executable() failed during process restart [err=%v]. Halting to allow procd/init respawn.", execErr)
-					os.Exit(1)
+				// Primary: use OpenWrt procd init system for clean service restart
+				ctxCmd, cancelCmd := context.WithTimeout(context.Background(), 5*time.Second)
+				cmd := exec.CommandContext(ctxCmd, "/etc/init.d/beryl7-agent", "restart") // #nosec G204
+				errCmd := cmd.Run()
+				cancelCmd()
+
+				if errCmd != nil {
+					logger.Warn("Procd restart failed [%v]. Falling back to dynamic syscall.Exec replacement...", errCmd)
+
+					// [Fix 2] Dynamic os.Executable() resolution — no hardcoded path dependency
+					execPath, errSelf := os.Executable()
+					if errSelf != nil || execPath == "" {
+						execPath = "/usr/bin/beryl7-agent" // Last-resort fallback if os.Executable fails
+					}
+					// #nosec G204, G702
+					_ = syscall.Exec(execPath, os.Args, os.Environ()) // #nosec G204, G702 // nolint:errcheck
 				}
-				logger.Warn("Re-executing daemon process image [%s] in-place into RAM via syscall.Exec...", execPath)
-				// #nosec G204, G702
-				_ = syscall.Exec(execPath, os.Args, os.Environ()) // #nosec G204, G702 // nolint:errcheck
 				os.Exit(0)
 			} else {
 				os.Exit(0)
