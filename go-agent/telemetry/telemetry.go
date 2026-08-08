@@ -589,7 +589,8 @@ func (t *TelemetryCollector) ResolveRepeaterInterface(ctx context.Context) strin
 
 	cleanUCI, errUCI := exec.LookPath("uci")
 	if errUCI == nil {
-		cmd := exec.CommandContext(ctx, cleanUCI, "show", "wireless")
+		cleanUCI = filepath.Clean(cleanUCI)
+		cmd := exec.CommandContext(ctx, cleanUCI, "show", "wireless") // #nosec G204
 		if uciOut, errRun := cmd.Output(); errRun == nil {
 			lines := strings.Split(string(uciOut), "\n")
 			var currentIface string
