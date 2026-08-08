@@ -136,14 +136,31 @@ func (o *Orchestrator) handleActionExecuted(event *Event) {
 	o.TransitionTo(StateVerifying, "Action executed, awaiting telemetry verification")
 }
 
-// [Fix 3] Transition back to StateIdle when verification passes, preventing permanent deadlock
+// [Fix 3 & Q-Learning V2] Transition back to StateIdle when verification passes and reward Q-Table with +1.0
 func (o *Orchestrator) handleVerificationPassed(event *Event) {
+	if event != nil && event.Data != nil && o.skillStore != nil {
+		state, _ := event.Data["state"].(string)
+		action, _ := event.Data["action"].(string)
+		if state != "" && action != "" {
+			_ = o.skillStore.UpdateQValue(state, action, 1.0)
+			logger.Info("Q-LEARNING: Action [%s] for State [%s] succeeded! Q-Value updated with Reward +1.0", action, state)
+		}
+	}
 	o.TransitionTo(StateIdle, "Verification passed, returning to idle monitoring state")
 }
 
-// [Fix 3] Handle verification failures gracefully by returning to StateIdle or entering StateSafeMode
+// [Fix 3 & Q-Learning V2] Handle verification failures by penalizing Q-Table with soft penalty -0.5
 func (o *Orchestrator) handleVerificationFailed(event *Event) {
 	if event != nil && event.Data != nil {
+		if o.skillStore != nil {
+			state, _ := event.Data["state"].(string)
+			action, _ := event.Data["action"].(string)
+			if state != "" && action != "" {
+				_ = o.skillStore.UpdateQValue(state, action, -0.5)
+				logger.Warn("Q-LEARNING: Action [%s] for State [%s] failed! Q-Value updated with Reward -0.5 (Penalty)", action, state)
+			}
+		}
+
 		if safeMode, ok := event.Data["safe_mode"].(bool); ok && safeMode {
 			o.TransitionTo(StateSafeMode, "Verification failed critically, entering Safe Mode")
 			return

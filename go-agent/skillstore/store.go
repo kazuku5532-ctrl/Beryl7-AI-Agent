@@ -143,6 +143,13 @@ func (s *SkillStore) OpenAndInit() error {
 		created_at INTEGER NOT NULL,
 		last_used_at INTEGER NOT NULL
 	);
+	CREATE TABLE IF NOT EXISTS q_table (
+		state TEXT,
+		action TEXT,
+		q_value REAL,
+		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		PRIMARY KEY (state, action)
+	);
 	PRAGMA user_version = 1;
 	`
 	if _, err := db.Exec(schema); err != nil {
@@ -392,6 +399,50 @@ func (s *SkillStore) FlushToPersistent(persistentPath string) error {
 
 	logger.Info("HYBRID STORE: Successfully executed atomic SQLite VACUUM INTO snapshot to persistent Flash (%s)", cleanPersistent)
 	return nil
+}
+
+const learningRate = 0.2 // Learning rate Alpha
+
+// UpdateQValue executes single-step Q-learning Bellman update: Q(s,a) = Q(s,a) + Alpha * (Reward - Q(s,a))
+// Bound Q-value to [-0.8, 1.0] using SQLite MAX/MIN native SQL functions to prevent negative penalty lockouts.
+func (s *SkillStore) UpdateQValue(state string, action string, reward float64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed || s.db == nil {
+		return ErrStoreClosed
+	}
+
+	_, err := s.db.Exec(`
+		INSERT INTO q_table (state, action, q_value) 
+		VALUES (?, ?, ?)
+		ON CONFLICT(state, action) DO UPDATE SET 
+		q_value = MAX(-0.8, MIN(1.0, q_value + ? * (? - q_value))),
+		updated_at = CURRENT_TIMESTAMP`,
+		state, action, reward, learningRate, reward)
+	return err
+}
+
+// RecommendBestAction queries Q-Table for action with highest Q-value for the current anomaly state.
+// On Cold Start (no learned Q-table entries exist for state), gracefully returns defaultAction with 0.0 Q-value without error.
+func (s *SkillStore) RecommendBestAction(state string, defaultAction string) (string, float64, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.closed || s.db == nil {
+		return "", 0, ErrStoreClosed
+	}
+
+	var bestAction string
+	var qValue float64
+	err := s.db.QueryRow(`
+		SELECT action, q_value FROM q_table 
+		WHERE state = ? 
+		ORDER BY q_value DESC, updated_at DESC LIMIT 1`, state).Scan(&bestAction, &qValue)
+
+	if err != nil {
+		// Cold Start Handling: Return defaultAction with 0.0 Q-value when no learned history exists
+		return defaultAction, 0.0, nil
+	}
+	return bestAction, qValue, nil
 }
 
 func (s *SkillStore) Close() error {
