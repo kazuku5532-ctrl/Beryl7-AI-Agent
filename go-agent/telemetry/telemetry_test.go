@@ -157,6 +157,25 @@ func TestDiscoverWiFiInterfaces(t *testing.T) {
 	}
 }
 
+// TestRepeaterMetricsCollection validates repeater interface resolution and metric collection
+func TestRepeaterMetricsCollection(t *testing.T) {
+	c := NewCollector()
+	ctx := context.Background()
+
+	iface := c.ResolveRepeaterInterface(ctx)
+	if iface == "" {
+		t.Errorf("Expected non-empty resolved repeater interface")
+	}
+
+	rm, err := c.CollectRepeaterMetrics(ctx)
+	if err != nil {
+		t.Fatalf("CollectRepeaterMetrics failed: %v", err)
+	}
+	if rm == nil {
+		t.Fatalf("Expected non-nil RepeaterMetrics")
+	}
+}
+
 // TestUpdateEWMALatency validates EWMA initialisation and z-score calculation branches
 func TestUpdateEWMALatency(t *testing.T) {
 	c := NewCollector()

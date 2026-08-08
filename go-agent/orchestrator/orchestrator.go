@@ -103,11 +103,14 @@ func (o *Orchestrator) CalculateContextFrictionPenalty(ctx context.Context, acti
 
 	isIdle, clientCount, _ := o.telemetry.AreWiFiClientsIdle(ctx)
 
-	// Network-disruptive actions that cause transient disconnections
+	// Network-disruptive actions that cause transient disconnections (including Smart Repeater Guard actions)
 	isDisruptive := strings.Contains(actionName, "restart") ||
 		strings.Contains(actionName, "revert") ||
 		strings.Contains(actionName, "bandwidth") ||
-		strings.Contains(actionName, "channel")
+		strings.Contains(actionName, "channel") ||
+		strings.Contains(actionName, "power") ||
+		strings.Contains(actionName, "failover") ||
+		strings.Contains(actionName, "align")
 
 	if !isIdle && clientCount > 0 && isDisruptive {
 		// Active user traffic present: 3x friction penalty applied to discourage disruptive actions

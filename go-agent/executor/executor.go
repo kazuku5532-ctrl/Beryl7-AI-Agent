@@ -42,10 +42,13 @@ func New() *Executor {
 	e := &Executor{
 		riskMatrix: map[string]float64{
 			"no_action_required":    0.50, // Low Risk
-			"purge_memory_cache":    0.60, // Low-Medium Risk (Free Linux RAM cache)
+			"purge_memory_cache":    0.60, // Low-Medium Risk
 			"restart_wan_interface": 0.85, // Medium Risk
 			"restart_interface":     0.85, // Medium Risk
 			"optimize_wifi_channel": 0.85, // Medium Risk
+			"scale_tx_power_down":   0.85, // Medium Risk (Repeater Guard)
+			"align_channels":        0.85, // Medium Risk (Repeater Guard)
+			"ap_failover":           0.90, // Medium-High Risk (Repeater Guard)
 			"set_qos_priority":      0.95, // High Risk
 			"block_device":          0.95, // High Risk
 			"set_wan_mac":           0.98, // Critical Risk
@@ -77,6 +80,9 @@ func New() *Executor {
 		"boost_wifi_bandwidth":     e.actionBoostWifiBandwidth,
 		"revert_wifi_bandwidth":    e.actionRevertWifiBandwidth,
 		"tune_network_performance": e.actionTuneNetworkPerformance,
+		"scale_tx_power_down":      e.actionScaleTxPowerDown,
+		"align_channels":           e.actionAlignChannels,
+		"ap_failover":              e.actionAPFailover,
 	}
 
 	return e
@@ -309,4 +315,39 @@ func (e *Executor) actionTuneNetworkPerformance(ctx context.Context, target stri
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.ampdu=1")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.wmm=1")
 	return runSystemCmd(ctx, "/sbin/uci", "commit", "wireless")
+}
+
+func (e *Executor) TriggerWiFiReload(ctx context.Context) error {
+	if err := e.checkWiFiIdleGuard(ctx); err != nil {
+		logger.Warn("REPEATER GUARD: wifi reload postponed by WiFi Idle Guard (Friction Penalty 3.0x active)")
+		return err
+	}
+	logger.Info("REPEATER GUARD: Executing wifi reload under safe idle window...")
+	return runSystemCmd(ctx, "wifi", "reload")
+}
+
+func (e *Executor) actionScaleTxPowerDown(ctx context.Context, target string, params map[string]interface{}) error {
+	logger.Info("REPEATER GUARD: Reducing internal Wi-Fi Tx-Power to 12dBm to suppress self-interference...")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.default_radio0.txpower=12")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.default_radio1.txpower=12")
+	_ = runSystemCmd(ctx, "/sbin/uci", "commit", "wireless")
+	return e.TriggerWiFiReload(ctx)
+}
+
+func (e *Executor) actionAlignChannels(ctx context.Context, target string, params map[string]interface{}) error {
+	logger.Info("REPEATER GUARD: Re-aligning internal Wi-Fi LAN channel to clean non-overlapping Channel 149...")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.radio1.channel=149")
+	_ = runSystemCmd(ctx, "/sbin/uci", "commit", "wireless")
+	return e.TriggerWiFiReload(ctx)
+}
+
+func (e *Executor) actionAPFailover(ctx context.Context, target string, params map[string]interface{}) error {
+	bssid, _ := params["bssid"].(string)
+	if bssid == "" || !e.macRegex.MatchString(bssid) {
+		bssid = "aa:bb:cc:dd:ee:22"
+	}
+	logger.Info("REPEATER GUARD: Roaming/Failing over to stronger BSSID AP [%s]...", bssid)
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", fmt.Sprintf("wireless.@wifi-iface[0].bssid=%s", bssid))
+	_ = runSystemCmd(ctx, "/sbin/uci", "commit", "wireless")
+	return e.TriggerWiFiReload(ctx)
 }

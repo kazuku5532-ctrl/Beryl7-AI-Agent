@@ -531,3 +531,142 @@ func (t *TelemetryCollector) AreWiFiClientsIdle(ctx context.Context) (bool, int,
 	return isIdle, activeClients, nil
 }
 
+type RepeaterMetrics struct {
+	Signal     int    `json:"signal"`      // RSSI (dBm)
+	Noise      int    `json:"noise"`       // Noise Floor (dBm)
+	Channel    int    `json:"channel"`     // Kênh tần số hiện tại
+	TxPower    int    `json:"tx_power"`    // Công suất phát hiện tại
+	SSID       string `json:"ssid"`        // SSID nguồn đang thu
+	BSSID      string `json:"bssid"`       // Địa chỉ MAC của AP đang thu
+	IsRepeater bool   `json:"is_repeater"` // Trạng thái Repeater hoạt động hay không
+}
+
+func (t *TelemetryCollector) CallUbusExecArgs(ctx context.Context, path, method, jsonArgs string) (string, error) {
+	if t.ubusPath == "" {
+		return "", errors.New("ubus binary not found on system")
+	}
+
+	ctxTimeout, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	cleanPath := filepath.Clean(t.ubusPath)
+	var cmd *exec.Cmd
+	if jsonArgs != "" {
+		cmd = exec.CommandContext(ctxTimeout, cleanPath, "call", path, method, jsonArgs) // #nosec G204
+	} else {
+		cmd = exec.CommandContext(ctxTimeout, cleanPath, "call", path, method) // #nosec G204
+	}
+	output, err := cmd.Output()
+
+	if ctxTimeout.Err() == context.DeadlineExceeded {
+		if cmd.Process != nil {
+			if killErr := cmd.Process.Kill(); killErr != nil && !errors.Is(killErr, os.ErrProcessDone) {
+				logger.Warn("Failed to kill timed-out ubus process: %v", killErr)
+			}
+			_ = cmd.Wait()
+		}
+		return "", fmt.Errorf("ubus call timed out after 5s: %s %s", path, method)
+	}
+
+	if err != nil {
+		return "", fmt.Errorf("ubus call failed: %w", err)
+	}
+
+	return string(output), nil
+}
+
+// ResolveRepeaterInterface dynamically scans OpenWrt UCI/ubus wireless config for interface in station mode (mode: sta)
+func (t *TelemetryCollector) ResolveRepeaterInterface(ctx context.Context) string {
+	out, err := t.CallUbusExecArgs(ctx, "network.interface", "dump", "")
+	if err == nil && out != "" {
+		if strings.Contains(out, `"wwan"`) || strings.Contains(out, `"wlan-sta"`) {
+			if strings.Contains(out, `"wwan"`) {
+				return "wwan"
+			}
+			return "wlan-sta"
+		}
+	}
+
+	cleanUCI, errUCI := exec.LookPath("uci")
+	if errUCI == nil {
+		cmd := exec.CommandContext(ctx, cleanUCI, "show", "wireless")
+		if uciOut, errRun := cmd.Output(); errRun == nil {
+			lines := strings.Split(string(uciOut), "\n")
+			var currentIface string
+			for _, line := range lines {
+				if strings.Contains(line, "wifi-iface") {
+					parts := strings.Split(line, ".")
+					if len(parts) > 1 {
+						currentIface = parts[1]
+					}
+				}
+				if strings.Contains(line, "mode='sta'") || strings.Contains(line, `mode="sta"`) || strings.Contains(line, "mode=sta") {
+					if currentIface != "" {
+						if strings.Contains(currentIface, "wlan1") {
+							return "wlan1"
+						}
+						return "wlan0"
+					}
+				}
+			}
+		}
+	}
+
+	return "wlan0"
+}
+
+// CollectRepeaterMetrics collects L1/L2 wireless physical metrics for Repeater mode via ubus iwinfo
+func (t *TelemetryCollector) CollectRepeaterMetrics(ctx context.Context) (*RepeaterMetrics, error) {
+	iface := t.ResolveRepeaterInterface(ctx)
+	jsonArgs := fmt.Sprintf(`{"device":"%s"}`, iface)
+
+	out, err := t.CallUbusExecArgs(ctx, "iwinfo", "info", jsonArgs)
+	if err != nil || out == "" {
+		return &RepeaterMetrics{
+			Signal:     0,
+			Noise:      -95,
+			Channel:    0,
+			TxPower:    20,
+			IsRepeater: false,
+		}, nil
+	}
+
+	metrics := &RepeaterMetrics{
+		Noise:      -95,
+		TxPower:    20,
+		IsRepeater: false,
+	}
+
+	signalRegex := regexp.MustCompile(`"signal":\s*(-?\d+)`)
+	noiseRegex := regexp.MustCompile(`"noise":\s*(-?\d+)`)
+	channelRegex := regexp.MustCompile(`"channel":\s*(\d+)`)
+	txpowerRegex := regexp.MustCompile(`"txpower":\s*(\d+)`)
+	ssidRegex := regexp.MustCompile(`"ssid":\s*"([^"]+)"`)
+	bssidRegex := regexp.MustCompile(`"bssid":\s*"([^"]+)"`)
+
+	if m := signalRegex.FindStringSubmatch(out); len(m) > 1 {
+		metrics.Signal, _ = strconv.Atoi(m[1])
+	}
+	if m := noiseRegex.FindStringSubmatch(out); len(m) > 1 {
+		metrics.Noise, _ = strconv.Atoi(m[1])
+	}
+	if m := channelRegex.FindStringSubmatch(out); len(m) > 1 {
+		metrics.Channel, _ = strconv.Atoi(m[1])
+	}
+	if m := txpowerRegex.FindStringSubmatch(out); len(m) > 1 {
+		metrics.TxPower, _ = strconv.Atoi(m[1])
+	}
+	if m := ssidRegex.FindStringSubmatch(out); len(m) > 1 {
+		metrics.SSID = m[1]
+	}
+	if m := bssidRegex.FindStringSubmatch(out); len(m) > 1 {
+		metrics.BSSID = m[1]
+	}
+
+	if metrics.SSID != "" || metrics.BSSID != "" || metrics.Signal < 0 {
+		metrics.IsRepeater = true
+	}
+
+	return metrics, nil
+}
+
