@@ -344,7 +344,8 @@ func (e *Executor) actionAlignChannels(ctx context.Context, target string, param
 func (e *Executor) actionAPFailover(ctx context.Context, target string, params map[string]interface{}) error {
 	bssid, _ := params["bssid"].(string)
 	if bssid == "" || !e.macRegex.MatchString(bssid) {
-		bssid = "aa:bb:cc:dd:ee:22"
+		logger.Warn("REPEATER GUARD: ap_failover rejected: missing or invalid target BSSID address")
+		return fmt.Errorf("ap_failover: missing or invalid target BSSID address")
 	}
 	logger.Info("REPEATER GUARD: Roaming/Failing over to stronger BSSID AP [%s]...", bssid)
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", fmt.Sprintf("wireless.@wifi-iface[0].bssid=%s", bssid))

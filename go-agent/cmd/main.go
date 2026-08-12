@@ -480,13 +480,25 @@ func main() {
 				logger.Warn("ANOMALY DETECTED: %s (%s)! Processing Auto-Healing...", anomalyType, anomalyDesc)
 				lastActionByAnomaly[anomalyType] = time.Now()
 
-				actionName := "restart_wan_interface"
+				defaultAction := "restart_wan_interface"
 				if anomalyType == "MEMORY_EXHAUSTION" {
-					actionName = "purge_memory_cache"
+					defaultAction = "purge_memory_cache"
 				} else if anomalyType == "WIFI_FAILURE" {
-					actionName = "optimize_wifi_channel"
+					defaultAction = "optimize_wifi_channel"
 				} else if anomalyType == "LATENCY_SPIKE" {
-					actionName = "restart_interface"
+					defaultAction = "restart_interface"
+				} else if anomalyType == "REPEATER_SIGNAL_WEAK" {
+					defaultAction = "scale_tx_power_down"
+				} else if anomalyType == "REPEATER_CHANNEL_CONGESTED" {
+					defaultAction = "align_channels"
+				}
+
+				// Q-Learning V2 Engine: Active Decision Loop Wiring via RecommendBestAction
+				actionName, qVal, qErr := store.RecommendBestAction(anomalyType, defaultAction)
+				if qErr == nil && actionName != defaultAction {
+					logger.Info("Q-LEARNING ENGINE HIT: Best learned action for Anomaly [%s] is '%s' (Q-Value=%.2f, Default='%s')", anomalyType, actionName, qVal, defaultAction)
+				} else if qErr == nil {
+					logger.Info("Q-LEARNING ENGINE: Using default action '%s' for Anomaly [%s] (Q-Value=%.2f)", actionName, anomalyType, qVal)
 				}
 
 				// Helper hàm Post-Action Verification bất đồng bộ (Non-blocking async goroutine)
