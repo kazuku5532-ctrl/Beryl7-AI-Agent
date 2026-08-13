@@ -281,7 +281,11 @@ func (e *Executor) actionSetWANMAC(ctx context.Context, target string, params ma
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", fmt.Sprintf("network.wan.macaddr=%s", mac))
 	_ = runSystemCmd(ctx, "/sbin/uci", "commit", "network")
 	_ = runSystemCmd(ctx, "/sbin/ifdown", "wan")
-	time.Sleep(1 * time.Second)
+	select {
+	case <-time.After(1 * time.Second):
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 	return runSystemCmd(ctx, "/sbin/ifup", "wan")
 }
 

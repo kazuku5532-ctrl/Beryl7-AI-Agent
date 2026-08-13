@@ -318,10 +318,12 @@ func main() {
 	defer pruneTicker.Stop()
 
 	cooldowns := map[string]time.Duration{
-		"WAN_DROP":          30 * time.Second,
-		"WIFI_FAILURE":      45 * time.Second,
-		"MEMORY_EXHAUSTION": 60 * time.Second,
-		"LATENCY_SPIKE":     60 * time.Second,
+		"WAN_DROP":                   30 * time.Second,
+		"WIFI_FAILURE":               45 * time.Second,
+		"MEMORY_EXHAUSTION":          60 * time.Second,
+		"LATENCY_SPIKE":              60 * time.Second,
+		"REPEATER_SIGNAL_WEAK":       30 * time.Second,
+		"REPEATER_CHANNEL_CONGESTED": 30 * time.Second,
 	}
 	lastActionByAnomaly := make(map[string]time.Time)
 	isWifiBoosted := false
@@ -465,6 +467,14 @@ func main() {
 				} else if anomalyType == "" && zScore > cfgSnap.LatencyZScoreThreshold && m.LatencyMs > cfgSnap.LatencySpikeMs {
 					anomalyType = "LATENCY_SPIKE"
 					anomalyDesc = fmt.Sprintf("Statistical Latency Spike detected: %.1fms (Z-Score: %.2f > %.1f)", m.LatencyMs, zScore, cfgSnap.LatencyZScoreThreshold)
+				} else if anomalyType == "" {
+					repeaterM, _ := collector.CollectRepeaterMetrics(ctx)
+					if repeaterM != nil && repeaterM.IsRepeater {
+						if repeaterM.Signal < 0 && repeaterM.Signal < -75 {
+							anomalyType = "REPEATER_SIGNAL_WEAK"
+							anomalyDesc = fmt.Sprintf("Weak Repeater RSSI detected: %ddBm (< -75dBm)", repeaterM.Signal)
+						}
+					}
 				}
 			}
 

@@ -98,21 +98,20 @@ func TestExportPrometheusMetricsNil(t *testing.T) {
 	}
 }
 
-// TestAreWiFiClientsIdleDualBand exercises both scan paths:
-// err0!=nil && err1!=nil → falls back to cache, and the OR idle logic.
+// TestAreWiFiClientsIdleDualBand exercises conservative fail-safe guard when both bands return error
 func TestAreWiFiClientsIdleDualBand(t *testing.T) {
 	c := NewCollector()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
 	// ubus is not available in test env — both bands return err.
-	// Should fall back to cache (activeClientsCount=0) → isIdle=true
+	// Conservative Guard returns isIdle=false to prevent accidental WiFi reloads under heavy load.
 	isIdle, clients, err := c.AreWiFiClientsIdle(ctx)
-	if err != nil {
-		t.Errorf("AreWiFiClientsIdle returned unexpected error: %v", err)
+	if err == nil {
+		t.Errorf("Expected error when both ubus queries fail, got nil")
 	}
-	if !isIdle {
-		t.Errorf("Expected isIdle=true when both bands fail and cache=0, got false (clients=%d)", clients)
+	if isIdle {
+		t.Errorf("Expected conservative isIdle=false when both bands fail, got true (clients=%d)", clients)
 	}
 }
 

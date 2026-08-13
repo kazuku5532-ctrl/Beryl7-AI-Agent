@@ -521,9 +521,10 @@ func (t *TelemetryCollector) AreWiFiClientsIdle(ctx context.Context) (bool, int,
 		activeClients += len(macAddrRegex.FindAllString(out1, -1))
 	}
 
-	// Chỉ fallback về cache khi cả hai băng tần đều lỗi truy vấn ubus
+	// Conservative Guard: When ubus queries fail on both bands (high system load), return isIdle = false to prevent accidental WiFi reloads
 	if err0 != nil && err1 != nil {
-		activeClients = cachedClients
+		logger.Warn("AreWiFiClientsIdle: ubus queries failed on both 2.4GHz and 5GHz bands. Conservative guard active (isIdle=false).")
+		return false, cachedClients, fmt.Errorf("ubus client query failed on both bands")
 	}
 
 	// Client Idle Window Check: Tổng băng thông < 0.5 Mbps OR không có clients nào kết nối

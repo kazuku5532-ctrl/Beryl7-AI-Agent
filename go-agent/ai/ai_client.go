@@ -19,7 +19,7 @@ import (
 	"beryl7-agent/logger"
 )
 
-var macRegexGlobal = regexp.MustCompile(`(?i)([0-9a-f]{2}[:-]){5}[0-9a-f]{2}`)
+var macRegexGlobal = regexp.MustCompile(`(?i)([0-9a-fA-F]{2}[:-]){5}[0-9a-fA-F]{2}`)
 
 func RedactMACAddresses(text string) string {
 	if macRegexGlobal == nil {

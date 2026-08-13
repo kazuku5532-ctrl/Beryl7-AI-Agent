@@ -242,8 +242,12 @@ func (s *SkillStore) GetBestSkillForAnomaly(condition string) *Skill {
 			logger.Warn("SKILLSTORE HARMONIZATION: Skill [%s] for Anomaly [%s] rejected due to negative Q-Value (%.2f)", sk.Action, condition, qVal)
 			return nil
 		}
+		origConf := sk.Confidence
 		// Weight confidence by Q-Value to keep sources of truth aligned
 		sk.Confidence = sk.Confidence * math.Max(0.1, qVal)
+		if sk.Confidence < origConf {
+			logger.Info("SKILLSTORE HARMONIZATION: Weighted Skill [%s] confidence from %.2f -> %.2f based on Q-Value (%.2f)", sk.Action, origConf, sk.Confidence, qVal)
+		}
 	}
 
 	sk.CreatedAt = time.Unix(created, 0)
