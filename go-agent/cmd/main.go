@@ -1068,7 +1068,16 @@ func StartHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 			LatencyMs:       lat,
 			SystemUptimeSec: uptime,
 		}
-		_, _ = w.Write([]byte(tel.ExportPrometheusMetrics(metricObj)))
+		promOutput := tel.ExportPrometheusMetrics(metricObj)
+		if aiClient != nil {
+			var sb strings.Builder
+			sb.WriteString(promOutput)
+			sb.WriteString("# HELP beryl7_ai_parse_failures_total LLM response parse failures\n")
+			sb.WriteString("# TYPE beryl7_ai_parse_failures_total counter\n")
+			sb.WriteString(fmt.Sprintf("beryl7_ai_parse_failures_total %d\n", aiClient.GetParseFailuresTotal()))
+			promOutput = sb.String()
+		}
+		_, _ = w.Write([]byte(promOutput))
 	})
 
 	// Endpoint 5: Goroutine-Safe Config Reload (/api/config/reload)
