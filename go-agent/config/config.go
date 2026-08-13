@@ -86,7 +86,7 @@ func LoadConfig() (*Config, error) {
 		ApproveToken:       "",
 		LogLevel:           "INFO",
 		HealthPort:         8888,
-		BindHost:           "127.0.0.1",
+		BindHost:           "0.0.0.0",
 		CORSAllowedOrigins: "http://192.168.8.1:8888,http://127.0.0.1:8888,http://localhost:8888,null",
 		TelemetryInterval:  5 * time.Second,
 		EMAAlpha:           0.3,
