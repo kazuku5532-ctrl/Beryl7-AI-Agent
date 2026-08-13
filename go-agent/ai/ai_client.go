@@ -272,12 +272,20 @@ Return JSON format ONLY: {"action":"action_name","reasoning":"clear explanation"
 					}
 				}
 				logger.Warn("Gemini API HTTP 429 Rate Limited! Backing off for %ds...", retryAfterSec)
-				time.Sleep(time.Duration(retryAfterSec) * time.Second)
+				select {
+				case <-time.After(time.Duration(retryAfterSec) * time.Second):
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				}
 			}
 			_ = httpResp.Body.Close()
 		}
 
-		time.Sleep(time.Duration(attempt) * 1 * time.Second)
+		select {
+		case <-time.After(time.Duration(attempt) * time.Second):
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
 	}
 
 	if err != nil || httpResp == nil || httpResp.StatusCode != 200 {

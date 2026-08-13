@@ -159,7 +159,11 @@ func (e *Executor) actionRestartWAN(ctx context.Context, target string, params m
 	if err := runSystemCmd(ctx, "/sbin/ifdown", iface); err != nil {
 		return err
 	}
-	time.Sleep(1 * time.Second)
+	select {
+	case <-time.After(1 * time.Second):
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 	return runSystemCmd(ctx, "/sbin/ifup", iface)
 }
 
@@ -174,7 +178,11 @@ func (e *Executor) actionRestartInterface(ctx context.Context, target string, pa
 	}
 	logger.Info("Executing OpenWrt interface restart on [%s]...", iface)
 	_ = runSystemCmd(ctx, "/sbin/ifdown", iface) // nolint:errcheck (non-fatal, ifup follows)
-	time.Sleep(1 * time.Second)
+	select {
+	case <-time.After(1 * time.Second):
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 	return runSystemCmd(ctx, "/sbin/ifup", iface)
 }
 
