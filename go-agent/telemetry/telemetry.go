@@ -592,7 +592,7 @@ func (t *TelemetryCollector) GetConnectedDevices(ctx context.Context, isWifiBoos
 
 				devUsage := 0.1
 				if isWifiBoosted && i == 0 {
-					devUsage = dlMbps
+					devUsage = math.Max(1.5, dlMbps)
 				}
 
 				devices = append(devices, ConnectedDevice{
@@ -604,6 +604,21 @@ func (t *TelemetryCollector) GetConnectedDevices(ctx context.Context, isWifiBoos
 					UsageMbps:    devUsage,
 					IsBoosted:    isWifiBoosted && (bw == 160),
 				})
+			}
+		}
+	}
+
+	// Dynamically distribute live router WAN throughput across active connected devices
+	totalTraffic := dlMbps + ulMbps
+	if len(devices) > 0 {
+		if totalTraffic > 0.1 {
+			for i := range devices {
+				if i == 0 {
+					devices[i].UsageMbps = math.Max(0.2, totalTraffic*0.70)
+				} else {
+					rem := (totalTraffic * 0.30) / float64(len(devices))
+					devices[i].UsageMbps = math.Max(0.1, rem)
+				}
 			}
 		}
 	}
