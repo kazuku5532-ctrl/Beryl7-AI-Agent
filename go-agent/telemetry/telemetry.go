@@ -545,31 +545,56 @@ type ConnectedDevice struct {
 func (t *TelemetryCollector) GetConnectedDevices(ctx context.Context, isWifiBoosted bool, dlMbps, ulMbps float64) []ConnectedDevice {
 	var devices []ConnectedDevice
 
+	mac5GHz := make(map[string]bool)
+	mac24GHz := make(map[string]bool)
+
+	out1, err1 := t.CallUbusExec(ctx, "hostapd.wlan1", "get_clients")
+	if err1 == nil && out1 != "" {
+		for _, m := range macAddrRegex.FindAllString(out1, -1) {
+			cleanMAC := strings.ToLower(strings.Trim(m, "\""))
+			mac5GHz[cleanMAC] = true
+		}
+	}
+
+	out0, err0 := t.CallUbusExec(ctx, "hostapd.wlan0", "get_clients")
+	if err0 == nil && out0 != "" {
+		for _, m := range macAddrRegex.FindAllString(out0, -1) {
+			cleanMAC := strings.ToLower(strings.Trim(m, "\""))
+			mac24GHz[cleanMAC] = true
+		}
+	}
+
 	data, err := os.ReadFile("/tmp/dhcp.leases")
 	if err == nil {
 		lines := strings.Split(string(data), "\n")
 		for i, line := range lines {
 			parts := strings.Fields(line)
 			if len(parts) >= 4 {
-				mac := parts[1]
+				mac := strings.ToLower(parts[1])
 				ip := parts[2]
 				name := parts[3]
 				if name == "*" {
 					name = fmt.Sprintf("Device-%s", strings.ReplaceAll(mac[len(mac)-5:], ":", ""))
 				}
+
+				band := "5GHz (Wi-Fi 7)"
 				bw := 80
 				if isWifiBoosted {
 					bw = 160
 				}
-				band := "5GHz (Wi-Fi 7)"
-				if i%2 == 1 {
+
+				if mac24GHz[mac] {
 					band = "2.4GHz"
 					bw = 40
+				} else if mac5GHz[mac] {
+					band = "5GHz (Wi-Fi 7)"
 				}
+
 				devUsage := 0.1
 				if isWifiBoosted && i == 0 {
 					devUsage = dlMbps
 				}
+
 				devices = append(devices, ConnectedDevice{
 					MAC:          mac,
 					IP:           ip,

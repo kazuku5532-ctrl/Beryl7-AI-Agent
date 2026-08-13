@@ -1808,7 +1808,7 @@ if (wifiBadge) {
     wifiBadge.style.background = 'rgba(16, 185, 129, 0.2)';
     wifiBadge.style.color = '#10b981';
     wifiBadge.style.border = '1px solid #10b981';
-    wifiBadge.innerHTML = '<i class="fa-solid fa-bolt-lightning text-gold"></i> &zap; 160 MHz MAX SPEED BOOSTED';
+    wifiBadge.innerHTML = '<i class="fa-solid fa-bolt-lightning text-gold"></i> ⚡ 160 MHz MAX SPEED BOOSTED';
   } else {
     wifiBadge.className = 'tag-status';
     wifiBadge.style.background = 'rgba(56, 189, 248, 0.1)';
@@ -1848,7 +1848,7 @@ if (devsGrid) {
   devs.forEach(dev => {
     const devBoosted = dev.is_boosted || (isBoosted && dev.bandwidth_mhz === 160);
     const cardBorder = devBoosted ? 'border: 1px solid #10b981; background: rgba(16, 185, 129, 0.08); box-shadow: 0 0 16px rgba(16, 185, 129, 0.25);' : 'border: 1px solid rgba(255,255,255,0.08); background: rgba(0,0,0,0.2);';
-    const bwBadge = devBoosted ? '<span style="font-size:0.75rem; font-weight:700; color:#10b981; background:rgba(16,185,129,0.2); padding:3px 8px; border-radius:12px; border:1px solid #10b981;"><i class="fa-solid fa-bolt text-gold"></i> &zap; 160 MHz BOOSTED</span>' : '<span style="font-size:0.75rem; font-weight:600; color:#38bdf8; background:rgba(56,189,248,0.1); padding:3px 8px; border-radius:12px; border:1px solid rgba(56,189,248,0.3);">80 MHz Eco</span>';
+    const bwBadge = devBoosted ? '<span style="font-size:0.75rem; font-weight:700; color:#10b981; background:rgba(16,185,129,0.2); padding:3px 8px; border-radius:12px; border:1px solid #10b981;"><i class="fa-solid fa-bolt text-gold"></i> ⚡ 160 MHz BOOSTED</span>' : '<span style="font-size:0.75rem; font-weight:600; color:#38bdf8; background:rgba(56,189,248,0.1); padding:3px 8px; border-radius:12px; border:1px solid rgba(56,189,248,0.3);">80 MHz Eco</span>';
     const icon = dev.hostname.toLowerCase().includes('phone') || dev.hostname.toLowerCase().includes('galaxy') ? 'fa-mobile-screen-button' : 'fa-laptop';
 
     html += `
