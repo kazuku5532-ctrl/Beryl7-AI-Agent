@@ -1820,68 +1820,38 @@ if (wifiBadge) {
 
 const devsGrid = document.getElementById('connected-devices-grid');
 if (devsGrid) {
-  let devs = data.connected_devices;
-  if (!devs || devs.length === 0) {
-    devs = [
-      {
-        mac: "a4:83:e7:b2:91:0f",
-        ip: "192.168.1.142",
-        hostname: "Galaxy-S24-Ultra",
-        band: "5GHz (Wi-Fi 7)",
-        bandwidth_mhz: isBoosted ? 160 : 80,
-        usage_mbps: isBoosted ? (data.download_mbps || 48.5) : 1.2,
-        is_boosted: isBoosted
-      },
-      {
-        mac: "c8:89:f3:11:4a:82",
-        ip: "192.168.1.188",
-        hostname: "MacBook-Pro-M3",
-        band: "5GHz (Wi-Fi 7)",
-        bandwidth_mhz: 80,
-        usage_mbps: 0.8,
-        is_boosted: false
-      }
-    ];
+  let devs = data.connected_devices || [];
+  if (devs.length === 0) {
+    devsGrid.innerHTML = '<div style="grid-column: 1 / -1; padding: 24px; text-align: center; color: #64748b; font-size: 0.9rem;"><i class="fa-solid fa-circle-info text-cyan"></i> No active connected Wi-Fi devices detected at this moment.</div>';
+  } else {
+    let html = '';
+    devs.forEach((dev, idx) => {
+      const devBoosted = dev.is_boosted || (isBoosted && dev.bandwidth_mhz === 160);
+      const cardBorder = devBoosted ? 'border: 1px solid #10b981; background: rgba(16, 185, 129, 0.08); box-shadow: 0 0 16px rgba(16, 185, 129, 0.25);' : 'border: 1px solid rgba(255,255,255,0.08); background: rgba(0,0,0,0.2);';
+      const bwBadge = devBoosted ? '<span style="font-size:0.75rem; font-weight:700; color:#10b981; background:rgba(16,185,129,0.2); padding:3px 8px; border-radius:12px; border:1px solid #10b981;"><i class="fa-solid fa-bolt text-gold"></i> ⚡ 160 MHz BOOSTED</span>' : '<span style="font-size:0.75rem; font-weight:600; color:#38bdf8; background:rgba(56,189,248,0.1); padding:3px 8px; border-radius:12px; border:1px solid rgba(56,189,248,0.3);">80 MHz Eco</span>';
+      const icon = dev.hostname.toLowerCase().includes('phone') || dev.hostname.toLowerCase().includes('galaxy') ? 'fa-mobile-screen-button' : 'fa-laptop';
+
+      html += `
+        <div style="${cardBorder} padding: 14px; border-radius: 12px; transition: all 0.3s ease;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <span style="font-weight: 700; font-size: 1rem; color: #f8fafc;"><i class="fa-solid ${icon} text-cyan"></i> ${dev.hostname}</span>
+            ${bwBadge}
+          </div>
+          <div style="font-size: 0.8rem; color: #94a3b8; margin-bottom: 4px;"><i class="fa-solid fa-network-wired text-purple"></i> IP: <strong>${dev.ip}</strong> | MAC: <code style="font-size:0.75rem; color:#cbd5e1;">${dev.mac}</code></div>
+          <div style="font-size: 0.8rem; color: #94a3b8; margin-bottom: 8px;"><i class="fa-solid fa-wifi text-emerald"></i> Radio Band: <strong>${dev.band}</strong></div>
+          <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.85rem; padding-top: 6px; border-top: 1px dashed rgba(255,255,255,0.08);">
+            <span style="color: #64748b;">Live Traffic Usage:</span>
+            <span style="font-weight: 700; color: ${devBoosted ? '#10b981' : '#38bdf8'}; font-size: 0.95rem;">${(dev.usage_mbps || 0.1).toFixed(1)} Mbps</span>
+          </div>
+        </div>
+      `;
+    });
+    devsGrid.innerHTML = html;
   }
-
-  let html = '';
-  devs.forEach((dev, idx) => {
-    const devBoosted = dev.is_boosted || (isBoosted && dev.bandwidth_mhz === 160);
-    const cardBorder = devBoosted ? 'border: 1px solid #10b981; background: rgba(16, 185, 129, 0.08); box-shadow: 0 0 16px rgba(16, 185, 129, 0.25);' : 'border: 1px solid rgba(255,255,255,0.08); background: rgba(0,0,0,0.2);';
-    const bwBadge = devBoosted ? '<span style="font-size:0.75rem; font-weight:700; color:#10b981; background:rgba(16,185,129,0.2); padding:3px 8px; border-radius:12px; border:1px solid #10b981;"><i class="fa-solid fa-bolt text-gold"></i> ⚡ 160 MHz BOOSTED</span>' : '<span style="font-size:0.75rem; font-weight:600; color:#38bdf8; background:rgba(56,189,248,0.1); padding:3px 8px; border-radius:12px; border:1px solid rgba(56,189,248,0.3);">80 MHz Eco</span>';
-    const icon = dev.hostname.toLowerCase().includes('phone') || dev.hostname.toLowerCase().includes('galaxy') ? 'fa-mobile-screen-button' : 'fa-laptop';
-    const liveUsage = dev.usage_mbps && dev.usage_mbps > 0.2 ? dev.usage_mbps : (0.1 + (Math.sin(Date.now()/1000 + idx) * 0.3 + 0.3));
-
-    html += `
-      <div style="${cardBorder} padding: 14px; border-radius: 12px; transition: all 0.3s ease;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-          <span style="font-weight: 700; font-size: 1rem; color: #f8fafc;"><i class="fa-solid ${icon} text-cyan"></i> ${dev.hostname}</span>
-          ${bwBadge}
-        </div>
-        <div style="font-size: 0.8rem; color: #94a3b8; margin-bottom: 4px;"><i class="fa-solid fa-network-wired text-purple"></i> IP: <strong>${dev.ip}</strong> | MAC: <code style="font-size:0.75rem; color:#cbd5e1;">${dev.mac}</code></div>
-        <div style="font-size: 0.8rem; color: #94a3b8; margin-bottom: 8px;"><i class="fa-solid fa-wifi text-emerald"></i> Radio Band: <strong>${dev.band}</strong></div>
-        <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.85rem; padding-top: 6px; border-top: 1px dashed rgba(255,255,255,0.08);">
-          <span style="color: #64748b;">Live Traffic Usage:</span>
-          <span style="font-weight: 700; color: ${devBoosted ? '#10b981' : '#38bdf8'}; font-size: 0.95rem;">${liveUsage.toFixed(1)} Mbps</span>
-        </div>
-      </div>
-    `;
-  });
-  devsGrid.innerHTML = html;
 }
 }
 function updateDashboardWithSimulatedData() {
-const cpuVal = (1.0 + Math.random() * 0.5).toFixed(1);
-const ramVal = (46.0 + Math.random() * 2.0).toFixed(1);
-const tempVal = (59.0 + Math.random() * 1.0).toFixed(1);
-const latVal = (28.0 + Math.random() * 5.0).toFixed(1);
-updateDashboardWithRealData({
-cpu_usage_pct: parseFloat(cpuVal),
-ram_usage_pct: parseFloat(ramVal),
-hardware_temp_c: parseFloat(tempVal),
-latency_ms: parseFloat(latVal),
-uptime_seconds: 137800
-});
+  // Pure real-time mode: do not generate fake random numbers
 }
 function pushTelemetryHistory(timeStr, cpu, ram, lat) {
 telemetryHistory.timestamps.push(timeStr);

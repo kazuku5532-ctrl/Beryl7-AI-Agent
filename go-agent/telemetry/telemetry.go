@@ -547,12 +547,14 @@ func (t *TelemetryCollector) GetConnectedDevices(ctx context.Context, isWifiBoos
 
 	mac5GHz := make(map[string]bool)
 	mac24GHz := make(map[string]bool)
+	activeMACs := make(map[string]bool)
 
 	out1, err1 := t.CallUbusExec(ctx, "hostapd.wlan1", "get_clients")
 	if err1 == nil && out1 != "" {
 		for _, m := range macAddrRegex.FindAllString(out1, -1) {
 			cleanMAC := strings.ToLower(strings.Trim(m, "\""))
 			mac5GHz[cleanMAC] = true
+			activeMACs[cleanMAC] = true
 		}
 	}
 
@@ -561,98 +563,99 @@ func (t *TelemetryCollector) GetConnectedDevices(ctx context.Context, isWifiBoos
 		for _, m := range macAddrRegex.FindAllString(out0, -1) {
 			cleanMAC := strings.ToLower(strings.Trim(m, "\""))
 			mac24GHz[cleanMAC] = true
+			activeMACs[cleanMAC] = true
 		}
 	}
 
-	data, err := os.ReadFile("/tmp/dhcp.leases")
-	if err == nil {
-		lines := strings.Split(string(data), "\n")
-		for i, line := range lines {
+	// Read Hostname/IP mapping from /tmp/dhcp.leases
+	leaseNames := make(map[string]string)
+	leaseIPs := make(map[string]string)
+	if data, err := os.ReadFile("/tmp/dhcp.leases"); err == nil {
+		for _, line := range strings.Split(string(data), "\n") {
 			parts := strings.Fields(line)
 			if len(parts) >= 4 {
 				mac := strings.ToLower(parts[1])
 				ip := parts[2]
 				name := parts[3]
-				if name == "*" {
-					name = fmt.Sprintf("Device-%s", strings.ReplaceAll(mac[len(mac)-5:], ":", ""))
+				leaseIPs[mac] = ip
+				if name != "*" && name != "" {
+					leaseNames[mac] = name
 				}
-
-				band := "5GHz (Wi-Fi 7)"
-				bw := 80
-				if isWifiBoosted {
-					bw = 160
-				}
-
-				if mac24GHz[mac] {
-					band = "2.4GHz"
-					bw = 40
-				} else if mac5GHz[mac] {
-					band = "5GHz (Wi-Fi 7)"
-				}
-
-				devUsage := 0.1
-				if isWifiBoosted && i == 0 {
-					devUsage = math.Max(1.5, dlMbps)
-				}
-
-				devices = append(devices, ConnectedDevice{
-					MAC:          mac,
-					IP:           ip,
-					Hostname:     name,
-					Band:         band,
-					BandwidthMHz: bw,
-					UsageMbps:    devUsage,
-					IsBoosted:    isWifiBoosted && (bw == 160),
-				})
 			}
 		}
 	}
 
-	// Dynamically distribute live router WAN throughput across active connected devices
+	// Read IP mapping from /proc/net/arp if missing from dhcp.leases
+	if arpData, err := os.ReadFile("/proc/net/arp"); err == nil {
+		for i, line := range strings.Split(string(arpData), "\n") {
+			if i == 0 {
+				continue
+			}
+			parts := strings.Fields(line)
+			if len(parts) >= 6 {
+				ip := parts[0]
+				mac := strings.ToLower(parts[3])
+				if mac != "00:00:00:00:00:00" && leaseIPs[mac] == "" {
+					leaseIPs[mac] = ip
+				}
+				if parts[5] == "br-lan" || strings.HasPrefix(parts[5], "wlan") {
+					activeMACs[mac] = true
+				}
+			}
+		}
+	}
+
+	// Build REAL device list matching actual router connections
 	totalTraffic := dlMbps + ulMbps
-	if len(devices) > 0 {
-		if totalTraffic > 0.1 {
-			for i := range devices {
-				if i == 0 {
-					devices[i].UsageMbps = math.Max(0.2, totalTraffic*0.70)
-				} else {
-					rem := (totalTraffic * 0.30) / float64(len(devices))
-					devices[i].UsageMbps = math.Max(0.1, rem)
-				}
-			}
+	idx := 0
+	for mac := range activeMACs {
+		if mac == "" || mac == "00:00:00:00:00:00" {
+			continue
 		}
-	}
+		name := leaseNames[mac]
+		if name == "" {
+			macSuffix := strings.ReplaceAll(mac, ":", "")
+			if len(macSuffix) >= 4 {
+				macSuffix = macSuffix[len(macSuffix)-4:]
+			}
+			name = fmt.Sprintf("Device-%s", macSuffix)
+		}
+		ip := leaseIPs[mac]
+		if ip == "" {
+			ip = "192.168.8.x"
+		}
 
-	if len(devices) == 0 {
-		bw0 := 80
+		band := "5GHz (Wi-Fi 7)"
+		bw := 80
 		if isWifiBoosted {
-			bw0 = 160
+			bw = 160
 		}
-		dev0Mbps := 1.2
-		if isWifiBoosted {
-			dev0Mbps = dlMbps
-			if dev0Mbps < 15.0 {
-				dev0Mbps = 45.8
+		if mac24GHz[mac] {
+			band = "2.4GHz"
+			bw = 40
+		} else if mac5GHz[mac] {
+			band = "5GHz (Wi-Fi 7)"
+		}
+
+		devUsage := 0.1
+		if totalTraffic > 0.1 {
+			if idx == 0 {
+				devUsage = math.Max(0.2, totalTraffic*0.70)
+			} else {
+				devUsage = math.Max(0.1, (totalTraffic*0.30)/float64(len(activeMACs)))
 			}
 		}
+
 		devices = append(devices, ConnectedDevice{
-			MAC:          "a4:83:e7:b2:91:0f",
-			IP:           "192.168.1.142",
-			Hostname:     "Galaxy-S24-Ultra",
-			Band:         "5GHz (Wi-Fi 7)",
-			BandwidthMHz: bw0,
-			UsageMbps:    dev0Mbps,
-			IsBoosted:    isWifiBoosted,
+			MAC:          mac,
+			IP:           ip,
+			Hostname:     name,
+			Band:         band,
+			BandwidthMHz: bw,
+			UsageMbps:    devUsage,
+			IsBoosted:    isWifiBoosted && (bw == 160),
 		})
-		devices = append(devices, ConnectedDevice{
-			MAC:          "c8:89:f3:11:4a:82",
-			IP:           "192.168.1.188",
-			Hostname:     "MacBook-Pro-M3",
-			Band:         "5GHz (Wi-Fi 7)",
-			BandwidthMHz: 80,
-			UsageMbps:    0.8,
-			IsBoosted:    false,
-		})
+		idx++
 	}
 
 	return devices
