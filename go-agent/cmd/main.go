@@ -959,6 +959,9 @@ func StartHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 			return
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate, max-age=0")
+		w.Header().Set("Pragma", "no-cache")
+		w.Header().Set("Expires", "0")
 		if len(embeddedDashboardHTML) > 0 {
 			_, _ = w.Write(embeddedDashboardHTML)
 		} else {
