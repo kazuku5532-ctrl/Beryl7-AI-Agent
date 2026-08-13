@@ -37,19 +37,25 @@ import (
 var embeddedDashboardHTML []byte
 
 type HealthState struct {
-	mu             sync.RWMutex
-	Status         string    `json:"status"`
-	UptimeSeconds  int64     `json:"uptime_seconds"`
-	LastAction     string    `json:"last_action"`
-	LastActionTime string    `json:"last_action_time"`
-	WANStatus      string    `json:"wan_status"`
-	CPUUsagePct    float64   `json:"cpu_usage_pct"`
-	RAMUsagePct    float64   `json:"ram_usage_pct"`
-	HardwareTempC  float64   `json:"hardware_temp_c"`
-	LatencyMs      float64   `json:"latency_ms"`
-	SafeMode       bool      `json:"safe_mode"`
-	KillSwitch     bool      `json:"kill_switch"`
-	StartTime      time.Time `json:"start_time"`
+	mu                    sync.RWMutex
+	Status                string                      `json:"status"`
+	UptimeSeconds         int64                       `json:"uptime_seconds"`
+	LastAction            string                      `json:"last_action"`
+	LastActionTime        string                      `json:"last_action_time"`
+	WANStatus             string                      `json:"wan_status"`
+	CPUUsagePct           float64                     `json:"cpu_usage_pct"`
+	RAMUsagePct           float64                     `json:"ram_usage_pct"`
+	HardwareTempC         float64                     `json:"hardware_temp_c"`
+	LatencyMs             float64                     `json:"latency_ms"`
+	SafeMode              bool                        `json:"safe_mode"`
+	KillSwitch            bool                        `json:"kill_switch"`
+	WifiBandwidthMHz      int                         `json:"wifi_bandwidth_mhz"`
+	IsWifiBoosted         bool                        `json:"is_wifi_boosted"`
+	DownloadMbps          float64                     `json:"download_mbps"`
+	UploadMbps            float64                     `json:"upload_mbps"`
+	ConnectedDevicesCount int                         `json:"connected_devices_count"`
+	ConnectedDevices      []telemetry.ConnectedDevice `json:"connected_devices"`
+	StartTime             time.Time                   `json:"start_time"`
 }
 
 type PendingApproval struct {
@@ -412,6 +418,17 @@ func main() {
 			}
 			health.SafeMode = wd.IsSafeMode()
 			health.KillSwitch = config.IsKillSwitchActive(cfgSnap)
+			bw := 80
+			if isWifiBoosted {
+				bw = 160
+			}
+			health.WifiBandwidthMHz = bw
+			health.IsWifiBoosted = isWifiBoosted
+			health.DownloadMbps = m.DownloadMbps
+			health.UploadMbps = m.UploadMbps
+			devs := collector.GetConnectedDevices(ctx, isWifiBoosted, m.DownloadMbps, m.UploadMbps)
+			health.ConnectedDevicesCount = len(devs)
+			health.ConnectedDevices = devs
 			health.mu.Unlock()
 
 			if wd.IsSafeMode() {
