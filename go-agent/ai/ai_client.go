@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"beryl7-agent/logger"
@@ -41,15 +42,16 @@ var (
 )
 
 type AIClient struct {
-	mu           sync.Mutex
-	apiKey       string
-	httpClient   *http.Client
-	tokens       float64
-	maxTokens    float64
-	refillRate   float64
-	lastRefill   time.Time
-	budget       APIBudget
-	cb           *CircuitBreaker
+	mu                 sync.Mutex
+	apiKey             string
+	httpClient         *http.Client
+	tokens             float64
+	maxTokens          float64
+	refillRate         float64
+	lastRefill         time.Time
+	budget             APIBudget
+	cb                 *CircuitBreaker
+	parseFailuresTotal int64
 }
 
 type AIResponse struct {
@@ -298,10 +300,14 @@ Return JSON format ONLY: {"action":"action_name","reasoning":"clear explanation"
 			if err := json.Unmarshal([]byte(cleanJSON), &parsedAI); err == nil && parsedAI.Action != "" {
 				logger.Info("Successfully parsed Gemini AI Cloud response: Action=[%s]", parsedAI.Action)
 				return &parsedAI, nil
+			} else {
+				count := atomic.AddInt64(&c.parseFailuresTotal, 1)
+				logger.Warn("CLOUD AI SILENT DEGRADATION WARNING: Gemini API returned unparseable or non-compliant JSON schema (Failure #%d): %v", count, err)
 			}
 		}
 	}
 
+	atomic.AddInt64(&c.parseFailuresTotal, 1)
 	return nil, fmt.Errorf("failed to unmarshal valid AI JSON response from Gemini API payload")
 }
 
@@ -332,4 +338,8 @@ func (c *AIClient) GetCircuitBreakerStatus() (string, int, time.Time) {
 		return c.cb.Status()
 	}
 	return "CLOSED", 0, time.Time{}
+}
+
+func (c *AIClient) GetParseFailuresTotal() int64 {
+	return atomic.LoadInt64(&c.parseFailuresTotal)
 }

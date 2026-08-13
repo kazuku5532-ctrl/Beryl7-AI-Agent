@@ -1129,6 +1129,23 @@ func StartHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 		}
 	})
 
+	var (
+		approveRateMu    sync.Mutex
+		approveIPCounts  = make(map[string]int)
+		approveLastReset = time.Now()
+	)
+
+	approveRateLimitCheck := func(ip string) bool {
+		approveRateMu.Lock()
+		defer approveRateMu.Unlock()
+		if time.Since(approveLastReset) > time.Minute {
+			approveIPCounts = make(map[string]int)
+			approveLastReset = time.Now()
+		}
+		approveIPCounts[ip]++
+		return approveIPCounts[ip] <= 10
+	}
+
 	// Endpoint 6: Operator Approval Endpoint (/api/approve)
 	mux.HandleFunc("/api/approve", func(w http.ResponseWriter, r *http.Request) {
 		if setCorsHeaders(w, r) {
@@ -1136,6 +1153,15 @@ func StartHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 		}
 		if r.Method != "POST" {
 			http.Error(w, `{"error":"Method Not Allowed"}`, http.StatusMethodNotAllowed)
+			return
+		}
+
+		host, _, _ := net.SplitHostPort(r.RemoteAddr)
+		if host == "" {
+			host = r.RemoteAddr
+		}
+		if !approveRateLimitCheck(host) {
+			http.Error(w, `{"error":"Too Many Requests: Rate limit exceeded for operator approval endpoint (10 req/min)"}`, http.StatusTooManyRequests)
 			return
 		}
 

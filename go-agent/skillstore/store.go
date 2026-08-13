@@ -3,6 +3,7 @@ package skillstore
 import (
 	"database/sql"
 	"fmt"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -156,6 +157,18 @@ func (s *SkillStore) OpenAndInit() error {
 		return fmt.Errorf("failed to create skillstore schema: %w", err)
 	}
 
+	// Seed Prior Q-Table values for cold-start acceleration without overwriting learned values
+	seedQTable := `
+	INSERT OR IGNORE INTO q_table (state, action, q_value) VALUES
+		('WAN_DROP', 'restart_wan_interface', 0.5),
+		('MEMORY_EXHAUSTION', 'purge_memory_cache', 0.6),
+		('WIFI_FAILURE', 'optimize_wifi_channel', 0.5),
+		('LATENCY_SPIKE', 'restart_interface', 0.5),
+		('REPEATER_SIGNAL_WEAK', 'scale_tx_power_down', 0.5),
+		('REPEATER_CHANNEL_CONGESTED', 'align_channels', 0.5);
+	`
+	_, _ = db.Exec(seedQTable)
+
 	return nil
 }
 
@@ -219,6 +232,20 @@ func (s *SkillStore) GetBestSkillForAnomaly(condition string) *Skill {
 	if err := row.Scan(&sk.ID, &sk.Action, &sk.Condition, &sk.Confidence, &sk.SuccessCount, &sk.FailureCount, &created, &lastUsed); err != nil {
 		return nil
 	}
+
+	// Harmonize SkillStore with Q-Table: Verify Q-Value for the skill's action
+	var qVal float64
+	qErr := s.db.QueryRow("SELECT q_value FROM q_table WHERE state = ? AND action = ?", condition, sk.Action).Scan(&qVal)
+	if qErr == nil {
+		if qVal < 0.0 {
+			// Skill has negative Q-Learning feedback: do not recommend obsolete skill!
+			logger.Warn("SKILLSTORE HARMONIZATION: Skill [%s] for Anomaly [%s] rejected due to negative Q-Value (%.2f)", sk.Action, condition, qVal)
+			return nil
+		}
+		// Weight confidence by Q-Value to keep sources of truth aligned
+		sk.Confidence = sk.Confidence * math.Max(0.1, qVal)
+	}
+
 	sk.CreatedAt = time.Unix(created, 0)
 	sk.LastUsedAt = time.Unix(lastUsed, 0)
 	return &sk

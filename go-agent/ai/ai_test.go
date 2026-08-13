@@ -67,6 +67,53 @@ func TestExtractJSONString(t *testing.T) {
 	}
 }
 
+func TestExtractJSONStringRegressionAndSchemaValidation(t *testing.T) {
+	tests := []struct {
+		name       string
+		input      string
+		wantAction string
+		wantValid  bool
+	}{
+		{
+			name:       "Standard Markdown Fence",
+			input:      "```json\n{\"action\":\"restart_wan_interface\",\"confidence\":0.95}\n```",
+			wantAction: "restart_wan_interface",
+			wantValid:  true,
+		},
+		{
+			name:       "Generic Fence",
+			input:      "```\n{\"action\":\"scale_tx_power_down\",\"confidence\":0.85}\n```",
+			wantAction: "scale_tx_power_down",
+			wantValid:  true,
+		},
+		{
+			name:       "Plain JSON Text",
+			input:      "{\"action\":\"align_channels\",\"confidence\":0.90}",
+			wantAction: "align_channels",
+			wantValid:  true,
+		},
+		{
+			name:       "Leading and Trailing Whitespace",
+			input:      "  \n  {\"action\":\"purge_memory_cache\",\"confidence\":0.88} \n  ",
+			wantAction: "purge_memory_cache",
+			wantValid:  true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			clean := extractJSONString(tt.input)
+			var resp AIResponse
+			err := json.Unmarshal([]byte(clean), &resp)
+			if tt.wantValid {
+				if err != nil || resp.Action != tt.wantAction {
+					t.Errorf("Test %s failed: got action '%s', err %v", tt.name, resp.Action, err)
+				}
+			}
+		})
+	}
+}
+
 func TestProbeDNSAsync(t *testing.T) {
 	ProbeDNSAsync()
 	time.Sleep(50 * time.Millisecond)
