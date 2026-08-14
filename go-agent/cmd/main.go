@@ -4,7 +4,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"database/sql"
-	_ "embed"
+
 	"encoding/json"
 	"fmt"
 	"net"
@@ -33,8 +33,7 @@ import (
 	"beryl7-agent/watchdog"
 )
 
-//go:embed dashboard.html
-var embeddedDashboardHTML []byte
+
 
 type HealthState struct {
 	mu                    sync.RWMutex
@@ -953,23 +952,7 @@ func StartHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 		return false
 	}
 
-	// Endpoint 0: Embedded Standalone Web Dashboard (/ and /dashboard)
-	serveDashboard := func(w http.ResponseWriter, r *http.Request) {
-		if setCorsHeaders(w, r) {
-			return
-		}
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate, max-age=0")
-		w.Header().Set("Pragma", "no-cache")
-		w.Header().Set("Expires", "0")
-		if len(embeddedDashboardHTML) > 0 {
-			_, _ = w.Write(embeddedDashboardHTML)
-		} else {
-			http.Error(w, "Dashboard HTML not embedded", http.StatusNotFound)
-		}
-	}
-	mux.HandleFunc("/", serveDashboard)
-	mux.HandleFunc("/dashboard", serveDashboard)
+
 
 	// Endpoint 1: Health Check (/api/health)
 	mux.HandleFunc("/api/health", func(w http.ResponseWriter, r *http.Request) {
