@@ -400,10 +400,19 @@ func (e *Executor) actionEnableCAKESQM(ctx context.Context, target string, param
 
 	logger.Info("EXECUTING CAKE/FQ-CODEL SQM: Eliminating Bufferbloat (shaper limits: DL=%s Kbps, UL=%s Kbps)...", downKbps, upKbps)
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "sqm.wan.enabled=1")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "sqm.wan.interface=wan")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "sqm.wan.qdisc=cake")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "sqm.wan.script=piece_of_cake.qos")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", fmt.Sprintf("sqm.wan.download=%s", downKbps))
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", fmt.Sprintf("sqm.wan.upload=%s", upKbps))
+
+	// Update anonymous section @sqm[0] for OpenWrt default config compatibility
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "sqm.@sqm[0].enabled=1")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "sqm.@sqm[0].interface=wan")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "sqm.@sqm[0].qdisc=cake")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "sqm.@sqm[0].script=piece_of_cake.qos")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", fmt.Sprintf("sqm.@sqm[0].download=%s", downKbps))
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", fmt.Sprintf("sqm.@sqm[0].upload=%s", upKbps))
 	_ = runSystemCmd(ctx, "/sbin/uci", "commit", "sqm")
 	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.core.default_qdisc=fq_codel")
 
