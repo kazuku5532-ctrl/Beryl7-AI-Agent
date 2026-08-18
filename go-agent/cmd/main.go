@@ -180,8 +180,9 @@ func validateTokenRole(r *http.Request, authHeader string, cfg *config.Config) (
 }
 
 func main() {
-	// Portable GC tuning: Memory limits managed dynamically via OS environment (GOMEMLIMIT / Procd)
+	// Portable GC tuning: Memory limits managed dynamically via OS environment & Go runtime soft limit (16MB)
 	debug.SetGCPercent(20)
+	debug.SetMemoryLimit(16 * 1024 * 1024)
 
 	setOOMScore()
 
@@ -1168,6 +1169,8 @@ func StartHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 		return approveIPCounts[ip] <= 10
 	}
 
+	var approveMutex sync.Mutex
+
 	// Endpoint 6: Operator Approval Endpoint (/api/approve)
 	mux.HandleFunc("/api/approve", func(w http.ResponseWriter, r *http.Request) {
 		if setCorsHeaders(w, r) {
@@ -1196,6 +1199,9 @@ func StartHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 		configMu.RLock()
 		currentDryRun := cfg.DryRun
 		configMu.RUnlock()
+
+		approveMutex.Lock()
+		defer approveMutex.Unlock()
 
 		pendingFile := "/var/run/beryl7_pending_approval.json"
 		data, err := os.ReadFile(pendingFile)
