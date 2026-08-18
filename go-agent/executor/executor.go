@@ -319,14 +319,24 @@ func (e *Executor) actionRevertWifiBandwidth(ctx context.Context, target string,
 }
 
 func (e *Executor) actionTuneNetworkPerformance(ctx context.Context, target string, params map[string]interface{}) error {
-	logger.Info("TUNING NETWORK PERFORMANCE: Maxing TCP Socket Buffers, MSS Clamping & A-MPDU Aggregation...")
+	logger.Info("TUNING NETWORK PERFORMANCE: Maxing TCP Socket Buffers, Firewall MTU Fix & A-MPDU Aggregation...")
 	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.core.rmem_max=16777216")
 	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.core.wmem_max=16777216")
 	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.tcp_rmem=4096 87380 16777216")
 	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.tcp_wmem=4096 65536 16777216")
 	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.core.netdev_max_backlog=10000")
 	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.netfilter.nf_conntrack_max=65536") // nolint:errcheck
-	_ = runSystemCmd(ctx, "/sbin/iptables", "-A", "FORWARD", "-p", "tcp", "--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--clamp-mss-to-pmtu") // nolint:errcheck
+
+	// OpenWrt fw4/nftables compatible MTU Fix (MSS Clamping)
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "firewall.wan.mtu_fix=1")       // nolint:errcheck
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "firewall.@zone[1].mtu_fix=1") // nolint:errcheck
+	_ = runSystemCmd(ctx, "/sbin/uci", "commit", "firewall")                 // nolint:errcheck
+	if _, err := exec.LookPath("/sbin/fw4"); err == nil {
+		_ = runSystemCmd(ctx, "/sbin/fw4", "reload") // nolint:errcheck
+	} else if _, err := exec.LookPath("/etc/init.d/firewall"); err == nil {
+		_ = runSystemCmd(ctx, "/etc/init.d/firewall", "reload") // nolint:errcheck
+	}
+
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.ampdu=1")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.wmm=1")
 	return runSystemCmd(ctx, "/sbin/uci", "commit", "wireless")
@@ -371,11 +381,21 @@ func (e *Executor) actionAPFailover(ctx context.Context, target string, params m
 func (e *Executor) actionEnableCAKESQM(ctx context.Context, target string, params map[string]interface{}) error {
 	downKbps := "250000"
 	upKbps := "250000"
+
 	if d, ok := params["download_kbps"].(string); ok && d != "" {
-		downKbps = d
+		if _, err := strconv.Atoi(d); err == nil {
+			downKbps = d
+		} else {
+			logger.Warn("SQM: Invalid non-numeric download rate '%s', defaulting to 250000", d)
+		}
 	}
+
 	if u, ok := params["upload_kbps"].(string); ok && u != "" {
-		upKbps = u
+		if _, err := strconv.Atoi(u); err == nil {
+			upKbps = u
+		} else {
+			logger.Warn("SQM: Invalid non-numeric upload rate '%s', defaulting to 250000", u)
+		}
 	}
 
 	logger.Info("EXECUTING CAKE/FQ-CODEL SQM: Eliminating Bufferbloat (shaper limits: DL=%s Kbps, UL=%s Kbps)...", downKbps, upKbps)
