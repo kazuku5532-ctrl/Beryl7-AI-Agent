@@ -379,14 +379,14 @@ func (e *Executor) actionAPFailover(ctx context.Context, target string, params m
 }
 
 func (e *Executor) actionEnableCAKESQM(ctx context.Context, target string, params map[string]interface{}) error {
-	downKbps := "250000"
-	upKbps := "250000"
+	downKbps := "200000"
+	upKbps := "200000"
 
 	if d, ok := params["download_kbps"].(string); ok && d != "" {
 		if _, err := strconv.Atoi(d); err == nil {
 			downKbps = d
 		} else {
-			logger.Warn("SQM: Invalid non-numeric download rate '%s', defaulting to 250000", d)
+			logger.Warn("SQM: Invalid non-numeric download rate '%s', defaulting to 200000", d)
 		}
 	}
 
@@ -394,7 +394,7 @@ func (e *Executor) actionEnableCAKESQM(ctx context.Context, target string, param
 		if _, err := strconv.Atoi(u); err == nil {
 			upKbps = u
 		} else {
-			logger.Warn("SQM: Invalid non-numeric upload rate '%s', defaulting to 250000", u)
+			logger.Warn("SQM: Invalid non-numeric upload rate '%s', defaulting to 200000", u)
 		}
 	}
 
