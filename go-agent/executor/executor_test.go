@@ -48,6 +48,7 @@ func TestExecuteActionAllWhitelisted(t *testing.T) {
 		"boost_wifi_bandwidth",
 		"revert_wifi_bandwidth",
 		"tune_network_performance",
+		"enable_cake_sqm",
 	}
 
 	// Test dry run mode

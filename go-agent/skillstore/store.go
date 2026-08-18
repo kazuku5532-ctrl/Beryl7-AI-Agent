@@ -164,6 +164,7 @@ func (s *SkillStore) OpenAndInit() error {
 		('MEMORY_EXHAUSTION', 'purge_memory_cache', 0.6),
 		('WIFI_FAILURE', 'optimize_wifi_channel', 0.5),
 		('LATENCY_SPIKE', 'restart_interface', 0.5),
+		('BUFFERBLOAT_SPIKE', 'enable_cake_sqm', 0.6),
 		('REPEATER_SIGNAL_WEAK', 'scale_tx_power_down', 0.5),
 		('REPEATER_CHANNEL_CONGESTED', 'align_channels', 0.5);
 	`

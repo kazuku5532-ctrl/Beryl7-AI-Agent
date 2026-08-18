@@ -83,6 +83,7 @@ func New() *Executor {
 		"scale_tx_power_down":      e.actionScaleTxPowerDown,
 		"align_channels":           e.actionAlignChannels,
 		"ap_failover":              e.actionAPFailover,
+		"enable_cake_sqm":          e.actionEnableCAKESQM,
 	}
 
 	return e
@@ -363,4 +364,14 @@ func (e *Executor) actionAPFailover(ctx context.Context, target string, params m
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", fmt.Sprintf("wireless.@wifi-iface[0].bssid=%s", bssid))
 	_ = runSystemCmd(ctx, "/sbin/uci", "commit", "wireless")
 	return e.TriggerWiFiReload(ctx)
+}
+
+func (e *Executor) actionEnableCAKESQM(ctx context.Context, target string, params map[string]interface{}) error {
+	logger.Info("EXECUTING CAKE/FQ-CODEL SQM: Eliminating Bufferbloat & Capping Loaded Ping < 60ms...")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "sqm.wan.enabled=1")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "sqm.wan.qdisc=cake")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "sqm.wan.script=piece_of_cake.qos")
+	_ = runSystemCmd(ctx, "/sbin/uci", "commit", "sqm")
+	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.core.default_qdisc=fq_codel")
+	return nil
 }

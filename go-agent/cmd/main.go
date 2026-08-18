@@ -484,8 +484,8 @@ func main() {
 					anomalyType = "MEMORY_EXHAUSTION"
 					anomalyDesc = fmt.Sprintf("High RAM usage detected: %.1f%% (>%.1f%%)", m.RAMUsagePct, cfgSnap.RAMExhaustionPct)
 				} else if anomalyType == "" && zScore > cfgSnap.LatencyZScoreThreshold && m.LatencyMs > cfgSnap.LatencySpikeMs {
-					anomalyType = "LATENCY_SPIKE"
-					anomalyDesc = fmt.Sprintf("Statistical Latency Spike detected: %.1fms (Z-Score: %.2f > %.1f)", m.LatencyMs, zScore, cfgSnap.LatencyZScoreThreshold)
+					anomalyType = "BUFFERBLOAT_SPIKE"
+					anomalyDesc = fmt.Sprintf("Bufferbloat / Latency Spike detected: %.1fms (Z-Score: %.2f > %.1f)", m.LatencyMs, zScore, cfgSnap.LatencyZScoreThreshold)
 				} else if anomalyType == "" {
 					repeaterM, _ := collector.CollectRepeaterMetrics(ctx)
 					if repeaterM != nil && repeaterM.IsRepeater {
