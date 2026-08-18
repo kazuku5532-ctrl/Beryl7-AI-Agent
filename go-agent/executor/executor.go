@@ -406,5 +406,10 @@ func (e *Executor) actionEnableCAKESQM(ctx context.Context, target string, param
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", fmt.Sprintf("sqm.wan.upload=%s", upKbps))
 	_ = runSystemCmd(ctx, "/sbin/uci", "commit", "sqm")
 	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.core.default_qdisc=fq_codel")
+
+	if _, err := exec.LookPath("/etc/init.d/sqm"); err == nil {
+		_ = runSystemCmd(ctx, "/etc/init.d/sqm", "enable")  // nolint:errcheck
+		_ = runSystemCmd(ctx, "/etc/init.d/sqm", "restart") // nolint:errcheck
+	}
 	return nil
 }
