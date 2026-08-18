@@ -30,6 +30,7 @@ type Metric struct {
 	ActiveClients   int       `json:"active_clients"`
 	WiFi5GGhzStatus string    `json:"wifi_5g_status"`
 	SystemUptimeSec int64     `json:"system_uptime_sec"`
+	NetworkToken    string    `json:"network_token"`
 }
 
 type TelemetryCollector struct {
@@ -139,7 +140,28 @@ func (t *TelemetryCollector) CollectMetrics(ctx context.Context) *Metric {
 	t.lastULMbps = m.UploadMbps
 	t.activeClientsCount = m.ActiveClients
 
+	m.NetworkToken = m.Tokenize()
+
 	return m
+}
+
+// Tokenize converts hardware metrics into ultra-compact tokenized string format (e.g. [C12][R44][T58][L28][A3][W_UP])
+func (m *Metric) Tokenize() string {
+	wanToken := "W_UP"
+	if strings.Contains(strings.ToLower(m.WANStatus), "offline") {
+		wanToken = "W_DOWN"
+	} else if strings.Contains(strings.ToLower(m.WANStatus), "partial") {
+		wanToken = "W_PART"
+	}
+
+	return fmt.Sprintf("[C%.0f][R%.0f][T%.0f][L%.0f][A%d][%s]",
+		m.CPUUsagePct,
+		m.RAMUsagePct,
+		m.HardwareTempC,
+		m.LatencyMs,
+		m.ActiveClients,
+		wanToken,
+	)
 }
 
 func (t *TelemetryCollector) readCPUUsage() float64 {

@@ -54,6 +54,7 @@ type HealthState struct {
 	UploadMbps            float64                     `json:"upload_mbps"`
 	ConnectedDevicesCount int                         `json:"connected_devices_count"`
 	ConnectedDevices      []telemetry.ConnectedDevice `json:"connected_devices"`
+	NetworkToken          string                      `json:"network_token"`
 	StartTime             time.Time                   `json:"start_time"`
 }
 
@@ -411,6 +412,7 @@ func main() {
 			health.RAMUsagePct = m.RAMUsagePct
 			health.HardwareTempC = m.HardwareTempC
 			health.LatencyMs = m.LatencyMs
+			health.NetworkToken = m.NetworkToken
 			if m.SystemUptimeSec > 0 {
 				health.UptimeSeconds = m.SystemUptimeSec
 			} else {
