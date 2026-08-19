@@ -187,9 +187,9 @@ func (t *TelemetryCollector) CalculateAdaptiveSQMRates(currentLatency float64, z
 		targetULMbps = t.peakULMbps
 	}
 
-	// Apply 88% shaper margin (12% headroom safety buffer against ONT bufferbloat)
-	shaperDL := targetDLMbps * 1000.0 * 0.88
-	shaperUL := targetULMbps * 1000.0 * 0.88
+	// Apply 80% golden standard shaper margin (20% headroom safety buffer against ONT bufferbloat)
+	shaperDL := targetDLMbps * 1000.0 * 0.80
+	shaperUL := targetULMbps * 1000.0 * 0.80
 
 	// Additional safety reduction during active latency spike
 	if zScore > 2.0 || currentLatency > 80.0 {
