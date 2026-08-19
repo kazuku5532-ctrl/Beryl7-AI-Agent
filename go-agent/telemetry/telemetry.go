@@ -40,6 +40,8 @@ type TelemetryCollector struct {
 	lastTxBytes         uint64
 	lastDLMbps          float64
 	lastULMbps          float64
+	peakDLMbps          float64
+	peakULMbps          float64
 	activeClientsCount  int
 	prevCPUTotal        float64
 	prevCPUIdle         float64
@@ -138,11 +140,63 @@ func (t *TelemetryCollector) CollectMetrics(ctx context.Context) *Metric {
 	t.lastTxBytes = txBytes
 	t.lastDLMbps = m.DownloadMbps
 	t.lastULMbps = m.UploadMbps
+	if m.DownloadMbps > t.peakDLMbps {
+		t.peakDLMbps = m.DownloadMbps
+	}
+	if m.UploadMbps > t.peakULMbps {
+		t.peakULMbps = m.UploadMbps
+	}
 	t.activeClientsCount = m.ActiveClients
 
 	m.NetworkToken = m.Tokenize()
 
 	return m
+}
+
+// CalculateAdaptiveSQMRates dynamically calculates optimal CAKE SQM shaper rates (download/upload Kbps)
+// based on observed peak WAN throughput and real-time latency feedback (88% headroom ratio).
+func (t *TelemetryCollector) CalculateAdaptiveSQMRates(currentLatency float64, zScore float64) (downKbps string, upKbps string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	defaultDL := 200000.0
+	defaultUL := 200000.0
+
+	targetDLMbps := defaultDL / 1000.0
+	if t.peakDLMbps > targetDLMbps {
+		targetDLMbps = t.peakDLMbps
+	}
+
+	targetULMbps := defaultUL / 1000.0
+	if t.peakULMbps > targetULMbps {
+		targetULMbps = t.peakULMbps
+	}
+
+	// Apply 88% shaper margin (12% headroom safety buffer against ONT bufferbloat)
+	shaperDL := targetDLMbps * 1000.0 * 0.88
+	shaperUL := targetULMbps * 1000.0 * 0.88
+
+	// If latency spike detected (Z-Score > 2.0 or latency > 80ms), scale down shaper rate by 15% to suppress bufferbloat
+	if zScore > 2.0 || currentLatency > 80.0 {
+		shaperDL *= 0.85
+		shaperUL *= 0.85
+		logger.Warn("DYNAMIC ADAPTIVE SQM: Latency spike detected (%.1fms, Z-Score: %.2f). Auto-scaling shaper down by 15%%...", currentLatency, zScore)
+	}
+
+	// Clamp within safe hardware operational bounds (100 Mbps floor to 900 Mbps ceiling)
+	if shaperDL < 100000.0 {
+		shaperDL = 100000.0
+	} else if shaperDL > 900000.0 {
+		shaperDL = 900000.0
+	}
+
+	if shaperUL < 100000.0 {
+		shaperUL = 100000.0
+	} else if shaperUL > 900000.0 {
+		shaperUL = 900000.0
+	}
+
+	return fmt.Sprintf("%.0f", shaperDL), fmt.Sprintf("%.0f", shaperUL)
 }
 
 // Tokenize converts hardware metrics into ultra-compact tokenized string format (e.g. [C12][R44][T58][L28][A3][W_UP])

@@ -514,8 +514,8 @@ func main() {
 					defaultAction = "purge_memory_cache"
 				} else if anomalyType == "WIFI_FAILURE" {
 					defaultAction = "optimize_wifi_channel"
-				} else if anomalyType == "LATENCY_SPIKE" {
-					defaultAction = "restart_interface"
+				} else if anomalyType == "BUFFERBLOAT_SPIKE" || anomalyType == "LATENCY_SPIKE" {
+					defaultAction = "enable_cake_sqm"
 				} else if anomalyType == "REPEATER_SIGNAL_WEAK" {
 					defaultAction = "scale_tx_power_down"
 				} else if anomalyType == "REPEATER_CHANNEL_CONGESTED" {
@@ -597,9 +597,14 @@ func main() {
 				if skill != nil && skill.Confidence >= requiredLocalThreshold {
 					collector.RecordSkillHit()
 					logger.Info("SkillStore Cache Hit! Executing Local Skill [%s] (Confidence=%.2f >= Required=%.2f)...", skill.Action, skill.Confidence, requiredLocalThreshold)
+					dynDL, dynUL := collector.CalculateAdaptiveSQMRates(m.LatencyMs, zScore)
 					actReq := &executor.ActionRequest{
 						ActionName: skill.Action,
 						Target:     "wan",
+						Parameters: map[string]interface{}{
+							"download_kbps": dynDL,
+							"upload_kbps":   dynUL,
+						},
 					}
 					if requiredLocalThreshold >= 0.85 {
 						saveUCICheckpoint(cfg.CheckpointPath)
