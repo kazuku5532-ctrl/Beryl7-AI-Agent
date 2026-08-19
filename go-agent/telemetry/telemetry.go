@@ -155,9 +155,24 @@ func (t *TelemetryCollector) CollectMetrics(ctx context.Context) *Metric {
 
 // CalculateAdaptiveSQMRates dynamically calculates optimal CAKE SQM shaper rates (download/upload Kbps)
 // based on observed peak WAN throughput and real-time latency feedback (88% headroom ratio).
+// Includes a closed-loop backoff mechanism: when latency spikes, it resets peak memory to currently observed
+// active throughput to adapt to ISP line congestion/fluctuations in real-time.
 func (t *TelemetryCollector) CalculateAdaptiveSQMRates(currentLatency float64, zScore float64) (downKbps string, upKbps string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+
+	// Closed-Loop Backoff: If latency spike detected (Z-Score > 2.0 or latency > 80ms),
+	// instantly recalibrate peak memory down to currently active throughput (if > 50 Mbps)
+	if zScore > 2.0 || currentLatency > 80.0 {
+		if t.lastDLMbps > 50.0 {
+			logger.Warn("CLOSED-LOOP BACKOFF: Latency spike detected (%.1fms, Z-Score: %.2f). Resetting DL peak memory from %.1f Mbps down to active %.1f Mbps", currentLatency, zScore, t.peakDLMbps, t.lastDLMbps)
+			t.peakDLMbps = t.lastDLMbps
+		}
+		if t.lastULMbps > 50.0 {
+			logger.Warn("CLOSED-LOOP BACKOFF: Latency spike detected (%.1fms, Z-Score: %.2f). Resetting UL peak memory from %.1f Mbps down to active %.1f Mbps", currentLatency, zScore, t.peakULMbps, t.lastULMbps)
+			t.peakULMbps = t.lastULMbps
+		}
+	}
 
 	defaultDL := 200000.0
 	defaultUL := 200000.0
@@ -176,11 +191,10 @@ func (t *TelemetryCollector) CalculateAdaptiveSQMRates(currentLatency float64, z
 	shaperDL := targetDLMbps * 1000.0 * 0.88
 	shaperUL := targetULMbps * 1000.0 * 0.88
 
-	// If latency spike detected (Z-Score > 2.0 or latency > 80ms), scale down shaper rate by 15% to suppress bufferbloat
+	// Additional safety reduction during active latency spike
 	if zScore > 2.0 || currentLatency > 80.0 {
 		shaperDL *= 0.85
 		shaperUL *= 0.85
-		logger.Warn("DYNAMIC ADAPTIVE SQM: Latency spike detected (%.1fms, Z-Score: %.2f). Auto-scaling shaper down by 15%%...", currentLatency, zScore)
 	}
 
 	// Clamp within safe hardware operational bounds (100 Mbps floor to 900 Mbps ceiling)
