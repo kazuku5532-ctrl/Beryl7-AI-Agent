@@ -37,8 +37,9 @@ type APIBudget struct {
 }
 
 var (
-	ErrBudgetExceeded = errors.New("API daily request budget exceeded")
-	ErrCostExceeded   = errors.New("API daily USD cost budget exceeded")
+	ErrBudgetExceeded       = errors.New("API daily request budget exceeded")
+	ErrCostExceeded         = errors.New("API daily USD cost budget exceeded")
+	ErrAirgappedModeEnabled = errors.New("air-gapped mode enabled: cloud AI calls detached")
 )
 
 type AIClient struct {
@@ -52,6 +53,7 @@ type AIClient struct {
 	budget             APIBudget
 	cb                 *CircuitBreaker
 	parseFailuresTotal int64
+	airgapped          bool
 }
 
 type AIResponse struct {
@@ -102,9 +104,28 @@ func (c *AIClient) SetAPIKey(key string) {
 	c.apiKey = key
 }
 
+func (c *AIClient) SetAirgappedMode(enabled bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.airgapped = enabled
+	if enabled {
+		logger.Info("AIClient: Air-Gapped Mode enabled. Cloud API requests will be bypassed.")
+	}
+}
+
+func (c *AIClient) IsAirgapped() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.airgapped
+}
+
 func (c *AIClient) CheckBudgetBeforeCall(estimatedCost float64) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
+	if c.airgapped {
+		return ErrAirgappedModeEnabled
+	}
 
 	now := time.Now()
 	if now.Sub(c.budget.LastResetTime) >= 24*time.Hour {

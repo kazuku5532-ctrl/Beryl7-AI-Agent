@@ -42,6 +42,9 @@ type Config struct {
 	LogBackupCount      int
 	TrustReverseProxy   bool
 	DisableLocalhostBypass bool
+	AirgappedMode       bool
+	TelegramBotToken    string
+	TelegramChatID      string
 	apiKeyAtomic      atomic.Value
 }
 
@@ -222,15 +225,66 @@ func LoadConfig() (*Config, error) {
 	if val := os.Getenv("BERYL7_CHECKPOINT_PATH"); val != "" {
 		cfg.CheckpointPath = strings.TrimSpace(val)
 	}
+	if val := os.Getenv("BERYL7_AIRGAPPED_MODE"); val == "1" || strings.ToLower(val) == "true" {
+		cfg.AirgappedMode = true
+		logger.Info("AIR-GAPPED MODE ENABLED: Outbound Cloud AI traffic disabled.")
+	}
+
+	if val := os.Getenv("TELEGRAM_BOT_TOKEN"); val != "" {
+		cfg.TelegramBotToken = strings.TrimSpace(val)
+	}
+	if val := os.Getenv("TELEGRAM_CHAT_ID"); val != "" {
+		cfg.TelegramChatID = strings.TrimSpace(val)
+	}
 
 	if cfg.GeminiAPIKey == "" {
 		key, err := readSecureKeyFile(cfg.KeyFilePath)
 		if err == nil && key != "" {
-			cfg.GeminiAPIKey = key
-			logger.Info("Loaded secure GEMINI_API_KEY from keyfile [%s]", cfg.KeyFilePath)
+			if strings.Contains(key, "GEMINI_API_KEY=") {
+				for _, line := range strings.Split(key, "\n") {
+					line = strings.TrimSpace(line)
+					if strings.HasPrefix(line, "GEMINI_API_KEY=") {
+						cfg.GeminiAPIKey = strings.TrimPrefix(line, "GEMINI_API_KEY=")
+					} else if strings.HasPrefix(line, "TELEGRAM_BOT_TOKEN=") && cfg.TelegramBotToken == "" {
+						cfg.TelegramBotToken = strings.TrimPrefix(line, "TELEGRAM_BOT_TOKEN=")
+					}
+				}
+			} else {
+				cfg.GeminiAPIKey = key
+			}
+			logger.Info("Loaded secure keys from keyfile [%s]", cfg.KeyFilePath)
 		} else if fallbackKey, errFallback := readSecureKeyFile("/etc/beryl7/agent.key"); errFallback == nil && fallbackKey != "" {
-			cfg.GeminiAPIKey = fallbackKey
-			logger.Info("Loaded fallback GEMINI_API_KEY from [/etc/beryl7/agent.key]")
+			if strings.Contains(fallbackKey, "GEMINI_API_KEY=") {
+				for _, line := range strings.Split(fallbackKey, "\n") {
+					line = strings.TrimSpace(line)
+					if strings.HasPrefix(line, "GEMINI_API_KEY=") {
+						cfg.GeminiAPIKey = strings.TrimPrefix(line, "GEMINI_API_KEY=")
+					} else if strings.HasPrefix(line, "TELEGRAM_BOT_TOKEN=") && cfg.TelegramBotToken == "" {
+						cfg.TelegramBotToken = strings.TrimPrefix(line, "TELEGRAM_BOT_TOKEN=")
+					}
+				}
+			} else {
+				cfg.GeminiAPIKey = fallbackKey
+			}
+			logger.Info("Loaded fallback keys from [/etc/beryl7/agent.key]")
+		}
+	}
+
+	if cfg.TelegramBotToken == "" {
+		// Read keyfile specifically for TELEGRAM_BOT_TOKEN if keyfile has TELEGRAM_BOT_TOKEN=...
+		for _, kPath := range []string{cfg.KeyFilePath, "/etc/beryl7/agent.key"} {
+			if content, err := readSecureKeyFile(kPath); err == nil {
+				for _, line := range strings.Split(content, "\n") {
+					line = strings.TrimSpace(line)
+					if strings.HasPrefix(line, "TELEGRAM_BOT_TOKEN=") {
+						cfg.TelegramBotToken = strings.TrimSpace(strings.TrimPrefix(line, "TELEGRAM_BOT_TOKEN="))
+						break
+					}
+				}
+			}
+			if cfg.TelegramBotToken != "" {
+				break
+			}
 		}
 	}
 
@@ -423,6 +477,10 @@ func parseEnvFile(filePath string, cfg *Config) error {
 		switch key {
 		case "GEMINI_API_KEY":
 			cfg.GeminiAPIKey = val
+		case "TELEGRAM_BOT_TOKEN", "BERYL7_TELEGRAM_BOT_TOKEN":
+			cfg.TelegramBotToken = val
+		case "TELEGRAM_CHAT_ID", "BERYL7_TELEGRAM_CHAT_ID":
+			cfg.TelegramChatID = val
 		case "AUTH_TOKEN":
 			cfg.AuthToken = val
 		case "APPROVE_TOKEN":

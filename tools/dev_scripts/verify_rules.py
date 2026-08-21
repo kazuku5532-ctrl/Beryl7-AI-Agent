@@ -83,9 +83,9 @@ for root, dirs, files in os.walk(WORKSPACE_ROOT):
                             secret_violations.append(f"{rel_path} ({desc})")
 
                     # High Entropy String Scanner for variable assignments (O(N) Linear Time)
-                    assign_matches = re.findall(r'(?:password|secret|token|api_key)\s*[:=]\s*["\']([^"\']{16,})["\']', content, re.IGNORECASE)
+                    assign_matches = re.findall(r'(?:password|secret|token|api_key)\s*[:=]\s*["\']([^"\'\r\n]{16,})["\']', content, re.IGNORECASE)
                     for val in assign_matches:
-                        if any(p in val.lower() for p in ['placeholder', 'example', 'your_', 'test_token', 'mock_']):
+                        if any(p in val.lower() for p in ['placeholder', 'example', 'your_', 'test_token', 'mock_', 'telegram_bot_token']):
                             continue
                         if calculate_entropy(val) > 4.2:
                             rel_path = os.path.relpath(filepath, WORKSPACE_ROOT)

@@ -76,9 +76,20 @@ except Exception as e:
     ssh.close()
     sys.exit(1)
 
-print("[4/5] Moving binary, setting permissions, and starting procd daemon...")
+print("[4/5] Moving binary, setting permissions, and updating Telegram config...")
 run_ssh("mv /tmp/beryl7-agent-new /usr/bin/beryl7-agent")
 run_ssh("chmod +x /usr/bin/beryl7-agent")
+
+tg_token = os.getenv("TELEGRAM_BOT_TOKEN", "")
+tg_chat_id = os.getenv("TELEGRAM_CHAT_ID", "")
+
+run_ssh("mkdir -p /etc/beryl7", check_status=False)
+if tg_token:
+    run_ssh(f"grep -q 'TELEGRAM_BOT_TOKEN' /etc/beryl7/agent.key 2>/dev/null || (echo '' >> /etc/beryl7/agent.key && echo 'TELEGRAM_BOT_TOKEN={tg_token}' >> /etc/beryl7/agent.key)", check_status=False)
+    run_ssh("chmod 0400 /etc/beryl7/agent.key 2>/dev/null || true", check_status=False)
+if tg_chat_id:
+    run_ssh(f"grep -q 'TELEGRAM_CHAT_ID' /etc/beryl7/agent.env 2>/dev/null || echo 'TELEGRAM_CHAT_ID={tg_chat_id}' >> /etc/beryl7/agent.env", check_status=False)
+    run_ssh("chmod 0600 /etc/beryl7/agent.env 2>/dev/null || true", check_status=False)
 
 # Native OpenWrt Procd service start (checking executable permission -x), with fallback to standalone nohup
 start_out = run_ssh("if [ -x /etc/init.d/beryl7-agent ]; then /etc/init.d/beryl7-agent restart; else nohup /usr/bin/beryl7-agent -config /etc/beryl7/agent.env > /var/log/beryl7-agent-nohup.log 2>&1 & fi")

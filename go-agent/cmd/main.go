@@ -27,6 +27,7 @@ import (
 	"beryl7-agent/config"
 	"beryl7-agent/executor"
 	"beryl7-agent/logger"
+	"beryl7-agent/notifier"
 	"beryl7-agent/parser"
 	"beryl7-agent/skillstore"
 	"beryl7-agent/telemetry"
@@ -261,6 +262,8 @@ func main() {
 	aiClient := ai.NewClient(cfg.GeminiAPIKey)
 	aiClient.SetAirgappedMode(cfg.AirgappedMode)
 
+	tgNotifier := notifier.NewTelegramNotifier(cfg.TelegramBotToken, cfg.TelegramChatID, cfg.AirgappedMode)
+
 	ai.ProbeDNSAsync()
 
 	health := &HealthState{
@@ -278,6 +281,156 @@ func main() {
 	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
 
 	ctx, cancel := context.WithCancel(context.Background())
+
+	if tgNotifier != nil {
+		tgNotifier.StartCommandListener(ctx, func(cmdReceived string) string {
+			cmdLower := strings.ToLower(strings.TrimSpace(cmdReceived))
+
+			switch {
+			case cmdLower == "/status" || strings.Contains(cmdLower, "trạng thái"):
+				health.mu.RLock()
+				token := health.NetworkToken
+				wan := health.WANStatus
+				cpu := health.CPUUsagePct
+				ram := health.RAMUsagePct
+				temp := health.HardwareTempC
+				lat := health.LatencyMs
+				health.mu.RUnlock()
+
+				return fmt.Sprintf("🤖 *Beryl 7 AI Agent Status*\n\n"+
+					"*Network Token:* `%s`\n"+
+					"*WAN Status:* `%s`\n"+
+					"*CPU Usage:* `%.1f%%` | *RAM:* `%.1f%%`\n"+
+					"*Temp:* `%.1f°C` | *Latency:* `%.1fms`\n"+
+					"*Air-Gapped Mode:* `%t`",
+					token, wan, cpu, ram, temp, lat, cfg.AirgappedMode)
+
+			case cmdLower == "/reboot" || strings.Contains(cmdLower, "khởi động lại"):
+				go func() {
+					time.Sleep(2 * time.Second)
+					_ = exec.Command("reboot").Run()
+				}()
+				return "🔄 *Khởi động lại Router:* Đã phát lệnh Reboot hệ thống. Thiết bị sẽ tái khởi động trong 45 giây."
+
+			case cmdLower == "/boost" || strings.Contains(cmdLower, "tăng tốc"):
+				boostReq := &executor.ActionRequest{ActionName: "boost_wifi_bandwidth", Target: "radio1"}
+				if err := execEngine.ExecuteAction(ctx, boostReq, false); err != nil {
+					return fmt.Sprintf("❌ *Tăng tốc Wi-Fi thất bại:* %v", err)
+				}
+				return "🚀 *Đã mở rộng băng thông Wi-Fi 5GHz/7 lên 160MHz Max Speed!*"
+
+			case cmdLower == "/health" || cmdLower == "/check" || strings.Contains(cmdLower, "kiểm tra") || strings.Contains(cmdLower, "sức khỏe"):
+				m := collector.CollectMetrics(ctx)
+				if m == nil {
+					return "⚠️ *Không thể đọc chỉ số Telemetry từ phần cứng!*"
+				}
+
+				cfgSnap := cfgAtomic.Load().(*config.Config)
+				liveLogSample := logParser.SanitizeLog(getSystemLogSample())
+				_, zScore := collector.UpdateEWMALatency(m.LatencyMs, 0.2)
+
+				var anomalyType, anomalyDesc string
+				if m.WANStatus == "Offline (0/1)" || strings.Contains(m.WANStatus, "Offline") {
+					anomalyType = "WAN_DROP"
+					anomalyDesc = "WAN interface down or physical link lost"
+				} else {
+					for _, line := range strings.Split(liveLogSample, "\n") {
+						if parsedReport := logParser.ParseLine(line); parsedReport != nil {
+							anomalyType = parsedReport.Type
+							anomalyDesc = parsedReport.Description
+							break
+						}
+					}
+					if anomalyType == "" && m.RAMUsagePct > cfgSnap.RAMExhaustionPct {
+						anomalyType = "MEMORY_EXHAUSTION"
+						anomalyDesc = fmt.Sprintf("RAM usage high: %.1f%% (>%.1f%%)", m.RAMUsagePct, cfgSnap.RAMExhaustionPct)
+					} else if anomalyType == "" && zScore > cfgSnap.LatencyZScoreThreshold && m.LatencyMs > cfgSnap.LatencySpikeMs {
+						anomalyType = "BUFFERBLOAT_SPIKE"
+						anomalyDesc = fmt.Sprintf("Latency spike: %.1fms (Z-Score: %.2f)", m.LatencyMs, zScore)
+					}
+				}
+
+				if anomalyType == "" {
+					return "success"
+				}
+
+				// Anomaly detected! Force agent to resolve automatically
+				logger.Warn("TELEGRAM /HEALTH FORCED AUTO-HEAL: %s (%s)", anomalyType, anomalyDesc)
+				defaultAction := "restart_wan_interface"
+				if anomalyType == "MEMORY_EXHAUSTION" {
+					defaultAction = "purge_memory_cache"
+				} else if anomalyType == "WIFI_FAILURE" {
+					defaultAction = "optimize_wifi_channel"
+				} else if anomalyType == "BUFFERBLOAT_SPIKE" || anomalyType == "LATENCY_SPIKE" {
+					defaultAction = "enable_cake_sqm"
+				}
+
+				actionName, _, qErr := store.RecommendBestAction(anomalyType, defaultAction)
+				if qErr != nil || actionName == "" {
+					actionName = defaultAction
+				}
+
+				actionReq := &executor.ActionRequest{ActionName: actionName, Target: "wan"}
+				execErr := execEngine.ExecuteAction(ctx, actionReq, cfgSnap.DryRun)
+
+				if execErr != nil {
+					return fmt.Sprintf("⚠️ *Phát hiện sự cố:* `%s` (%s)\n❌ *Tự giải quyết thất bại:* %v", anomalyType, anomalyDesc, execErr)
+				}
+
+				return fmt.Sprintf("⚠️ *Phát hiện sự cố:* `%s` (%s)\n🔧 *Đã ép Agent tự khắc phục:* `%s` (Thành công)", anomalyType, anomalyDesc, actionName)
+
+			case cmdLower == "/help" || strings.Contains(cmdLower, "trợ giúp"):
+				return "📖 *Danh sách lệnh Beryl 7 Telegram Bot:*\n" +
+					"- `/status` hoặc `trạng thái`: Xem trạng thái & NetworkToken\n" +
+					"- `/health` hoặc `kiểm tra`: Kiểm tra sức khỏe toàn bộ hệ thống (Ép tự giải quyết nếu có sự cố, hoặc trả về 'success')\n" +
+					"- `/boost` hoặc `tăng tốc`: Ép mở rộng độ rộng kênh Wi-Fi 160MHz\n" +
+					"- `/reboot` hoặc `khởi động lại`: Khởi động lại router vật lý\n" +
+					"- `/help`: Hiển thị bảng trợ giúp này"
+
+			default:
+				// Conversational AI Interface & On-Device TinyML Intent Engine Routing
+				cfgSnap := cfgAtomic.Load().(*config.Config)
+				m := collector.CollectMetrics(ctx)
+				tokenStr := ""
+				cpuPct, ramPct, tempC, latMs := 0.0, 0.0, 0.0, 0.0
+				if m != nil {
+					tokenStr = m.NetworkToken
+					cpuPct = m.CPUUsagePct
+					ramPct = m.RAMUsagePct
+					tempC = m.HardwareTempC
+					latMs = m.LatencyMs
+				}
+
+				if cfgSnap.AirgappedMode || cfgSnap.GeminiAPIKey == "" {
+					// 100% Offline Air-Gapped Mode / Local TinyML Intelligence Fallback
+					bestSkill := store.GetBestSkillForAnomaly(cmdReceived)
+					if bestSkill != nil {
+						return fmt.Sprintf("🤖 *[Beryl 7 Local TinyML Agent]*\n\n"+
+							"Tôi đã nhận yêu cầu của bạn: *\"%s\"*\n"+
+							"📌 *Khuyến nghị kịch bản cục bộ:* `%s` (Độ tin cậy: `%.0f%%`)\n"+
+							"🏷️ *Network Token:* `%s`", cmdReceived, bestSkill.Action, bestSkill.Confidence*100, tokenStr)
+					}
+
+					return fmt.Sprintf("🤖 *[Beryl 7 Local TinyML Agent]*\n\n"+
+						"Tôi đã nhận thông điệp: *\"%s\"*\n"+
+						"📊 *Tình trạng phần cứng:* Mạng bình thường | CPU `%.1f%%` | RAM `%.1f%%` | Temp `%.1f°C`\n"+
+						"💡 *Hệ thống tự trị kín (Air-Gapped TinyML Engine) đang vận hành ổn định.*",
+						cmdReceived, cpuPct, ramPct, tempC)
+				}
+
+				// Hybrid Cloud AI Conversation Routing
+				aiResp, err := aiClient.AnalyzeAnomalyWithContext(ctx, "TELEGRAM_USER_CHAT", cmdReceived, tokenStr, "Format response concisely as Beryl 7 Router AI Assistant.")
+				if err == nil && aiResp != nil && aiResp.Reasoning != "" {
+					return fmt.Sprintf("🤖 *[Beryl 7 AI Assistant]*\n\n%s", aiResp.Reasoning)
+				}
+
+				return fmt.Sprintf("🤖 *[Beryl 7 AI Assistant]*\n\n"+
+					"Tôi đã ghi nhận yêu cầu: *\"%s\"*\n"+
+					"📊 *Trạng thái phần cứng:* CPU `%.1f%%` | RAM `%.1f%%` | Latency `%.1fms`",
+					cmdReceived, cpuPct, ramPct, latMs)
+			}
+		})
+	}
 
 	go func() {
 		sig := <-sigCh
@@ -513,6 +666,14 @@ func main() {
 
 				logger.Warn("ANOMALY DETECTED: %s (%s)! Processing Auto-Healing...", anomalyType, anomalyDesc)
 				lastActionByAnomaly[anomalyType] = time.Now()
+
+				if tgNotifier != nil {
+					alertMsg := fmt.Sprintf("⚠️ *PHÁT HIỆN SỰ CỐ MẠNG*\n\n"+
+						"*Loại sự cố:* `%s`\n"+
+						"*Chi tiết:* %s\n"+
+						"*Network Token:* `%s`", anomalyType, anomalyDesc, m.NetworkToken)
+					go func() { _ = tgNotifier.SendAlert(ctx, alertMsg) }()
+				}
 
 				defaultAction := "restart_wan_interface"
 				if anomalyType == "MEMORY_EXHAUSTION" {

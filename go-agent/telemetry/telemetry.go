@@ -64,6 +64,7 @@ type TelemetryCollector struct {
 	healFailuresTotal   int64
 	rollbacksTotal      int64
 	falsePositivesTotal int64
+	lastMetric          *Metric
 }
 
 func NewCollector() *TelemetryCollector {
@@ -113,8 +114,8 @@ func (t *TelemetryCollector) CollectMetrics(ctx context.Context) *Metric {
 
 	prevTime := t.lastCollect
 	now := time.Now()
-	if !prevTime.IsZero() && now.Sub(prevTime) < 2*time.Second {
-		return nil
+	if !prevTime.IsZero() && now.Sub(prevTime) < 2*time.Second && t.lastMetric != nil {
+		return t.lastMetric
 	}
 	t.lastCollect = now
 
@@ -160,6 +161,7 @@ func (t *TelemetryCollector) CollectMetrics(ctx context.Context) *Metric {
 	t.activeClientsCount = m.ActiveClients
 
 	m.NetworkToken = m.Tokenize()
+	t.lastMetric = m
 
 	return m
 }

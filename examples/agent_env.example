@@ -7,6 +7,8 @@ LOG_LEVEL=INFO
 HEALTH_PORT=8888
 BIND_HOST=127.0.0.1
 GEMINI_API_KEY=your_gemini_api_key_here
+TELEGRAM_BOT_TOKEN=your_telegram_bot_token_here
+TELEGRAM_CHAT_ID=your_telegram_chat_id_here
 
 # Dynamic Anomaly Threshold Overrides
 BERYL7_RAM_EXHAUSTION_PCT=92.0
