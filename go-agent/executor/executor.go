@@ -177,10 +177,14 @@ func (e *Executor) actionRestartInterface(ctx context.Context, target string, pa
 	if iface == "" || !e.validIfaces[iface] {
 		return fmt.Errorf("unapproved interface target: %s", iface)
 	}
-	logger.Info("Executing OpenWrt interface restart on [%s]...", iface)
+	logger.Info("ZERO-DISRUPTION RECOVERY: Attempting non-disruptive OpenWrt interface refresh on [%s] via ifup...", iface)
+	if err := runSystemCmd(ctx, "/sbin/ifup", iface); err == nil {
+		return nil
+	}
+	logger.Warn("Interface [%s] ifup failed. Executing fallback restart via ifdown/ifup...", iface)
 	_ = runSystemCmd(ctx, "/sbin/ifdown", iface) // nolint:errcheck (non-fatal, ifup follows)
 	select {
-	case <-time.After(1 * time.Second):
+	case <-time.After(500 * time.Millisecond):
 	case <-ctx.Done():
 		return ctx.Err()
 	}
@@ -190,9 +194,9 @@ func (e *Executor) actionRestartInterface(ctx context.Context, target string, pa
 func (e *Executor) checkWiFiIdleGuard(ctx context.Context) error {
 	if e.telemetry != nil {
 		isIdle, activeClients, err := e.telemetry.AreWiFiClientsIdle(ctx)
-		if err == nil && !isIdle && activeClients > 0 {
-			logger.Warn("CLIENT IDLE WINDOW PROTECTION ACTIVE: Deferring Wi-Fi reload - %d active client(s) transferring traffic.", activeClients)
-			return fmt.Errorf("wifi reload deferred: %d active client(s) transferring traffic", activeClients)
+		if err == nil && (!isIdle || activeClients > 0) {
+			logger.Warn("ZERO-DISRUPTION GUARD: Wi-Fi reload blocked and deferred - %d active client(s) connected/transferring traffic.", activeClients)
+			return fmt.Errorf("wifi reload deferred: active client(s) connected/transferring traffic (%d clients)", activeClients)
 		}
 	}
 	return nil
@@ -420,8 +424,11 @@ func (e *Executor) actionEnableCAKESQM(ctx context.Context, target string, param
 	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.core.default_qdisc=fq_codel")
 
 	if _, err := exec.LookPath("/etc/init.d/sqm"); err == nil {
-		_ = runSystemCmd(ctx, "/etc/init.d/sqm", "enable")  // nolint:errcheck
-		_ = runSystemCmd(ctx, "/etc/init.d/sqm", "restart") // nolint:errcheck
+		_ = runSystemCmd(ctx, "/etc/init.d/sqm", "enable") // nolint:errcheck
+		// Zero-disruption: Use reload first for seamless in-kernel shaper updates without link drops
+		if reloadErr := runSystemCmd(ctx, "/etc/init.d/sqm", "reload"); reloadErr != nil {
+			_ = runSystemCmd(ctx, "/etc/init.d/sqm", "restart") // nolint:errcheck
+		}
 	}
 	return nil
 }
