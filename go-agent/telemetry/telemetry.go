@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -17,6 +18,13 @@ import (
 
 	"beryl7-agent/logger"
 )
+
+var telemetryBufPool = sync.Pool{
+	New: func() any {
+		b := make([]byte, 4096)
+		return &b
+	},
+}
 
 type Metric struct {
 	CollectedAt     time.Time `json:"collected_at"`
@@ -119,6 +127,9 @@ func (t *TelemetryCollector) CollectMetrics(ctx context.Context) *Metric {
 		WiFi5GGhzStatus: "up",
 		SystemUptimeSec: t.readSystemUptime(),
 	}
+
+	// Regulate hardware cooling fan autonomously based on golden thermal curve
+	_ = t.ApplyAdaptiveThermalFanCurve(m.HardwareTempC)
 
 	status, rxBytes, txBytes := t.readMultiWANStats(ctx)
 	m.WANStatus = status
@@ -455,6 +466,40 @@ func (t *TelemetryCollector) readHardwareTemp() float64 {
 		}
 	}
 	return 0.0
+}
+
+// ApplyAdaptiveThermalFanCurve autonomously regulates hardware cooling fan PWM based on SoC thermal junction temperature.
+// Golden Curve Specifications:
+// - < 60°C: PWM 0 (0 RPM - Silent Passive Cooling)
+// - 60°C - 70°C: PWM 128 (2,500 RPM - Gentle Proactive Thermal Equilibrium)
+// - 70°C - 80°C: PWM 180 (3,500 RPM - High-Load Wi-Fi 7 Burst Cooling)
+// - >= 80°C: PWM 255 (5,000 RPM - Max Emergency Throttle Protection)
+func (t *TelemetryCollector) ApplyAdaptiveThermalFanCurve(tempC float64) int {
+	pwm := 0
+	if tempC < 60.0 {
+		pwm = 0
+	} else if tempC < 70.0 {
+		pwm = 128
+	} else if tempC < 80.0 {
+		pwm = 180
+	} else {
+		pwm = 255
+	}
+
+	if runtime.GOOS == "linux" {
+		pwmStr := strconv.Itoa(pwm)
+		for i := 0; i <= 4; i++ {
+			hwmonPath := fmt.Sprintf("/sys/class/hwmon/hwmon%d/pwm1", i)
+			if _, err := os.Stat(hwmonPath); err == nil {
+				_ = os.WriteFile(hwmonPath, []byte(pwmStr), 0644)
+			}
+		}
+		coolingPath := "/sys/class/thermal/cooling_device0/cur_state"
+		if _, err := os.Stat(coolingPath); err == nil {
+			_ = os.WriteFile(coolingPath, []byte(pwmStr), 0644)
+		}
+	}
+	return pwm
 }
 
 func (t *TelemetryCollector) readPingLatency() float64 {

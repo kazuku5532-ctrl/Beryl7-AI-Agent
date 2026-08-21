@@ -209,3 +209,31 @@ func TestUpdateEWMALatency(t *testing.T) {
 	// alpha=1.5 (>1) also clamped
 	_, _ = c.UpdateEWMALatency(50.0, 1.5)
 }
+
+func TestApplyAdaptiveThermalFanCurve(t *testing.T) {
+	c := NewCollector()
+
+	tests := []struct {
+		temp     float64
+		expected int
+	}{
+		{temp: 45.0, expected: 0},
+		{temp: 59.9, expected: 0},
+		{temp: 60.0, expected: 128},
+		{temp: 65.5, expected: 128},
+		{temp: 69.9, expected: 128},
+		{temp: 70.0, expected: 180},
+		{temp: 75.0, expected: 180},
+		{temp: 79.9, expected: 180},
+		{temp: 80.0, expected: 255},
+		{temp: 95.0, expected: 255},
+	}
+
+	for _, tt := range tests {
+		actual := c.ApplyAdaptiveThermalFanCurve(tt.temp)
+		if actual != tt.expected {
+			t.Errorf("ApplyAdaptiveThermalFanCurve(%.1f°C) = %d; want %d", tt.temp, actual, tt.expected)
+		}
+	}
+}
+
