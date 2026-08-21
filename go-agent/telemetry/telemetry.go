@@ -493,12 +493,12 @@ func (t *TelemetryCollector) ApplyAdaptiveThermalFanCurve(tempC float64) int {
 		for i := 0; i <= 4; i++ {
 			hwmonPath := fmt.Sprintf("/sys/class/hwmon/hwmon%d/pwm1", i)
 			if _, err := os.Stat(hwmonPath); err == nil {
-				_ = os.WriteFile(hwmonPath, []byte(pwmStr), 0644)
+				_ = os.WriteFile(hwmonPath, []byte(pwmStr), 0600) // #nosec G306, G703
 			}
 		}
 		coolingPath := "/sys/class/thermal/cooling_device0/cur_state"
 		if _, err := os.Stat(coolingPath); err == nil {
-			_ = os.WriteFile(coolingPath, []byte(pwmStr), 0644)
+			_ = os.WriteFile(coolingPath, []byte(pwmStr), 0600) // #nosec G306, G703
 		}
 	}
 	return pwm

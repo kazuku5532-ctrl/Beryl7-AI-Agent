@@ -77,8 +77,74 @@ func TestValidateSystemDependenciesAndConfig(t *testing.T) {
 
 	t.Setenv("BERYL7_RAM_EXHAUSTION_PCT", "95.5")
 	t.Setenv("BERYL7_LATENCY_ZSCORE", "3.0")
+	t.Setenv("BERYL7_AIRGAPPED_MODE", "true")
+	t.Setenv("TELEGRAM_BOT_TOKEN", "123456:TEST_TOKEN")
+	t.Setenv("TELEGRAM_CHAT_ID", "987654321")
 	cfgEnv, _ := LoadConfig()
-	if cfgEnv.RAMExhaustionPct != 95.5 || cfgEnv.LatencyZScoreThreshold != 3.0 {
-		t.Errorf("Expected RAM 95.5 and ZScore 3.0, got RAM=%.1f ZScore=%.1f", cfgEnv.RAMExhaustionPct, cfgEnv.LatencyZScoreThreshold)
+	if cfgEnv.RAMExhaustionPct != 95.5 || cfgEnv.LatencyZScoreThreshold != 3.0 || !cfgEnv.AirgappedMode {
+		t.Errorf("Expected RAM 95.5, ZScore 3.0, and Airgapped true, got RAM=%.1f ZScore=%.1f Airgapped=%v", cfgEnv.RAMExhaustionPct, cfgEnv.LatencyZScoreThreshold, cfgEnv.AirgappedMode)
+	}
+	if cfgEnv.TelegramBotToken != "123456:TEST_TOKEN" || cfgEnv.TelegramChatID != "987654321" {
+		t.Errorf("Expected TelegramBotToken and ChatID to match env, got token=%s chatID=%s", cfgEnv.TelegramBotToken, cfgEnv.TelegramChatID)
+	}
+}
+
+func TestParseEnvFile(t *testing.T) {
+	tempDir := t.TempDir()
+	envPath := filepath.Join(tempDir, "agent.env")
+	envContent := `
+HEALTH_PORT=9999
+BIND_HOST=0.0.0.0
+LOG_LEVEL=DEBUG
+DRY_RUN=true
+DISABLE_AUTO_HEALING=true
+AUTH_TOKEN=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+APPROVE_TOKEN=fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210
+TELEGRAM_BOT_TOKEN=888888:ENV_TOKEN
+TELEGRAM_CHAT_ID=777777
+BERYL7_AIRGAPPED_MODE=true
+`
+	_ = os.WriteFile(envPath, []byte(envContent), 0600)
+
+	cfg := &Config{}
+	err := parseEnvFile(envPath, cfg)
+	if err != nil {
+		t.Fatalf("Failed to parse env file: %v", err)
+	}
+
+	if cfg.HealthPort != 9999 || cfg.BindHost != "0.0.0.0" || !cfg.DryRun || !cfg.DisableAutoHeal || !cfg.AirgappedMode {
+		t.Errorf("Parsed config mismatch: %+v", cfg)
+	}
+
+	if cfg.TelegramBotToken != "888888:ENV_TOKEN" || cfg.TelegramChatID != "777777" {
+		t.Errorf("Telegram config mismatch in parseEnvFile: token=%s chatID=%s", cfg.TelegramBotToken, cfg.TelegramChatID)
+	}
+}
+
+func TestValidateSystemConfigurationErrors(t *testing.T) {
+	// Nil config
+	if err := ValidateSystemConfiguration(nil); err == nil {
+		t.Errorf("Expected error for nil config")
+	}
+
+	// Empty AuthToken
+	cfg := &Config{
+		AuthToken: "",
+	}
+	if err := ValidateSystemConfiguration(cfg); err == nil {
+		t.Errorf("Expected error for empty AuthToken")
+	}
+
+	// Weak AuthToken (< 32 chars)
+	cfg.AuthToken = "short-token"
+	if err := ValidateSystemConfiguration(cfg); err == nil {
+		t.Errorf("Expected error for weak AuthToken")
+	}
+
+	// ApproveToken same as AuthToken
+	cfg.AuthToken = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	cfg.ApproveToken = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	if err := ValidateSystemConfiguration(cfg); err == nil {
+		t.Errorf("Expected error when ApproveToken equals AuthToken")
 	}
 }

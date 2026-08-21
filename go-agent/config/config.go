@@ -489,6 +489,10 @@ func parseEnvFile(filePath string, cfg *Config) error {
 			cfg.LogLevel = val
 		case "DISABLE_AUTO_HEALING":
 			cfg.DisableAutoHeal = (val == "true" || val == "1")
+		case "DRY_RUN", "BERYL7_DRY_RUN":
+			cfg.DryRun = (val == "true" || val == "1")
+		case "BERYL7_AIRGAPPED_MODE", "AIRGAPPED_MODE":
+			cfg.AirgappedMode = (val == "true" || val == "1")
 		case "HEALTH_PORT":
 			if p, err := strconv.Atoi(val); err == nil {
 				cfg.HealthPort = p

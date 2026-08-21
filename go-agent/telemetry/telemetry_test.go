@@ -246,4 +246,31 @@ func TestHarmonizeRepeaterState(t *testing.T) {
 	c.HarmonizeRepeaterState(ctx, false)
 }
 
+func TestCalculateAdaptiveSQMRates(t *testing.T) {
+	c := NewCollector()
+
+	// High latency path -> throttles
+	dl, ul := c.CalculateAdaptiveSQMRates(100.0, 2.5)
+	if dl == "" || ul == "" {
+		t.Errorf("Expected non-empty SQM rates, got dl=%s ul=%s", dl, ul)
+	}
+
+	// Normal latency path -> normal headroom
+	dl2, ul2 := c.CalculateAdaptiveSQMRates(20.0, 0.5)
+	if dl2 == "" || ul2 == "" {
+		t.Errorf("Expected non-empty SQM rates for normal latency, got dl=%s ul=%s", dl2, ul2)
+	}
+}
+
+func TestGetConnectedDevices(t *testing.T) {
+	c := NewCollector()
+	ctx := context.Background()
+
+	devices := c.GetConnectedDevices(ctx, false, 50.0, 10.0)
+	_ = len(devices)
+
+	_, _ = c.CallUbusExecArgs(ctx, "hostapd.radio1", "get_clients", "{}")
+}
+
+
 

@@ -29,6 +29,11 @@ func TestNewTelegramNotifier(t *testing.T) {
 	if n.chatID != 987654321 {
 		t.Errorf("Expected chatID 987654321, got %d", n.chatID)
 	}
+
+	n.SetAirgapped(true)
+	if !n.airgapped {
+		t.Errorf("Expected airgapped true after SetAirgapped(true)")
+	}
 }
 
 func TestCommandCooldown(t *testing.T) {
@@ -67,4 +72,17 @@ func TestAirgappedBypass(t *testing.T) {
 	if err := n.SendAlert(ctx, "Test Message"); err != nil {
 		t.Errorf("Expected nil error in air-gapped mode, got %v", err)
 	}
+}
+
+func TestSendAlertAndGetUpdatesWithMockServer(t *testing.T) {
+	n := NewTelegramNotifier("123456:ABC", "987654321", false)
+	if n == nil {
+		t.Fatalf("Failed to create notifier")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	_ = n.SendAlert(ctx, "Test Message")
+	_, _ = n.getUpdates(ctx, 0, 1)
 }

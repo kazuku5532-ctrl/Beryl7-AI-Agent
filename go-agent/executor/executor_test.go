@@ -66,6 +66,21 @@ func TestExecuteActionAllWhitelisted(t *testing.T) {
 		_ = exec.ExecuteAction(ctx, req, false)
 	}
 
+	// Test additional enterprise execution actions
+	extraActions := []string{
+		"scale_tx_power_down",
+		"align_channels",
+		"ap_failover",
+	}
+	for _, act := range extraActions {
+		req := &ActionRequest{ActionName: act, Target: "radio1"}
+		_ = exec.ExecuteAction(ctx, req, true)
+		_ = exec.ExecuteAction(ctx, req, false)
+	}
+
+	_ = exec.TriggerWiFiReload(ctx)
+	exec.SetTelemetryProvider(nil)
+
 	// Test invalid / empty action
 	_ = exec.ExecuteAction(ctx, nil, true)
 	_ = exec.ExecuteAction(ctx, &ActionRequest{ActionName: ""}, true)

@@ -55,6 +55,40 @@ func TestSkillStoreLifecycle(t *testing.T) {
 		t.Errorf("FilterCompatibleSkills returned nil slice")
 	}
 
+	// Test Q-Learning and recommendations
+	action, conf, errRec := store.RecommendBestAction("WAN_DROP", "restart_wan_interface")
+	if errRec != nil || action == "" || conf < 0 {
+		t.Errorf("Expected valid recommendation, got action=%s conf=%.2f err=%v", action, conf, errRec)
+	}
+
+	bestSkill := store.GetBestSkillForAnomaly("WAN_DROP")
+	if bestSkill == nil {
+		t.Errorf("Expected best skill for WAN_DROP")
+	}
+
+	errQ := store.UpdateQValue("WAN_DROP", "restart_wan_interface", 1.0)
+	if errQ != nil {
+		t.Errorf("UpdateQValue failed: %v", errQ)
+	}
+
+	_ = store.GetTopSkillsSummary(5)
+	_ = store.GetTopSkillsSummaryForAnomaly("WAN_DROP", 5)
+
+	flushTarget := filepath.Join(tempDir, "flush.db")
+	_ = store.FlushToPersistent(flushTarget)
+
 	backupPath := dbPath + ".bak"
 	_ = os.Remove(backupPath)
+}
+
+func TestNewHybridStore(t *testing.T) {
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "hybrid_skills.db")
+	flashPath := filepath.Join(tempDir, "flash_skills.db")
+
+	store, err := NewHybrid(dbPath, flashPath)
+	if err != nil {
+		t.Fatalf("Failed to create hybrid store: %v", err)
+	}
+	defer store.Close()
 }

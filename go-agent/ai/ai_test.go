@@ -129,3 +129,36 @@ func TestAnalyzeAnomalyFallback(t *testing.T) {
 		t.Logf("Fallback call processed gracefully")
 	}
 }
+
+func TestRedactMACAddresses(t *testing.T) {
+	input := "Device with MAC AA:BB:CC:DD:EE:FF connected to radio1"
+	redacted := RedactMACAddresses(input)
+	if redacted == input {
+		t.Errorf("Expected MAC address to be redacted, got %s", redacted)
+	}
+}
+
+func TestAirgappedModeAndSnapshots(t *testing.T) {
+	client := NewClient("test-key")
+	if client.IsAirgapped() {
+		t.Errorf("Expected airgapped false initially")
+	}
+
+	client.SetAirgappedMode(true)
+	if !client.IsAirgapped() {
+		t.Errorf("Expected airgapped true after SetAirgappedMode(true)")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	// In air-gapped mode, API calls should immediately return ErrAirgappedModeEnabled
+	resp, err := client.AnalyzeAnomalyWithContext(ctx, "WAN_DROP", "sample error", "[C1][R80]", "extra context")
+	if err != ErrAirgappedModeEnabled || resp != nil {
+		t.Errorf("Expected ErrAirgappedModeEnabled in air-gapped mode, got err=%v resp=%v", err, resp)
+	}
+
+	_ = client.GetBudgetSnapshot()
+	_, _, _ = client.GetCircuitBreakerStatus()
+	_ = client.GetParseFailuresTotal()
+}

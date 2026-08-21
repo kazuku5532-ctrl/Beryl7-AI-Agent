@@ -313,3 +313,78 @@ func TestAutoRollback(t *testing.T) {
 	cfg := &config.Config{}
 	_ = AutoRollback(cfg)
 }
+
+func TestAdditionalAPIEndpoints(t *testing.T) {
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "test_api.db")
+	cpPath := filepath.Join(tempDir, "cp_api.uci")
+
+	store, _ := skillstore.New(dbPath)
+	defer store.Close()
+
+	wd := watchdog.New(cpPath)
+	execEngine := executor.New()
+	aiClient := ai.NewClient("dummy-key")
+
+	listener, _ := net.Listen("tcp", "127.0.0.1:0")
+	testPort := listener.Addr().(*net.TCPAddr).Port
+	_ = listener.Close()
+
+	cfg := &config.Config{
+		HealthPort:   testPort,
+		BindHost:     "127.0.0.1",
+		AuthToken:    "admin-secret",
+		ApproveToken: "operator-secret",
+		DryRun:       true,
+	}
+
+	health := &HealthState{
+		Status:        "healthy",
+		LastAction:    "none",
+		StartTime:     time.Now(),
+		UptimeSeconds: 100,
+	}
+
+	server := StartHealthCheckServer(cfg, health, execEngine, store, aiClient, wd)
+	defer server.Close()
+
+	time.Sleep(100 * time.Millisecond)
+	baseURL := fmt.Sprintf("http://127.0.0.1:%d", testPort)
+
+	// Test GET /api/q-table
+	respQ, errQ := http.Get(baseURL + "/api/q-table")
+	if errQ == nil {
+		respQ.Body.Close()
+	}
+
+	// Test GET /api/history
+	respH, errH := http.Get(baseURL + "/api/history")
+	if errH == nil {
+		respH.Body.Close()
+	}
+
+	// Test POST /api/kill-switch/enable with operator auth
+	reqKS, _ := http.NewRequest("POST", baseURL+"/api/kill-switch/enable", nil)
+	reqKS.Header.Set("Authorization", "Bearer operator-secret")
+	respKS, errKS := http.DefaultClient.Do(reqKS)
+	if errKS == nil {
+		respKS.Body.Close()
+	}
+
+	// Test POST /api/kill-switch/disable
+	reqKSD, _ := http.NewRequest("POST", baseURL+"/api/kill-switch/disable", nil)
+	reqKSD.Header.Set("Authorization", "Bearer operator-secret")
+	respKSD, errKSD := http.DefaultClient.Do(reqKSD)
+	if errKSD == nil {
+		respKSD.Body.Close()
+	}
+
+	// Test POST /api/actions/execute
+	actionBody := bytes.NewBuffer([]byte(`{"action_name":"purge_memory_cache","target":"wan"}`))
+	reqAct, _ := http.NewRequest("POST", baseURL+"/api/actions/execute", actionBody)
+	reqAct.Header.Set("Authorization", "Bearer operator-secret")
+	respAct, errAct := http.DefaultClient.Do(reqAct)
+	if errAct == nil {
+		respAct.Body.Close()
+	}
+}
