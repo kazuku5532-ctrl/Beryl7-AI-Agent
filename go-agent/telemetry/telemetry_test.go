@@ -237,3 +237,13 @@ func TestApplyAdaptiveThermalFanCurve(t *testing.T) {
 	}
 }
 
+func TestHarmonizeRepeaterState(t *testing.T) {
+	c := NewCollector()
+	ctx := context.Background()
+
+	// Should not panic on both branches
+	c.HarmonizeRepeaterState(ctx, true)
+	c.HarmonizeRepeaterState(ctx, false)
+}
+
+

@@ -259,6 +259,7 @@ func main() {
 		logger.Warn("NOTICE: GEMINI_API_KEY is not set! Cloud AI Log Analysis disabled. Graceful degradation active: Local-First SQLite Self-Healing & Watchdog running 100%% normally.")
 	}
 	aiClient := ai.NewClient(cfg.GeminiAPIKey)
+	aiClient.SetAirgappedMode(cfg.AirgappedMode)
 
 	ai.ProbeDNSAsync()
 
@@ -432,6 +433,10 @@ func main() {
 			health.ConnectedDevicesCount = len(devs)
 			health.ConnectedDevices = devs
 			health.mu.Unlock()
+
+			// Dynamically harmonize gl-repeater: Standby on wired Ethernet, active on wireless travel mode
+			isWiredWANActive := m.WANStatus == "Active (1/1)" || strings.Contains(m.WANStatus, "Active")
+			collector.HarmonizeRepeaterState(ctx, isWiredWANActive)
 
 			if wd.IsSafeMode() {
 				wd.RecordHealthCheckSuccess()

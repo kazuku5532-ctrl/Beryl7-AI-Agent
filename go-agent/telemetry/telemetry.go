@@ -947,3 +947,22 @@ func (t *TelemetryCollector) CollectRepeaterMetrics(ctx context.Context) (*Repea
 	return metrics, nil
 }
 
+// HarmonizeRepeaterState dynamically orchestrates gl-repeater:
+// When wired Ethernet WAN is active, repeater background scanning is put to standby (auto=0) to protect local Wi-Fi 7 streams from rogue scanning drops.
+// When wired WAN is disconnected/offline, repeater auto-scanning is re-enabled (auto=1) for seamless travel/wireless bridging mode.
+func (t *TelemetryCollector) HarmonizeRepeaterState(ctx context.Context, isWiredWANActive bool) {
+	if runtime.GOOS != "linux" {
+		return
+	}
+	if isWiredWANActive {
+		// Standby mode: Prevent rogue background scanning while on Ethernet
+		_ = exec.CommandContext(ctx, "/sbin/uci", "set", "repeater.main.auto=0").Run()
+		_ = exec.CommandContext(ctx, "/sbin/uci", "commit", "repeater").Run()
+	} else {
+		// Active mode: Allow repeater to find upstream networks when on wireless/travel mode
+		_ = exec.CommandContext(ctx, "/sbin/uci", "set", "repeater.main.auto=1").Run()
+		_ = exec.CommandContext(ctx, "/sbin/uci", "commit", "repeater").Run()
+	}
+}
+
+
