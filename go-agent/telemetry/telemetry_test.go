@@ -218,13 +218,13 @@ func TestApplyAdaptiveThermalFanCurve(t *testing.T) {
 		expected int
 	}{
 		{temp: 45.0, expected: 0},
-		{temp: 59.9, expected: 0},
-		{temp: 60.0, expected: 128},
-		{temp: 65.5, expected: 128},
-		{temp: 69.9, expected: 128},
-		{temp: 70.0, expected: 180},
-		{temp: 75.0, expected: 180},
-		{temp: 79.9, expected: 180},
+		{temp: 64.9, expected: 0},
+		{temp: 65.0, expected: 85},
+		{temp: 70.0, expected: 85},
+		{temp: 71.9, expected: 85},
+		{temp: 72.0, expected: 160},
+		{temp: 75.0, expected: 160},
+		{temp: 79.9, expected: 160},
 		{temp: 80.0, expected: 255},
 		{temp: 95.0, expected: 255},
 	}

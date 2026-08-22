@@ -471,19 +471,19 @@ func (t *TelemetryCollector) readHardwareTemp() float64 {
 }
 
 // ApplyAdaptiveThermalFanCurve autonomously regulates hardware cooling fan PWM based on SoC thermal junction temperature.
-// Golden Curve Specifications:
-// - < 60°C: PWM 0 (0 RPM - Silent Passive Cooling)
-// - 60°C - 70°C: PWM 128 (2,500 RPM - Gentle Proactive Thermal Equilibrium)
-// - 70°C - 80°C: PWM 180 (3,500 RPM - High-Load Wi-Fi 7 Burst Cooling)
+// Golden Curve Specifications (Lifespan-Optimized):
+// - < 65°C: PWM 0 (0 RPM - Fan OFF / Silent Passive Rest Mode)
+// - 65°C - 72°C: PWM 85 (~2,200 - 2,500 RPM - Gentle Whisper Proactive Equilibrium)
+// - 72°C - 80°C: PWM 160 (~3,500 RPM - High-Load Wi-Fi 7 Burst Cooling)
 // - >= 80°C: PWM 255 (5,000 RPM - Max Emergency Throttle Protection)
 func (t *TelemetryCollector) ApplyAdaptiveThermalFanCurve(tempC float64) int {
 	pwm := 0
-	if tempC < 60.0 {
+	if tempC < 65.0 {
 		pwm = 0
-	} else if tempC < 70.0 {
-		pwm = 128
+	} else if tempC < 72.0 {
+		pwm = 85
 	} else if tempC < 80.0 {
-		pwm = 180
+		pwm = 160
 	} else {
 		pwm = 255
 	}
