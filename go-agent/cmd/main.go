@@ -317,7 +317,11 @@ func main() {
 				if err := execEngine.ExecuteAction(ctx, boostReq, false); err != nil {
 					return fmt.Sprintf("❌ *Tăng tốc Wi-Fi thất bại:* %v", err)
 				}
-				return "🚀 *Đã mở rộng băng thông Wi-Fi 5GHz/7 lên 160MHz Max Speed!*"
+				health.mu.Lock()
+				health.IsWifiBoosted = true
+				health.WifiBandwidthMHz = 160
+				health.mu.Unlock()
+				return "🚀 *Đã mở rộng băng thông Wi-Fi 5GHz/7 lên 160MHz Max Speed!*\n\n💡 Khi mạng rảnh rỗi trong 10 giây, Agent sẽ tự động hạ về 80MHz và gửi tin nhắn thông báo cho bạn."
 
 			case cmdLower == "/health" || cmdLower == "/check" || strings.Contains(cmdLower, "kiểm tra") || strings.Contains(cmdLower, "sức khỏe"):
 				m := collector.CollectMetrics(ctx)
@@ -618,6 +622,13 @@ func main() {
 					if execErr := execEngine.ExecuteAction(ctx, revertReq, currentDryRun); execErr == nil {
 						isWifiBoosted = false
 						lowTrafficCycles = 0
+						if tgNotifier != nil {
+							ecoMsg := fmt.Sprintf("🌱 *Wi-Fi 7 đã tự động trở về chế độ Eco (80MHz)*\n\n"+
+								"📊 *Lưu lượng mạng:* `%.1f Mbps` (< `%.1f Mbps` trong 10s)\n"+
+								"💡 Router đã tự động hạ băng thông để tiết kiệm điện năng và giảm nhiệt độ.",
+								m.DownloadMbps, cfgSnap.BandwidthRestoreMbps)
+							go func() { _ = tgNotifier.SendAlert(ctx, ecoMsg) }()
+						}
 					}
 				}
 			} else if isWifiBoosted && m.DownloadMbps >= cfgSnap.BandwidthRestoreMbps {

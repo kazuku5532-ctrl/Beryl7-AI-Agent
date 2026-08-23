@@ -152,10 +152,15 @@ curl -X GET http://192.168.8.1:8888/api/budget/status \
 
 ---
 
-## 🖥️ Step 6: Open Web Operations Dashboard
+## 🤖 Step 6: Connect Telegram Bot & Prometheus Monitoring
 
-1. Double-click [Beryl7_Dashboard_Standalone.html](../dashboard/Beryl7_Dashboard_Standalone.html) in any modern web browser.
-2. In the top navbar or Admin Settings modal (`⚙️`), set:
-   - **Router API Host Address:** `http://192.168.8.1:8888`
-   - **API Authorization Token:** Your `APPROVE_TOKEN` or `AUTH_TOKEN`.
-3. View real-time CPU, RAM, hardware temperature, latency, API budget status, and logread stream.
+1. **Telegram Operational Bot:**
+   - Configure `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` in `/etc/beryl7/agent.env`.
+   - Start chatting with your router directly via Telegram:
+     - `/status`: View real-time CPU, RAM, Temp, Latency, and Network Token.
+     - `/health`: Force a system-wide diagnostic check and self-heal run.
+     - `/boost`: Enable 160MHz Wi-Fi 7 mode.
+     - `/reboot`: Perform graceful reboot.
+
+2. **Prometheus / Grafana Metrics:**
+   - Scrape `http://192.168.8.1:8888/metrics` with Prometheus or import metrics into Grafana.

@@ -53,13 +53,13 @@
 
 ---
 
-## 5. Standalone Dashboard CORS or Connection Warning
-* **Symptoms:** Dashboard shows `Unable to reach Router API at http://192.168.8.1:8888`.
-* **Diagnosis:** Browser CORS origin mismatch or wrong IP configured in Dashboard.
+## 5. Telegram Bot Unresponsive or Unauthorized
+* **Symptoms:** Bot does not respond to `/status` or `/health` commands.
+* **Diagnosis:** Incorrect `TELEGRAM_BOT_TOKEN`, unauthorized `TELEGRAM_CHAT_ID`, or WAN jitter.
 * **Resolution:**
-  - Click the **Admin Settings (Gear Icon)** in Standalone Dashboard and set Router Host to your router's exact IP (e.g. `192.168.8.1` or `192.168.1.1`).
-  - Pass valid `Authorization: Bearer <AUTH_TOKEN>` in Admin Settings.
-  - Verify `CORSAllowedOrigins` in `agent.env` includes `null` for standalone HTML opening.
+  - Verify `TELEGRAM_BOT_TOKEN` in `/etc/beryl7/agent.key` or `agent.env`.
+  - Confirm your Telegram Chat ID matches `TELEGRAM_CHAT_ID` (unauthorized chat IDs are discarded for security).
+  - Check daemon logread output: `logread | grep TELEGRAM` or `/var/log/beryl7_agent.log`.
 
 ---
 

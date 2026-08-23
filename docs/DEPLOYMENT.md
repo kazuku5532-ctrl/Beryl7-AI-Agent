@@ -1,6 +1,6 @@
 # Beryl 7 AI Agent — Production Deployment Guide 📖
 
-This guide outlines step-by-step instructions for deploying the **Beryl 7 AI Agent Go Daemon** onto the **GL.iNet Beryl 7 (GL-MT3600BE)** router running OpenWrt, and connecting the **Enterprise Operations Dashboard**.
+This guide outlines step-by-step instructions for deploying the **Beryl 7 AI Agent Go Daemon** onto the **GL.iNet Beryl 7 (GL-MT3600BE)** router running OpenWrt.
 
 ---
 
@@ -9,7 +9,7 @@ This guide outlines step-by-step instructions for deploying the **Beryl 7 AI Age
 1. **GL.iNet Beryl 7 Router (GL-MT3600BE)** running OpenWrt v24+ (IP: `192.168.8.1`).
 2. SSH access enabled on router with root privileges.
 3. Go compiler (v1.22+) installed on local build workstation.
-4. Python 3.10+ installed on local workstation (for python fallback controller).
+4. Python 3.10+ installed on local workstation (for CI/CD and deployment tooling).
 
 ---
 
@@ -30,7 +30,13 @@ go build -o beryl7-agent ./cmd
 
 Transfer the compiled binary `beryl7-agent` to the router `/usr/bin/` directory and grant execution permissions:
 
-### Method A: Direct HTTP Wget Transfer (Recommended)
+### Method A: Automated Deployment Script (Recommended)
+```powershell
+$env:ROUTER_PASS="your_router_password"
+python tools/dev_scripts/deploy_router.py
+```
+
+### Method B: Direct HTTP Wget Transfer
 On local workstation, host the binary folder:
 ```powershell
 python -m http.server 8000 --directory go-agent
@@ -41,19 +47,14 @@ wget -O /usr/bin/beryl7-agent http://<YOUR_WORKSTATION_IP>:8000/beryl7-agent
 chmod +x /usr/bin/beryl7-agent
 ```
 
-### Method B: Base64 SSH Stream
-```powershell
-python scratch/deploy.py
-```
-
 ---
 
 ## ⚙️ Step 3: Run Go Daemon as Background Service
 
-On router via SSH, launch the daemon in background mode with custom polling interval (5 seconds):
+On router via SSH, launch the daemon service:
 
 ```bash
-nohup /usr/bin/beryl7-agent -interval 5 > /tmp/beryl7.log 2>&1 &
+/etc/init.d/beryl7-agent start
 ```
 
 Verify daemon is running:
@@ -61,29 +62,26 @@ Verify daemon is running:
 ps | grep beryl7-agent
 ```
 
-Test HTTP API endpoint directly on router:
+---
+
+## 🧪 Step 4: Verify Management API & Prometheus Endpoints
+
+Test HTTP API endpoints directly on router or from local network:
+
 ```bash
-curl http://192.168.8.1:8888/api/health
+# 1. Health Status
+curl -s http://192.168.8.1:8888/api/health
+
+# 2. Prometheus Metrics
+curl -s http://192.168.8.1:8888/metrics
 ```
 
 ---
 
-## 💻 Step 4: Launch Enterprise Operations Dashboard
+## 🤖 Step 5: Telegram Bot Operations
 
-### Option 1: Standalone HTML File (Zero Installation)
-Simply double-click and open [c:\Users\kazuk\Documents\Beryl7_Dashboard_Standalone.html](file:///c:/Users/kazuk\Documents\Beryl7_Dashboard_Standalone.html) in Chrome, Edge, or Firefox.
-
-### Option 2: Python Web Controller Server
-Run the python dashboard server on local workstation:
-```bash
-python agent/dashboard_server.py 5000
-```
-Access in browser: `http://localhost:5000`
-
----
-
-## 🔧 Step 5: Configure Admin Settings in Dashboard
-
-1. Click the **Gear Icon** (`⚙️`) in the top navigation bar of the Dashboard.
-2. Enter your Router IP (`http://192.168.8.1:8888`).
-3. Click **Save & Apply Settings**. The settings are persisted in `localStorage` and telemetry streaming starts immediately.
+Once `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` are configured in `/etc/beryl7/agent.key` and `/etc/beryl7/agent.env`:
+- Send `/status` to the bot to inspect real-time router vitals.
+- Send `/health` to trigger on-demand anomaly checks and auto-remediation.
+- Send `/boost` to activate 160MHz Wi-Fi 7 mode.
+- Send `/reboot` to reboot the router remotely.

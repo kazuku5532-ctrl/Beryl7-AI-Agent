@@ -9,7 +9,7 @@ This document defines specialized agent roles, static analysis verification engi
 ### 1. 🔍 Auditing Skill Agent (Chuyên gia Quét & Phân tích Lỗ hổng Codebase Tĩnh)
 - **Role:** Static Code Security Auditor & Verification Engineer.
 - **Responsibilities:**
-  - Audits repository files (`go-agent`, `scripts`, `tools`, `dashboard`, `docs`) against empirical static rules:
+  - Audits repository files (`go-agent`, `scripts`, `tools`, `docs`) against empirical static rules:
     1. **CORS & Domain Handling:** Runs `tools/dev_scripts/ast_analyzer.go` to inspect Go AST Data-Flow for unsafe `strings.HasPrefix` on CORS origin expressions (protecting against CWE-290 header spoofing).
     2. **Secret & Key Protection:** Runs linear $O(N)$ Shannon Entropy scanner (`verify_rules.py` using `collections.Counter`) for high-entropy assignment strings (>4.2 entropy) and hardcoded secret patterns.
     3. **IP Boundary Security:** Checks IPv4-mapped IPv6 loopback bounds handling (`net.ParseIP().IsLoopback()`).

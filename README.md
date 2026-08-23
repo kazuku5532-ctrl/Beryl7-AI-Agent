@@ -9,7 +9,7 @@
 [![codecov](https://img.shields.io/badge/coverage-53%25-yellow.svg)](docs/benchmark.md)
 [![Status](https://img.shields.io/badge/Production-Certified_Live-emerald.svg)](http://192.168.8.1:8888/api/health)
 
-The project delivers a zero-dependency, native Go daemon (`/usr/bin/beryl7-agent`), an embedded HTTP management API on port `8888`, a standalone dashboard UI ([Beryl7_Dashboard_Standalone.html](dashboard/Beryl7_Dashboard_Standalone.html)), getting started documentation ([docs/GETTING_STARTED.md](docs/GETTING_STARTED.md)), and performance benchmark reports ([docs/benchmark.md](docs/benchmark.md)).
+The project delivers a zero-dependency, native Go daemon (`/usr/bin/beryl7-agent`), an embedded HTTP management API on port `8888`, Prometheus metrics exporter (`/metrics`), Telegram bot operational control, getting started documentation ([docs/GETTING_STARTED.md](docs/GETTING_STARTED.md)), and performance benchmark reports ([docs/benchmark.md](docs/benchmark.md)).
 
 ---
 
@@ -102,10 +102,12 @@ EOF
 chmod 0600 /etc/beryl7/agent.env
 ```
 
-### 2. Standalone Web Dashboard (Zero Docker/Prometheus Overhead)
+### 2. Operational Control & Telemetry
 
-For home and single-user environments, view real-time router telemetry, CPU/RAM charts, and system status directly in any web browser without external Docker or Prometheus servers:
-- **Standalone Dashboard URL:** [http://192.168.8.1:8888](http://192.168.8.1:8888)
+Interact with the daemon and inspect telemetry using:
+- **Telegram Bot:** Real-time conversational interface, status inspection (`/status`), forced health checks (`/health`), Wi-Fi boost (`/boost`), and reboots (`/reboot`).
+- **Prometheus Metrics:** Standard metrics endpoint available at `http://192.168.8.1:8888/metrics` for Prometheus / Grafana scraping.
+- **REST Management API:** Secure JSON API on port `8888` for local automation and status inspection.
 
 ### 3. Verify Endpoints with `curl`
 

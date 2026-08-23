@@ -44,8 +44,8 @@ The daemon registers `/etc/beryl7/agent.env` and `/root/skills.db` in `/etc/sysu
 ### Q14: How do I test the binary without deploying to a physical router?
 Use the included `Dockerfile` and `docker-compose.yml` to run an emulated OpenWrt environment locally.
 
-### Q15: Is CORS enabled for standalone HTML dashboards?
-Yes. CORS headers allow `null` origin (for `file://` HTML opens) and local subnets (`192.168.8.x`).
+### Q15: How does CORS origin handling work for the HTTP API?
+CORS headers allow local LAN subnets (`192.168.8.x`, `127.0.0.1`, `localhost`) or custom origins specified in `CORS_ORIGINS` in `/etc/beryl7/agent.env`.
 
 ### Q16: How is Wi-Fi bandwidth boost triggered?
 When WAN download throughput exceeds `80.0 Mbps`, the agent boosts 5GHz channel width from 80MHz to 160MHz (`htmode EHT160`). When throughput drops below `20.0 Mbps` for 60 seconds, it restores 80MHz.
