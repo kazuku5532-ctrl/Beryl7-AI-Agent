@@ -282,6 +282,8 @@ func main() {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
+	var isWifiBoostedAtomic atomic.Bool
+
 	if tgNotifier != nil {
 		tgNotifier.StartCommandListener(ctx, func(cmdReceived string) string {
 			cmdLower := strings.ToLower(strings.TrimSpace(cmdReceived))
@@ -317,6 +319,7 @@ func main() {
 				if err := execEngine.ExecuteAction(ctx, boostReq, false); err != nil {
 					return fmt.Sprintf("❌ *Tăng tốc Wi-Fi thất bại:* %v", err)
 				}
+				isWifiBoostedAtomic.Store(true)
 				health.mu.Lock()
 				health.IsWifiBoosted = true
 				health.WifiBandwidthMHz = 160
@@ -491,7 +494,6 @@ func main() {
 		"REPEATER_CHANNEL_CONGESTED": 30 * time.Second,
 	}
 	lastActionByAnomaly := make(map[string]time.Time)
-	isWifiBoosted := false
 	lowTrafficCycles := 0
 
 	cfgAtomic.Store(cfg)
@@ -576,17 +578,18 @@ func main() {
 			} else {
 				health.UptimeSeconds = int64(time.Since(health.StartTime).Seconds())
 			}
+			isBoosted := isWifiBoostedAtomic.Load()
 			health.SafeMode = wd.IsSafeMode()
 			health.KillSwitch = config.IsKillSwitchActive(cfgSnap)
 			bw := 80
-			if isWifiBoosted {
+			if isBoosted {
 				bw = 160
 			}
 			health.WifiBandwidthMHz = bw
-			health.IsWifiBoosted = isWifiBoosted
+			health.IsWifiBoosted = isBoosted
 			health.DownloadMbps = m.DownloadMbps
 			health.UploadMbps = m.UploadMbps
-			devs := collector.GetConnectedDevices(ctx, isWifiBoosted, m.DownloadMbps, m.UploadMbps)
+			devs := collector.GetConnectedDevices(ctx, isBoosted, m.DownloadMbps, m.UploadMbps)
 			health.ConnectedDevicesCount = len(devs)
 			health.ConnectedDevices = devs
 			health.mu.Unlock()
@@ -607,20 +610,20 @@ func main() {
 
 			liveLogSample := logParser.SanitizeLog(getSystemLogSample())
 
-			if m.DownloadMbps > cfgSnap.BandwidthBoostMbps && !isWifiBoosted {
+			if m.DownloadMbps > cfgSnap.BandwidthBoostMbps && !isBoosted {
 				logger.Info("SMART BANDWIDTH DETECTED (%.1f Mbps > %.1fMbps)! Auto-boosting Wi-Fi 7 to 160MHz Max Speed...", m.DownloadMbps, cfgSnap.BandwidthBoostMbps)
 				boostReq := &executor.ActionRequest{ActionName: "boost_wifi_bandwidth", Target: "radio1"}
 				if execErr := execEngine.ExecuteAction(ctx, boostReq, currentDryRun); execErr == nil {
-					isWifiBoosted = true
+					isWifiBoostedAtomic.Store(true)
 					lowTrafficCycles = 0
 				}
-			} else if isWifiBoosted && m.DownloadMbps < cfgSnap.BandwidthRestoreMbps {
+			} else if isBoosted && m.DownloadMbps < cfgSnap.BandwidthRestoreMbps {
 				lowTrafficCycles++
 				if lowTrafficCycles >= 2 {
 					logger.Info("SMART BANDWIDTH STABILIZED (%.1f Mbps < %.1fMbps for 2 cycles)! Reverting Wi-Fi 7 to Eco 80MHz Mode...", m.DownloadMbps, cfgSnap.BandwidthRestoreMbps)
 					revertReq := &executor.ActionRequest{ActionName: "revert_wifi_bandwidth", Target: "radio1"}
 					if execErr := execEngine.ExecuteAction(ctx, revertReq, currentDryRun); execErr == nil {
-						isWifiBoosted = false
+						isWifiBoostedAtomic.Store(false)
 						lowTrafficCycles = 0
 						if tgNotifier != nil {
 							ecoMsg := fmt.Sprintf("🌱 *Wi-Fi 7 đã tự động trở về chế độ Eco (80MHz)*\n\n"+
@@ -631,7 +634,7 @@ func main() {
 						}
 					}
 				}
-			} else if isWifiBoosted && m.DownloadMbps >= cfgSnap.BandwidthRestoreMbps {
+			} else if isBoosted && m.DownloadMbps >= cfgSnap.BandwidthRestoreMbps {
 				lowTrafficCycles = 0
 			}
 
