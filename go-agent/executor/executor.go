@@ -323,16 +323,26 @@ func (e *Executor) actionRevertWifiBandwidth(ctx context.Context, target string,
 }
 
 func (e *Executor) actionTuneNetworkPerformance(ctx context.Context, target string, params map[string]interface{}) error {
-	logger.Info("TUNING NETWORK PERFORMANCE: Maxing TCP Socket Buffers, Firewall MTU Fix & A-MPDU Aggregation...")
+	logger.Info("TUNING NETWORK PERFORMANCE: Enabling Hardware NAT & Flow Offloading, Maxing TCP Socket Buffers & A-MPDU Aggregation...")
 	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.core.rmem_max=16777216")
 	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.core.wmem_max=16777216")
+	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.core.rmem_default=262144")
+	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.core.wmem_default=262144")
 	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.tcp_rmem=4096 87380 16777216")
 	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.tcp_wmem=4096 65536 16777216")
 	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.core.netdev_max_backlog=10000")
+	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.tcp_max_syn_backlog=8192")
+	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.tcp_window_scaling=1")
+	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.tcp_sack=1")
+	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.tcp_fastopen=3")
 	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.netfilter.nf_conntrack_max=65536")                     // nolint:errcheck
 	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.tcp_fin_timeout=15")                              // nolint:errcheck
 	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.netfilter.nf_conntrack_tcp_timeout_close_wait=10")     // nolint:errcheck
 	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.netfilter.nf_conntrack_tcp_timeout_fin_wait=10")        // nolint:errcheck
+
+	// OpenWrt Hardware & Software Flow Offloading (MediaTek PPE / HNAT Acceleration)
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "firewall.@defaults[0].flow_offloading=1")     // nolint:errcheck
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "firewall.@defaults[0].flow_offloading_hw=1")  // nolint:errcheck
 
 	// OpenWrt fw4/nftables compatible MTU Fix (MSS Clamping)
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "firewall.wan.mtu_fix=1")       // nolint:errcheck
@@ -346,6 +356,8 @@ func (e *Executor) actionTuneNetworkPerformance(ctx context.Context, target stri
 
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.ampdu=1")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.wmm=1")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_1.ampdu=1")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_1.wmm=1")
 	return runSystemCmd(ctx, "/sbin/uci", "commit", "wireless")
 }
 
