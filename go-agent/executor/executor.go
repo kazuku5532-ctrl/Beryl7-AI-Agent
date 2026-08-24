@@ -354,6 +354,10 @@ func (e *Executor) actionTuneNetworkPerformance(ctx context.Context, target stri
 		_ = runSystemCmd(ctx, "/etc/init.d/firewall", "reload") // nolint:errcheck
 	}
 
+	// Fast-Fallback QUIC (UDP 443) to prevent video buffer stalling on YouTube/HTTP3
+	_ = runSystemCmd(ctx, "/usr/sbin/iptables", "-D", "FORWARD", "-p", "udp", "--dport", "443", "-j", "REJECT", "--reject-with", "icmp-port-unreachable") // nolint:errcheck
+	_ = runSystemCmd(ctx, "/usr/sbin/iptables", "-I", "FORWARD", "-p", "udp", "--dport", "443", "-j", "REJECT", "--reject-with", "icmp-port-unreachable") // nolint:errcheck
+
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.ampdu=1")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.wmm=1")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_1.ampdu=1")
