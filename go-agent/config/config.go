@@ -98,7 +98,7 @@ func LoadConfig() (*Config, error) {
 		SkillStorePath:     "/root/skills.db",
 		DisableAutoHeal:    false,
 		FirmwareVersion:    "4.9.0",
-		RAMExhaustionPct:       92.0,
+		RAMExhaustionPct:       95.0,
 		CPUSpikeLoad:           1.5,
 		LatencySpikeMs:         100.0,
 		LatencyZScoreThreshold: 2.5,

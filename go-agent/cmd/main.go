@@ -488,10 +488,10 @@ func main() {
 	cooldowns := map[string]time.Duration{
 		"WAN_DROP":                   30 * time.Second,
 		"WIFI_FAILURE":               45 * time.Second,
-		"MEMORY_EXHAUSTION":          60 * time.Second,
+		"MEMORY_EXHAUSTION":          30 * time.Minute,
 		"LATENCY_SPIKE":              60 * time.Second,
-		"REPEATER_SIGNAL_WEAK":       30 * time.Second,
-		"REPEATER_CHANNEL_CONGESTED": 30 * time.Second,
+		"REPEATER_SIGNAL_WEAK":       60 * time.Second,
+		"REPEATER_CHANNEL_CONGESTED": 60 * time.Second,
 	}
 	lastActionByAnomaly := make(map[string]time.Time)
 	lowTrafficCycles := 0
@@ -681,7 +681,7 @@ func main() {
 				logger.Warn("ANOMALY DETECTED: %s (%s)! Processing Auto-Healing...", anomalyType, anomalyDesc)
 				lastActionByAnomaly[anomalyType] = time.Now()
 
-				if tgNotifier != nil {
+				if tgNotifier != nil && anomalyType != "MEMORY_EXHAUSTION" {
 					alertMsg := fmt.Sprintf("⚠️ *PHÁT HIỆN SỰ CỐ MẠNG*\n\n"+
 						"*Loại sự cố:* `%s`\n"+
 						"*Chi tiết:* %s\n"+
