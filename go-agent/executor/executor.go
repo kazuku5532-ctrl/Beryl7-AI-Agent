@@ -80,11 +80,14 @@ func New() *Executor {
 		"boost_wifi_bandwidth":     e.actionBoostWifiBandwidth,
 		"revert_wifi_bandwidth":    e.actionRevertWifiBandwidth,
 		"tune_network_performance": e.actionTuneNetworkPerformance,
+		"optimize_streaming_pipeline": e.actionOptimizeStreamingPipeline,
 		"scale_tx_power_down":      e.actionScaleTxPowerDown,
 		"align_channels":           e.actionAlignChannels,
 		"ap_failover":              e.actionAPFailover,
 		"enable_cake_sqm":          e.actionEnableCAKESQM,
 	}
+
+	e.riskMatrix["optimize_streaming_pipeline"] = 0.40 // Low Risk streaming pipeline tuning
 
 	return e
 }
@@ -372,6 +375,17 @@ func (e *Executor) actionTuneNetworkPerformance(ctx context.Context, target stri
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.wmm=1")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_1.ampdu=1")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_1.wmm=1")
+	return runSystemCmd(ctx, "/sbin/uci", "commit", "wireless")
+}
+
+func (e *Executor) actionOptimizeStreamingPipeline(ctx context.Context, target string, params map[string]interface{}) error {
+	logger.Info("SMART VIDEO STREAMING PIPELINE: Optimizing video chunk delivery, unthrottled TCP window scaling & WMM Video QoS...")
+	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.tcp_slow_start_after_idle=0")
+	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.tcp_adv_win_scale=1")
+	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.tcp_autocorking=0")
+	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.tcp_early_retrans=3")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.wmm=1")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.ampdu=1")
 	return runSystemCmd(ctx, "/sbin/uci", "commit", "wireless")
 }
 

@@ -640,6 +640,11 @@ func main() {
 
 			_, zScore := collector.UpdateEWMALatency(m.LatencyMs, 0.2)
 
+			// Smart Sustained Video Streaming Pipeline Acceleration: Ensures zero-stutter video buffer delivery
+			if m.IsStreamingActive {
+				_ = execEngine.ExecuteAction(ctx, &executor.ActionRequest{ActionName: "optimize_streaming_pipeline", Target: "lan"}, false)
+			}
+
 			var anomalyType, anomalyDesc string
 			if m.WANStatus == "Offline (0/1)" || strings.Contains(m.WANStatus, "Offline") {
 				anomalyType = "WAN_DROP"

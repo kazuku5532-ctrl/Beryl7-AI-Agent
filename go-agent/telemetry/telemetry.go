@@ -38,6 +38,7 @@ type Metric struct {
 	ActiveClients   int       `json:"active_clients"`
 	WiFi5GGhzStatus string    `json:"wifi_5g_status"`
 	SystemUptimeSec int64     `json:"system_uptime_sec"`
+	IsStreamingActive bool    `json:"is_streaming_active"`
 	NetworkToken    string    `json:"network_token"`
 }
 
@@ -64,6 +65,7 @@ type TelemetryCollector struct {
 	healFailuresTotal   int64
 	rollbacksTotal      int64
 	falsePositivesTotal int64
+	streamingCycleCount int
 	lastMetric          *Metric
 }
 
@@ -159,6 +161,18 @@ func (t *TelemetryCollector) CollectMetrics(ctx context.Context) *Metric {
 		t.peakULMbps = m.UploadMbps
 	}
 	t.activeClientsCount = m.ActiveClients
+
+	// Detect sustained streaming pattern (continuous download between 1.5 Mbps and 120 Mbps across cycles)
+	if m.DownloadMbps >= 1.5 && m.DownloadMbps <= 120.0 {
+		t.streamingCycleCount++
+	} else if m.DownloadMbps < 0.5 {
+		if t.streamingCycleCount > 0 {
+			t.streamingCycleCount--
+		}
+	}
+	if t.streamingCycleCount >= 3 {
+		m.IsStreamingActive = true
+	}
 
 	m.NetworkToken = m.Tokenize()
 	t.lastMetric = m
