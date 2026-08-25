@@ -364,9 +364,10 @@ func (e *Executor) actionTuneNetworkPerformance(ctx context.Context, target stri
 		_ = runSystemCmd(ctx, "/etc/init.d/firewall", "reload") // nolint:errcheck
 	}
 
-	// Fast-Fallback QUIC (UDP 443) & TCP MSS Clamping to prevent video buffer stalling
+	// Remove any UDP 443 reject rules to allow native high-speed QUIC/HTTP3 streaming
 	_ = runSystemCmd(ctx, "/usr/sbin/iptables", "-D", "FORWARD", "-p", "udp", "--dport", "443", "-j", "REJECT", "--reject-with", "icmp-port-unreachable") // nolint:errcheck
-	_ = runSystemCmd(ctx, "/usr/sbin/iptables", "-I", "FORWARD", "-p", "udp", "--dport", "443", "-j", "REJECT", "--reject-with", "icmp-port-unreachable") // nolint:errcheck
+
+	// TCP MSS Clamping to prevent video buffer stalling
 	_ = runSystemCmd(ctx, "/usr/sbin/iptables", "-t", "mangle", "-D", "FORWARD", "-p", "tcp", "--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--clamp-mss-to-pmtu") // nolint:errcheck
 	_ = runSystemCmd(ctx, "/usr/sbin/iptables", "-t", "mangle", "-I", "FORWARD", "-p", "tcp", "--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--clamp-mss-to-pmtu") // nolint:errcheck
 	_ = runSystemCmd(ctx, "/usr/sbin/iptables", "-t", "mangle", "-D", "POSTROUTING", "-p", "tcp", "--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--clamp-mss-to-pmtu") // nolint:errcheck
