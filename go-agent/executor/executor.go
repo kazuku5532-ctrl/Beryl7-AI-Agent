@@ -341,10 +341,12 @@ func (e *Executor) actionTuneNetworkPerformance(ctx context.Context, target stri
 	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.tcp_fastopen=3")
 	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.tcp_slow_start_after_idle=0")                      // Prevents HLS / m3u8 browser video stalls
 	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.tcp_mtu_probing=1")                              // Prevents black-hole packet drops on video CDNs
-	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.tcp_adv_win_scale=1")                            // Optimizes buffer window for video streaming
+	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.tcp_adv_win_scale=2")                            // Maximize 75% buffer window for instant chunk prefetching
 	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.tcp_moderate_rcvbuf=1")
 	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.tcp_autocorking=0")
 	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.tcp_early_retrans=3")
+	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.tcp_notsent_lowat=16384")
+	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.tcp_rfc1337=1")
 	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.netfilter.nf_conntrack_max=65536")                     // nolint:errcheck
 	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.tcp_fin_timeout=15")                              // nolint:errcheck
 	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.netfilter.nf_conntrack_tcp_timeout_close_wait=10")     // nolint:errcheck
@@ -374,8 +376,10 @@ func (e *Executor) actionTuneNetworkPerformance(ctx context.Context, target stri
 	_ = runSystemCmd(ctx, "/usr/sbin/iptables", "-t", "mangle", "-I", "POSTROUTING", "-p", "tcp", "--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--clamp-mss-to-pmtu") // nolint:errcheck
 
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.ampdu=1")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.amsdu=1")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.wmm=1")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_1.ampdu=1")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_1.amsdu=1")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_1.wmm=1")
 	return runSystemCmd(ctx, "/sbin/uci", "commit", "wireless")
 }
@@ -383,9 +387,10 @@ func (e *Executor) actionTuneNetworkPerformance(ctx context.Context, target stri
 func (e *Executor) actionOptimizeStreamingPipeline(ctx context.Context, target string, params map[string]interface{}) error {
 	logger.Info("SMART VIDEO STREAMING PIPELINE: Optimizing video chunk delivery, unthrottled TCP window scaling & WMM Video QoS...")
 	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.tcp_slow_start_after_idle=0")
-	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.tcp_adv_win_scale=1")
+	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.tcp_adv_win_scale=2")
 	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.tcp_autocorking=0")
 	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.tcp_early_retrans=3")
+	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.tcp_notsent_lowat=16384")
 
 	// Ensure Apple iOS Private Relay NXDOMAIN rules are active to prevent iPhone video stalling
 	appleConf := "/tmp/dnsmasq.d/apple_private_relay.conf"
@@ -398,6 +403,7 @@ func (e *Executor) actionOptimizeStreamingPipeline(ctx context.Context, target s
 
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.wmm=1")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.ampdu=1")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.amsdu=1")
 	return runSystemCmd(ctx, "/sbin/uci", "commit", "wireless")
 }
 
