@@ -433,6 +433,23 @@ func (s *SkillStore) FlushToPersistent(persistentPath string) error {
 	return nil
 }
 
+// OptimizeAndVacuum runs SQLite PRAGMA optimize and VACUUM to defragment and optimize query plans.
+func (s *SkillStore) OptimizeAndVacuum() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed || s.db == nil {
+		return ErrStoreClosed
+	}
+
+	_, _ = s.db.Exec("PRAGMA optimize;")
+	_, err := s.db.Exec("VACUUM;")
+	if err != nil {
+		return fmt.Errorf("SQLite VACUUM failed: %w", err)
+	}
+	logger.Info("SKILLSTORE: SQLite database optimized and vacuumed successfully.")
+	return nil
+}
+
 const learningRate = 0.2 // Learning rate Alpha
 
 // UpdateQValue executes single-step Q-learning Bellman update: Q(s,a) = Q(s,a) + Alpha * (Reward - Q(s,a))

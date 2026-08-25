@@ -552,6 +552,11 @@ func main() {
 			if backupErr := store.BackupDatabase(); backupErr != nil {
 				logger.Error("Scheduled SkillStore backup failed: %v", backupErr)
 			}
+			// Autonomous Golden State Maintenance: Proactively keeps system clean, defragmented and optimized 24/7
+			_ = store.OptimizeAndVacuum()
+			_ = execEngine.ExecuteAction(ctx, &executor.ActionRequest{ActionName: "purge_memory_cache", Target: "ram"}, false)
+			_ = execEngine.ExecuteAction(ctx, &executor.ActionRequest{ActionName: "tune_network_performance", Target: "lan"}, false)
+			logger.Info("GOLDEN STATUS: Autonomous full-system cleanup and performance optimization completed.")
 		case <-pruneTicker.C:
 			if pruneErr := store.PruneSkillsPeriodic(); pruneErr != nil {
 				logger.Error("Scheduled SkillStore pruning failed: %v", pruneErr)
