@@ -350,9 +350,9 @@ func (e *Executor) actionTuneNetworkPerformance(ctx context.Context, target stri
 	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.netfilter.nf_conntrack_tcp_timeout_close_wait=10")     // nolint:errcheck
 	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.netfilter.nf_conntrack_tcp_timeout_fin_wait=10")        // nolint:errcheck
 
-	// OpenWrt Hardware & Software Flow Offloading (MediaTek PPE / HNAT Acceleration)
-	_ = runSystemCmd(ctx, "/sbin/uci", "set", "firewall.@defaults[0].flow_offloading=1")     // nolint:errcheck
-	_ = runSystemCmd(ctx, "/sbin/uci", "set", "firewall.@defaults[0].flow_offloading_hw=1")  // nolint:errcheck
+	// OpenWrt Reliable Flow Configuration (Disable buggy MTK PPE hardware flow table to prevent video stream stalls)
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "firewall.@defaults[0].flow_offloading=0")     // nolint:errcheck
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "firewall.@defaults[0].flow_offloading_hw=0")  // nolint:errcheck
 
 	// OpenWrt fw4/nftables compatible MTU Fix (MSS Clamping)
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "firewall.wan.mtu_fix=1")       // nolint:errcheck
