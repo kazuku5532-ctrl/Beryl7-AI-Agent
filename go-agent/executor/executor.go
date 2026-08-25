@@ -3,6 +3,7 @@ package executor
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
@@ -384,6 +385,16 @@ func (e *Executor) actionOptimizeStreamingPipeline(ctx context.Context, target s
 	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.tcp_adv_win_scale=1")
 	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.tcp_autocorking=0")
 	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.tcp_early_retrans=3")
+
+	// Ensure Apple iOS Private Relay NXDOMAIN rules are active to prevent iPhone video stalling
+	appleConf := "/tmp/dnsmasq.d/apple_private_relay.conf"
+	if _, err := os.Stat("/tmp/dnsmasq.d"); err == nil {
+		if _, err := os.Stat(appleConf); os.IsNotExist(err) {
+			_ = os.WriteFile(appleConf, []byte("server=/mask.icloud.com/\nserver=/mask-h2.icloud.com/\n"), 0600)
+			_ = runSystemCmd(ctx, "/etc/init.d/dnsmasq", "reload")
+		}
+	}
+
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.wmm=1")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.ampdu=1")
 	return runSystemCmd(ctx, "/sbin/uci", "commit", "wireless")
