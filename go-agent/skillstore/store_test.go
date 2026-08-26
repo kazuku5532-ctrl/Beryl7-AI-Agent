@@ -3,6 +3,7 @@ package skillstore
 import (
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 )
 
@@ -92,3 +93,47 @@ func TestNewHybridStore(t *testing.T) {
 	}
 	defer store.Close()
 }
+
+func TestSkillStoreOptimizeAndVacuum(t *testing.T) {
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "vacuum_skills.db")
+
+	store, err := New(dbPath)
+	if err != nil {
+		t.Fatalf("Failed to init store: %v", err)
+	}
+
+	// 1. Optimize and vacuum active store
+	if errOpt := store.OptimizeAndVacuum(); errOpt != nil {
+		t.Errorf("OptimizeAndVacuum failed on active store: %v", errOpt)
+	}
+
+	// 2. High concurrency write + vacuum race test
+	const workers = 15
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		workerID := i
+		go func() {
+			defer wg.Done()
+			skill := &Skill{
+				ID:         "test_race",
+				Action:     "test_action",
+				Condition:  "test_cond",
+				Confidence: 0.8,
+			}
+			_ = store.SaveOrUpdateSkill(skill, true, 0.3)
+			if workerID%3 == 0 {
+				_ = store.OptimizeAndVacuum()
+			}
+		}()
+	}
+	wg.Wait()
+
+	// 3. Close store and test error handling
+	store.Close()
+	if errClosed := store.OptimizeAndVacuum(); errClosed != ErrStoreClosed {
+		t.Errorf("Expected ErrStoreClosed on closed store, got %v", errClosed)
+	}
+}
+

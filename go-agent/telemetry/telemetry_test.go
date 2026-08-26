@@ -3,6 +3,7 @@ package telemetry
 import (
 	"context"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -294,3 +295,41 @@ func TestAsyncPingProbeAndCaching(t *testing.T) {
 		t.Errorf("readPingLatency took too long (%v), expected non-blocking < 100ms", elapsed)
 	}
 }
+
+func TestAsyncPingProbe_HighConcurrencyRace(t *testing.T) {
+	c := NewCollector()
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	const goroutines = 40
+	const opsPerGoroutine = 25
+	var wg sync.WaitGroup
+
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+		workerID := i
+		go func() {
+			defer wg.Done()
+			for j := 0; j < opsPerGoroutine; j++ {
+				switch (workerID + j) % 4 {
+				case 0:
+					_ = c.readPingLatency()
+				case 1:
+					_ = c.GetCachedPingLatency()
+				case 2:
+					_ = c.ProbePingLatency(ctx)
+				case 3:
+					_ = c.CollectMetrics(ctx)
+				}
+			}
+		}()
+	}
+
+	wg.Wait()
+
+	finalLat := c.GetCachedPingLatency()
+	if finalLat < 0 {
+		t.Errorf("Expected non-negative final latency after concurrent load, got %f", finalLat)
+	}
+}
+

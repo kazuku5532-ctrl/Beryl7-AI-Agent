@@ -3,6 +3,7 @@ package notifier
 import (
 	"context"
 	"encoding/json"
+	"sync"
 	"testing"
 	"time"
 )
@@ -107,4 +108,55 @@ func TestPrivateChatUpdateParsing(t *testing.T) {
 		t.Errorf("Expected chat type 'group', got '%s'", updateGroup.Message.Chat.Type)
 	}
 }
+
+func TestSupergroupAndChannelUpdateParsing(t *testing.T) {
+	var updateSupergroup telegramUpdate
+	jsonDataSuper := `{"update_id": 103, "message": {"message_id": 3, "chat": {"id": 987654321, "type": "supergroup"}, "text": "/health"}}`
+	if err := json.Unmarshal([]byte(jsonDataSuper), &updateSupergroup); err != nil {
+		t.Fatalf("Failed to parse supergroup update: %v", err)
+	}
+	if updateSupergroup.Message.Chat.Type != "supergroup" {
+		t.Errorf("Expected chat type 'supergroup', got '%s'", updateSupergroup.Message.Chat.Type)
+	}
+
+	var updateChannel telegramUpdate
+	jsonDataChan := `{"update_id": 104, "message": {"message_id": 4, "chat": {"id": 987654321, "type": "channel"}, "text": "/boost"}}`
+	if err := json.Unmarshal([]byte(jsonDataChan), &updateChannel); err != nil {
+		t.Fatalf("Failed to parse channel update: %v", err)
+	}
+	if updateChannel.Message.Chat.Type != "channel" {
+		t.Errorf("Expected chat type 'channel', got '%s'", updateChannel.Message.Chat.Type)
+	}
+}
+
+func TestCommandCooldownConcurrentRace(t *testing.T) {
+	n := NewTelegramNotifier("123456:ABC", "987654321", false)
+	if n == nil {
+		t.Fatalf("Failed to initialize TelegramNotifier")
+	}
+
+	const goroutines = 30
+	var wg sync.WaitGroup
+	allowedCount := int64(0)
+	var countMu sync.Mutex
+
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if n.checkCommandCooldown("stress_cmd", 5*time.Second) {
+				countMu.Lock()
+				allowedCount++
+				countMu.Unlock()
+			}
+		}()
+	}
+
+	wg.Wait()
+
+	if allowedCount != 1 {
+		t.Errorf("Expected exactly 1 execution allowed under rapid concurrency, got %d", allowedCount)
+	}
+}
+
 

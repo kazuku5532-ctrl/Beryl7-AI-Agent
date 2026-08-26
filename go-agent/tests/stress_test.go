@@ -1,13 +1,18 @@
 package tests
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 	"runtime"
 	"sync"
 	"testing"
+	"time"
 
+	"beryl7-agent/orchestrator"
 	"beryl7-agent/skillstore"
+	"beryl7-agent/telemetry"
+	"beryl7-agent/watchdog"
 )
 
 func TestSkillStoreHighConcurrencyStress(t *testing.T) {
@@ -107,3 +112,66 @@ func TestGoroutineAndMemoryLeakSyntheticSoak(t *testing.T) {
 		t.Errorf("SOAK TEST MEMORY WARNING: Heap allocation grew by %.2f MB (> 2.0MB limit)", memAllocDiffMB)
 	}
 }
+
+// TestMultiComponentConcurrentRaceStress runs multi-package concurrent operations simultaneously (SkillStore, Telemetry atomic cache, Watchdog, EventBus)
+func TestMultiComponentConcurrentRaceStress(t *testing.T) {
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "multi_race_skills.db")
+	cpPath := filepath.Join(tempDir, "multi_checkpoint.uci")
+
+	store, err := skillstore.New(dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create skillstore: %v", err)
+	}
+	defer store.Close()
+
+	wd := watchdog.New(cpPath)
+	_ = wd.SaveCheckpoint(map[string]string{"network.wan.proto": "dhcp"})
+
+	collector := telemetry.NewCollector()
+	bus := orchestrator.NewEventBus()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	const concurrentWorkers = 30
+	const opsPerWorker = 20
+	var wg sync.WaitGroup
+
+	for i := 0; i < concurrentWorkers; i++ {
+		wg.Add(1)
+		workerID := i
+		go func(id int) {
+			defer wg.Done()
+			for j := 0; j < opsPerWorker; j++ {
+				switch (id + j) % 4 {
+				case 0:
+					// Telemetry async ping atomic operations
+					_ = collector.GetCachedPingLatency()
+					_ = collector.ProbePingLatency(ctx)
+				case 1:
+					// SkillStore Q-learning and optimization
+					anomaly := fmt.Sprintf("ANOMALY_%d", j%3)
+					action := fmt.Sprintf("ACTION_%d", j%3)
+					_ = store.UpdateQValue(anomaly, action, 0.8)
+					_, _, _ = store.RecommendBestAction(anomaly, action)
+				case 2:
+					// Watchdog checkpoint operations
+					_ = wd.LoadAndVerifyCheckpoint()
+					_ = wd.IsSafeMode()
+				case 3:
+					// Orchestrator EventBus publish
+					bus.Publish(&orchestrator.Event{
+						Type:   orchestrator.EventMetricsUpdated,
+						Source: "stress_test",
+						Data:   map[string]interface{}{"worker": id, "op": j},
+					})
+				}
+			}
+		}(workerID)
+	}
+
+	wg.Wait()
+}
+
+

@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
+	"sync"
 	"testing"
 	"time"
 
@@ -412,3 +414,83 @@ func TestAdditionalAPIEndpoints(t *testing.T) {
 		respAct.Body.Close()
 	}
 }
+
+func TestCORSAndAuthSecurity_Comprehensive(t *testing.T) {
+	cfg := &config.Config{
+		AuthToken:              "admin-token-xyz",
+		ApproveToken:           "op-token-123",
+		BindHost:               "127.0.0.1",
+		HealthPort:             8888,
+		CORSAllowedOrigins:     "http://192.168.8.1:8888,http://127.0.0.1:8888,http://localhost:8888",
+		DisableLocalhostBypass: false,
+	}
+
+	testCases := []struct {
+		origin         string
+		expectedAllow  string
+		description    string
+	}{
+		{"null", "http://127.0.0.1:8888", "Origin null should fallback to default safe origin"},
+		{"http://192.168.8.1:8888", "http://192.168.8.1:8888", "Valid router IP origin allowed"},
+		{"http://127.0.0.1:8888", "http://127.0.0.1:8888", "Valid loopback origin allowed"},
+		{"http://localhost:8888", "http://localhost:8888", "Valid localhost origin allowed"},
+		{"http://localhost:8888.attacker.com", "http://127.0.0.1:8888", "Subdomain suffix spoofing rejected"},
+		{"http://192.168.8.1:8888.evil.com", "http://127.0.0.1:8888", "Prefix spoofing rejected"},
+		{"https://untrusted-site.com", "http://127.0.0.1:8888", "Untrusted origin rejected"},
+		{"", "http://127.0.0.1:8888", "Empty origin fallback to default safe origin"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.description, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest("GET", "/api/health", nil)
+			if tc.origin != "" {
+				req.Header.Set("Origin", tc.origin)
+			}
+			setCorsHeaders(rec, req, cfg)
+			got := rec.Header().Get("Access-Control-Allow-Origin")
+			if got != tc.expectedAllow {
+				t.Errorf("Origin %q: expected allow header %q, got %q", tc.origin, tc.expectedAllow, got)
+			}
+		})
+	}
+
+	// Test validateTokenRole with edge cases
+	reqInvalidAuth := httptest.NewRequest("GET", "/api/status", nil)
+	reqInvalidAuth.RemoteAddr = "10.0.0.2:1234"
+	
+	// Malformed auth headers
+	badHeaders := []string{
+		"Basic abcdef",
+		"Bearer",
+		"Bearer ",
+		"Token 12345",
+		"bearer admin-token-xyz", // case-sensitive check
+	}
+	for _, bh := range badHeaders {
+		role, valid := validateTokenRole(reqInvalidAuth, bh, cfg)
+		if valid && role == "admin" {
+			t.Errorf("Malformed header %q should not yield admin role", bh)
+		}
+	}
+
+	// Concurrent role validation race safety test
+	const goroutines = 25
+	var wg sync.WaitGroup
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			r := httptest.NewRequest("GET", "/api/status", nil)
+			if id%2 == 0 {
+				r.RemoteAddr = "127.0.0.1:8080"
+				_, _ = validateTokenRole(r, "", cfg)
+			} else {
+				r.RemoteAddr = "192.168.1.50:8080"
+				_, _ = validateTokenRole(r, "Bearer admin-token-xyz", cfg)
+			}
+		}(i)
+	}
+	wg.Wait()
+}
+

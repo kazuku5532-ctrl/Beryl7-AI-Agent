@@ -181,6 +181,58 @@ func validateTokenRole(r *http.Request, authHeader string, cfg *config.Config) (
 	return "unknown", false
 }
 
+func setCorsHeaders(w http.ResponseWriter, r *http.Request, cfg *config.Config) bool {
+	origin := r.Header.Get("Origin")
+	allowed := ""
+	if cfg != nil {
+		allowed = cfg.CORSAllowedOrigins
+	}
+	if allowed == "" || allowed == "*" {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+	} else if origin != "" {
+		matched := false
+		for _, entry := range strings.Split(allowed, ",") {
+			entryTrimmed := strings.TrimSpace(entry)
+			if entryTrimmed == origin || entryTrimmed == "*" || (origin == "null" && entryTrimmed == "null") {
+				matched = true
+				break
+			}
+		}
+		if !matched && origin != "null" {
+			if parsedURL, err := url.Parse(origin); err == nil {
+				hostname := parsedURL.Hostname()
+				ip := net.ParseIP(hostname)
+				if hostname == "localhost" || (ip != nil && isLANOrLoopbackIP(ip)) {
+					matched = true
+				}
+			}
+		}
+
+		defaultOrigin := "http://127.0.0.1:8888"
+		if cfg != nil {
+			defaultOrigin = fmt.Sprintf("http://%s:%d", cfg.BindHost, cfg.HealthPort)
+		}
+		if matched {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+		} else {
+			w.Header().Set("Access-Control-Allow-Origin", defaultOrigin)
+		}
+	} else {
+		defaultOrigin := "http://127.0.0.1:8888"
+		if cfg != nil {
+			defaultOrigin = fmt.Sprintf("http://%s:%d", cfg.BindHost, cfg.HealthPort)
+		}
+		w.Header().Set("Access-Control-Allow-Origin", defaultOrigin)
+	}
+	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
+	if r.Method == "OPTIONS" {
+		w.WriteHeader(http.StatusOK)
+		return true
+	}
+	return false
+}
+
 func main() {
 	// Portable GC tuning: Memory limits managed dynamically via OS environment & Go runtime soft limit (16MB)
 	debug.SetGCPercent(20)
@@ -1106,46 +1158,7 @@ func StartHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 	}
 
 	setCorsHeaders := func(w http.ResponseWriter, r *http.Request) bool {
-		origin := r.Header.Get("Origin")
-		allowed := cfg.CORSAllowedOrigins
-		if allowed == "" || allowed == "*" {
-			w.Header().Set("Access-Control-Allow-Origin", "*")
-		} else if origin != "" {
-			matched := false
-			for _, entry := range strings.Split(allowed, ",") {
-				entryTrimmed := strings.TrimSpace(entry)
-				if entryTrimmed == origin || entryTrimmed == "*" || (origin == "null" && entryTrimmed == "null") {
-					matched = true
-					break
-				}
-			}
-			if !matched && origin != "null" {
-				if parsedURL, err := url.Parse(origin); err == nil {
-					hostname := parsedURL.Hostname()
-					ip := net.ParseIP(hostname)
-					if hostname == "localhost" || (ip != nil && isLANOrLoopbackIP(ip)) {
-						matched = true
-					}
-				}
-			}
-
-			defaultOrigin := fmt.Sprintf("http://%s:%d", cfg.BindHost, cfg.HealthPort)
-			if matched {
-				w.Header().Set("Access-Control-Allow-Origin", origin)
-			} else {
-				w.Header().Set("Access-Control-Allow-Origin", defaultOrigin)
-			}
-		} else {
-			defaultOrigin := fmt.Sprintf("http://%s:%d", cfg.BindHost, cfg.HealthPort)
-			w.Header().Set("Access-Control-Allow-Origin", defaultOrigin)
-		}
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
-		if r.Method == "OPTIONS" {
-			w.WriteHeader(http.StatusOK)
-			return true
-		}
-		return false
+		return setCorsHeaders(w, r, cfg)
 	}
 
 
