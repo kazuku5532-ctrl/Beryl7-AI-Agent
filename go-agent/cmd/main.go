@@ -1127,8 +1127,6 @@ func StartHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 						matched = true
 					}
 				}
-			} else if !matched && origin == "null" {
-				matched = true
 			}
 
 			defaultOrigin := fmt.Sprintf("http://%s:%d", cfg.BindHost, cfg.HealthPort)

@@ -28,7 +28,8 @@ type telegramUpdate struct {
 	Message  struct {
 		MessageID int `json:"message_id"`
 		Chat      struct {
-			ID int64 `json:"id"`
+			ID   int64  `json:"id"`
+			Type string `json:"type"`
 		} `json:"chat"`
 		Text string `json:"text"`
 	} `json:"message"`
@@ -157,9 +158,13 @@ func (t *TelegramNotifier) StartCommandListener(ctx context.Context, execCmd fun
 						offset = update.UpdateID + 1
 					}
 
-					// Strict Whitelist Validation: Reject messages from unauthorized Chat IDs
+					// Strict Whitelist Validation: Reject messages from unauthorized Chat IDs or non-private chats
 					if update.Message.Chat.ID != t.chatID {
 						logger.Warn("TELEGRAM: Unauthorized command attempt rejected from Chat ID: %d", update.Message.Chat.ID)
+						continue
+					}
+					if update.Message.Chat.Type != "" && update.Message.Chat.Type != "private" {
+						logger.Warn("TELEGRAM: Unauthorized non-private chat type rejected (%s) for Chat ID: %d", update.Message.Chat.Type, update.Message.Chat.ID)
 						continue
 					}
 

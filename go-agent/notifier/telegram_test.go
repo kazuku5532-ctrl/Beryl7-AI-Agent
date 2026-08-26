@@ -2,6 +2,7 @@ package notifier
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 )
@@ -86,3 +87,24 @@ func TestSendAlertAndGetUpdatesWithMockServer(t *testing.T) {
 	_ = n.SendAlert(ctx, "Test Message")
 	_, _ = n.getUpdates(ctx, 0, 1)
 }
+
+func TestPrivateChatUpdateParsing(t *testing.T) {
+	var updatePrivate telegramUpdate
+	jsonDataPrivate := `{"update_id": 101, "message": {"message_id": 1, "chat": {"id": 987654321, "type": "private"}, "text": "/status"}}`
+	if err := json.Unmarshal([]byte(jsonDataPrivate), &updatePrivate); err != nil {
+		t.Fatalf("Failed to parse private telegram update: %v", err)
+	}
+	if updatePrivate.Message.Chat.Type != "private" {
+		t.Errorf("Expected chat type 'private', got '%s'", updatePrivate.Message.Chat.Type)
+	}
+
+	var updateGroup telegramUpdate
+	jsonDataGroup := `{"update_id": 102, "message": {"message_id": 2, "chat": {"id": 987654321, "type": "group"}, "text": "/reboot"}}`
+	if err := json.Unmarshal([]byte(jsonDataGroup), &updateGroup); err != nil {
+		t.Fatalf("Failed to parse group telegram update: %v", err)
+	}
+	if updateGroup.Message.Chat.Type != "group" {
+		t.Errorf("Expected chat type 'group', got '%s'", updateGroup.Message.Chat.Type)
+	}
+}
+

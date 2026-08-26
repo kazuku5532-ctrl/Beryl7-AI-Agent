@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"beryl7-agent/logger"
@@ -44,6 +45,8 @@ type Metric struct {
 
 type TelemetryCollector struct {
 	mu                  sync.Mutex
+	cachedLatencyBits   uint64
+	pingProbeInProgress atomic.Bool
 	lastCollect         time.Time
 	lastRxBytes         uint64
 	lastTxBytes         uint64
@@ -139,8 +142,17 @@ func (t *TelemetryCollector) CollectMetrics(ctx context.Context) *Metric {
 
 	if !strings.Contains(status, "Offline") {
 		m.LatencyMs = t.readPingLatency()
+		if t.pingProbeInProgress.CompareAndSwap(false, true) {
+			go func() {
+				defer t.pingProbeInProgress.Store(false)
+				ctxProbe, cancelProbe := context.WithTimeout(context.Background(), 1*time.Second)
+				defer cancelProbe()
+				t.ProbePingLatency(ctxProbe)
+			}()
+		}
 	} else {
 		m.LatencyMs = 0.0
+		atomic.StoreUint64(&t.cachedLatencyBits, math.Float64bits(0.0))
 	}
 
 	if !prevTime.IsZero() && t.lastRxBytes > 0 {
@@ -518,14 +530,39 @@ func (t *TelemetryCollector) ApplyAdaptiveThermalFanCurve(tempC float64) int {
 	return pwm
 }
 
-func (t *TelemetryCollector) readPingLatency() float64 {
+func (t *TelemetryCollector) ProbePingLatency(ctx context.Context) float64 {
 	start := time.Now()
-	conn, err := net.DialTimeout("tcp", "1.1.1.1:53", 1*time.Second)
+	var d net.Dialer
+	ctxTimeout, cancel := context.WithTimeout(ctx, 1*time.Second)
+	defer cancel()
+
+	conn, err := d.DialContext(ctxTimeout, "tcp", "1.1.1.1:53")
 	if err == nil {
 		_ = conn.Close()
-		return float64(time.Since(start).Milliseconds())
+		lat := float64(time.Since(start).Milliseconds())
+		atomic.StoreUint64(&t.cachedLatencyBits, math.Float64bits(lat))
+		return lat
 	}
+	atomic.StoreUint64(&t.cachedLatencyBits, math.Float64bits(0.0))
 	return 0.0
+}
+
+func (t *TelemetryCollector) GetCachedPingLatency() float64 {
+	bits := atomic.LoadUint64(&t.cachedLatencyBits)
+	return math.Float64frombits(bits)
+}
+
+func (t *TelemetryCollector) readPingLatency() float64 {
+	lat := t.GetCachedPingLatency()
+	if lat == 0.0 && t.pingProbeInProgress.CompareAndSwap(false, true) {
+		go func() {
+			defer t.pingProbeInProgress.Store(false)
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			t.ProbePingLatency(ctx)
+		}()
+	}
+	return lat
 }
 
 func (t *TelemetryCollector) ReadConntrackCount() int {

@@ -272,5 +272,25 @@ func TestGetConnectedDevices(t *testing.T) {
 	_, _ = c.CallUbusExecArgs(ctx, "hostapd.radio1", "get_clients", "{}")
 }
 
+func TestAsyncPingProbeAndCaching(t *testing.T) {
+	c := NewCollector()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
 
+	// 1. Initial cached latency should be 0.0
+	initLat := c.GetCachedPingLatency()
+	if initLat < 0 {
+		t.Errorf("Expected non-negative initial cached latency, got %f", initLat)
+	}
 
+	// 2. Probe ping latency directly
+	_ = c.ProbePingLatency(ctx)
+
+	// 3. readPingLatency should return immediately from cache
+	start := time.Now()
+	_ = c.readPingLatency()
+	elapsed := time.Since(start)
+	if elapsed > 100*time.Millisecond {
+		t.Errorf("readPingLatency took too long (%v), expected non-blocking < 100ms", elapsed)
+	}
+}

@@ -161,6 +161,30 @@ func TestHealthCheckServerEndpoints(t *testing.T) {
 		resp.Body.Close()
 	}
 
+	// Test CORS with null origin (should reject and not echo null)
+	reqNull, _ := http.NewRequest("GET", baseURL+"/api/health", nil)
+	reqNull.Header.Set("Origin", "null")
+	respNull, errNull := http.DefaultClient.Do(reqNull)
+	if errNull == nil {
+		allowOrigin := respNull.Header.Get("Access-Control-Allow-Origin")
+		if allowOrigin == "null" {
+			t.Errorf("CORS should not allow origin 'null' by default, got: %s", allowOrigin)
+		}
+		respNull.Body.Close()
+	}
+
+	// Test DisableLocalhostBypass
+	cfgStrict := &config.Config{
+		AuthToken:              "admin-secret",
+		DisableLocalhostBypass: true,
+	}
+	localReq, _ := http.NewRequest("POST", "/api/config/reload", nil)
+	localReq.RemoteAddr = "127.0.0.1:12345"
+	roleStrict, validStrict := validateTokenRole(localReq, "", cfgStrict)
+	if validStrict && roleStrict == "admin" {
+		t.Errorf("Expected localhost bypass to be blocked when DisableLocalhostBypass is true, got role %s", roleStrict)
+	}
+
 	// Test Config Reload with operator role
 	reloadReq, _ := http.NewRequest("POST", baseURL+"/api/config/reload", nil)
 	reloadReq.Header.Set("Authorization", "Bearer operator-secret")
