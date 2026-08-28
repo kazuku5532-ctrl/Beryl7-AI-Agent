@@ -378,9 +378,15 @@ func (e *Executor) actionTuneNetworkPerformance(ctx context.Context, target stri
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.ampdu=1")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.amsdu=1")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.wmm=1")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.itxbfen=1") // Ruckus-style Client-Agnostic Implicit Beamforming
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.rai0.igmpsn_enable=1") // Ruckus-style Directed Multicast / IGMP Snooping
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.rai0.proxy_arp=1")     // Ruckus-style Airtime Preserving Proxy ARP
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_1.ampdu=1")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_1.amsdu=1")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_1.wmm=1")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_1.itxbfen=1")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.ra0.igmpsn_enable=1")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.ra0.proxy_arp=1")
 	return runSystemCmd(ctx, "/sbin/uci", "commit", "wireless")
 }
 
@@ -404,6 +410,9 @@ func (e *Executor) actionOptimizeStreamingPipeline(ctx context.Context, target s
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.wmm=1")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.ampdu=1")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.amsdu=1")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.itxbfen=1")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.rai0.igmpsn_enable=1")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.rai0.proxy_arp=1")
 	return runSystemCmd(ctx, "/sbin/uci", "commit", "wireless")
 }
 
