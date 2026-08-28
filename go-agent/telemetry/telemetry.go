@@ -1018,4 +1018,23 @@ func (t *TelemetryCollector) HarmonizeRepeaterState(ctx context.Context, isWired
 	}
 }
 
+// EstimateChannelCapacity implements Ruckus ChannelFly-inspired statistical capacity metric:
+// Capacity = Estimated_PHY_Rate * (1 - Airtime_Busy_Ratio) * (1 - PER)
+func (t *TelemetryCollector) EstimateChannelCapacity(ctx context.Context, iface string) (float64, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	activeRatio := 0.15 // baseline idle airtime utilization
+	if t.lastDLMbps > 50.0 || t.lastULMbps > 20.0 {
+		activeRatio = math.Min(0.85, (t.lastDLMbps+t.lastULMbps)/300.0)
+	}
+	basePHYMbps := 1200.0
+	if strings.Contains(iface, "wlan0") || strings.Contains(iface, "ra0") {
+		basePHYMbps = 574.0
+	}
+	per := 0.02 // estimated 2% baseline packet error rate
+	capacityScore := basePHYMbps * (1.0 - activeRatio) * (1.0 - per)
+	return capacityScore, nil
+}
+
 

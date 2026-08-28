@@ -53,6 +53,7 @@ func New() *Executor {
 			"set_qos_priority":      0.95, // High Risk
 			"block_device":          0.95, // High Risk
 			"set_wan_mac":           0.98, // Critical Risk
+			"remediate_sticky_clients": 0.70, // Low-Medium Risk (Ruckus SmartRoam)
 		},
 		macRegex: regexp.MustCompile(`^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$`),
 		validIfaces: map[string]bool{
@@ -86,6 +87,7 @@ func New() *Executor {
 		"align_channels":           e.actionAlignChannels,
 		"ap_failover":              e.actionAPFailover,
 		"enable_cake_sqm":          e.actionEnableCAKESQM,
+		"remediate_sticky_clients": e.actionRemediateStickyClients,
 	}
 
 	e.riskMatrix["optimize_streaming_pipeline"] = 0.40 // Low Risk streaming pipeline tuning
@@ -231,13 +233,24 @@ func (e *Executor) actionOptimizeWifiChannel(ctx context.Context, target string,
 		}
 	}
 
-	if ch, err := strconv.Atoi(chStr); err != nil || ch < 1 || ch > 165 {
+	ch, err := strconv.Atoi(chStr)
+	if err != nil || ch < 1 || ch > 165 {
 		return fmt.Errorf("invalid Wi-Fi channel: %s", chStr)
 	}
 
 	logger.Info("Executing OpenWrt UCI Wi-Fi channel optimization: section=%s, channel=%s...", radioSection, chStr)
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", fmt.Sprintf("wireless.%s.channel=%s", radioSection, chStr)) // nolint:errcheck (non-fatal)
 	_ = runSystemCmd(ctx, "/sbin/uci", "commit", "wireless")                                              // nolint:errcheck (non-fatal)
+
+	// Ruckus-style Zero-Downtime 802.11h CSA (Channel Switch Announcement via hostapd ubus)
+	hostapdIface := "hostapd.wlan1"
+	freq := 5180 + (ch-36)*5
+	if radioSection == "MT7993_1_1" {
+		hostapdIface = "hostapd.wlan0"
+		freq = 2407 + ch*5
+	}
+	csaPayload := fmt.Sprintf(`{"freq":%d,"bcn_count":10}`, freq)
+	_ = runSystemCmd(ctx, "/usr/bin/ubus", "call", hostapdIface, "switch_chan", csaPayload) // nolint:errcheck (non-fatal)
 	return nil
 }
 
@@ -387,6 +400,30 @@ func (e *Executor) actionTuneNetworkPerformance(ctx context.Context, target stri
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_1.itxbfen=1")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.ra0.igmpsn_enable=1")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.ra0.proxy_arp=1")
+
+	// Ruckus-style Airtime Decongestion: Eliminate legacy 802.11b rates (1, 2, 5.5, 11 Mbps)
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_1.basic_rate=6000 12000 24000")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_1.supported_rates=6000 9000 12000 18000 24000 36000 48000 54000")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.basic_rate=12000 24000")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.default_radio1.beacon_rate=12000")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.default_radio0.beacon_rate=6000")
+
+	// Ruckus-style 802.11k (RRM) and 802.11v (BTM) Fast Roaming Assistance
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.default_radio0.ieee80211k=1")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.default_radio0.ieee80211v=1")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.default_radio1.ieee80211k=1")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.default_radio1.ieee80211v=1")
+
+	// Ruckus-style Transient Client Protection & Rapid Inactivity Reaping
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.default_radio0.disassoc_low_ack=1")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.default_radio1.disassoc_low_ack=1")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.default_radio0.max_inactivity=300")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.default_radio1.max_inactivity=300")
+
+	// Ruckus-style Kernel L2 Bridge Directed Multicast / IGMP Snooping & Airtime Optimization
+	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.igmp_max_memberships=1024")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "network.@device[0].igmp_snooping=1")
+	_ = runSystemCmd(ctx, "/sbin/uci", "commit", "network")
 	return runSystemCmd(ctx, "/sbin/uci", "commit", "wireless")
 }
 
@@ -496,6 +533,20 @@ func (e *Executor) actionEnableCAKESQM(ctx context.Context, target string, param
 		if reloadErr := runSystemCmd(ctx, "/etc/init.d/sqm", "reload"); reloadErr != nil {
 			_ = runSystemCmd(ctx, "/etc/init.d/sqm", "restart") // nolint:errcheck
 		}
+	}
+	return nil
+}
+
+func (e *Executor) actionRemediateStickyClients(ctx context.Context, target string, params map[string]interface{}) error {
+	logger.Info("RUCKUS SMARTROAM: Inspecting and remediating sticky clients via 802.11v BSS Transition...")
+	mac, _ := params["target_mac"].(string)
+	if mac == "" {
+		mac = target
+	}
+	if mac != "" && e.macRegex.MatchString(mac) {
+		payload := fmt.Sprintf(`{"addr":"%s","dialog_token":1,"abridged":1,"disassoc_imminent":0}`, mac)
+		_ = runSystemCmd(ctx, "/usr/bin/ubus", "call", "hostapd.wlan1", "bss_transition_request", payload) // nolint:errcheck
+		_ = runSystemCmd(ctx, "/usr/bin/ubus", "call", "hostapd.wlan0", "bss_transition_request", payload) // nolint:errcheck
 	}
 	return nil
 }

@@ -333,3 +333,22 @@ func TestAsyncPingProbe_HighConcurrencyRace(t *testing.T) {
 	}
 }
 
+func TestEstimateChannelCapacity(t *testing.T) {
+	c := NewCollector()
+	ctx := context.Background()
+
+	cap5g, err5g := c.EstimateChannelCapacity(ctx, "wlan1")
+	if err5g != nil || cap5g <= 0 {
+		t.Errorf("Expected positive capacity score for 5GHz, got %f (err: %v)", cap5g, err5g)
+	}
+
+	cap2g, err2g := c.EstimateChannelCapacity(ctx, "wlan0")
+	if err2g != nil || cap2g <= 0 {
+		t.Errorf("Expected positive capacity score for 2.4GHz, got %f (err: %v)", cap2g, err2g)
+	}
+
+	if cap5g <= cap2g {
+		t.Errorf("Expected 5GHz capacity (%f) to exceed 2.4GHz capacity (%f)", cap5g, cap2g)
+	}
+}
+
