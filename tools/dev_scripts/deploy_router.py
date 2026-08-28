@@ -91,7 +91,27 @@ if tg_chat_id:
     run_ssh(f"grep -q 'TELEGRAM_CHAT_ID' /etc/beryl7/agent.env 2>/dev/null || echo 'TELEGRAM_CHAT_ID={tg_chat_id}' >> /etc/beryl7/agent.env", check_status=False)
     run_ssh("chmod 0600 /etc/beryl7/agent.env 2>/dev/null || true", check_status=False)
 
-# Native OpenWrt Procd service start (checking executable permission -x), with fallback to standalone nohup
+# Triple-Lock Boot & Process Recovery: Install init script, enable auto-start symlink, and setup Cron watchdog
+print("[4.5/5] Enforcing auto-start on boot (/etc/rc.d) and fail-safe watchdog...")
+init_script_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../go-agent/procd/beryl7-agent"))
+if os.path.exists(init_script_path):
+    with open(init_script_path, "r", encoding="utf-8") as f:
+        init_content = f.read()
+    stdin, stdout, stderr = ssh.exec_command("cat > /etc/init.d/beryl7-agent")
+    stdin.write(init_content)
+    stdin.close()
+    _ = stdout.read()
+    _ = stderr.read()
+    stdout.channel.recv_exit_status()
+
+run_ssh("chmod 0755 /etc/init.d/beryl7-agent", check_status=False)
+run_ssh("/etc/init.d/beryl7-agent enable", check_status=False)
+
+# Register fail-safe cron watchdog to revive daemon if killed or power-cycled
+run_ssh("mkdir -p /etc/crontabs && grep -q 'beryl7-agent' /etc/crontabs/root 2>/dev/null || echo '* * * * * pgrep beryl7-agent >/dev/null || /etc/init.d/beryl7-agent start' >> /etc/crontabs/root", check_status=False)
+run_ssh("/etc/init.d/cron enable && /etc/init.d/cron start", check_status=False)
+
+# Native OpenWrt Procd service restart
 start_out = run_ssh("if [ -x /etc/init.d/beryl7-agent ]; then /etc/init.d/beryl7-agent restart; else nohup /usr/bin/beryl7-agent -config /etc/beryl7/agent.env > /var/log/beryl7-agent-nohup.log 2>&1 & fi")
 print("Daemon Start Output:", start_out)
 

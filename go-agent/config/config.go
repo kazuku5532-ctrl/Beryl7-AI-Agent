@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -382,17 +383,62 @@ PROG=/usr/bin/beryl7-agent
 start_service() {
     procd_open_instance
     procd_set_param command "$PROG" -config /etc/beryl7/agent.env
+    procd_set_param file /etc/beryl7/agent.env
     procd_set_param respawn 3600 5 0
+    procd_set_param env GOMEMLIMIT=15MiB GOGC=20
     procd_set_param stdout 1
     procd_set_param stderr 1
+    procd_set_param oom_score_adj -500
     procd_close_instance
+}
+
+stop_service() {
+    procd_send_signal "$PROG" 15
 }
 `
 		// #nosec G306
 		if err := os.WriteFile(cleanPath, []byte(content), 0755); err == nil { // #nosec G306
 			logger.Info("Auto-generated procd init service script at /etc/init.d/beryl7-agent")
 		}
+	} else {
+		_ = os.Chmod(cleanPath, 0755)
 	}
+
+	// Triple-Lock Protection Level 1: Ensure boot symlink in /etc/rc.d exists
+	rcSymlink := "/etc/rc.d/S99beryl7-agent"
+	if _, err := os.Stat(rcSymlink); os.IsNotExist(err) {
+		if _, lookErr := exec.LookPath("/etc/init.d/beryl7-agent"); lookErr == nil {
+			cmd := exec.Command("/etc/init.d/beryl7-agent", "enable")
+			if out, cmdErr := cmd.CombinedOutput(); cmdErr == nil {
+				logger.Info("AUTO-START LOCK: Successfully enabled beryl7-agent init service via /etc/init.d/beryl7-agent enable")
+			} else {
+				logger.Warn("Failed to run /etc/init.d/beryl7-agent enable: %v (%s). Attempting manual symlink...", cmdErr, string(out))
+				_ = os.Symlink(cleanPath, rcSymlink)
+			}
+		} else if _, statInit := os.Stat(cleanPath); statInit == nil {
+			_ = os.Symlink(cleanPath, rcSymlink)
+		}
+	}
+
+	// Triple-Lock Protection Level 3: Fail-safe Crontab Watchdog for crash/dirty power loss recovery
+	crontabPath := "/etc/crontabs/root"
+	if cronData, err := os.ReadFile(crontabPath); err == nil {
+		cronContent := string(cronData)
+		if !strings.Contains(cronContent, "beryl7-agent") {
+			watchdogLine := "* * * * * pgrep beryl7-agent >/dev/null || /etc/init.d/beryl7-agent start\n"
+			newContent := cronContent
+			if !strings.HasSuffix(newContent, "\n") && len(newContent) > 0 {
+				newContent += "\n"
+			}
+			newContent += watchdogLine
+			if writeErr := os.WriteFile(crontabPath, []byte(newContent), 0600); writeErr == nil {
+				logger.Info("AUTO-START LOCK: Successfully registered Fail-safe Cron Watchdog in /etc/crontabs/root")
+				_ = exec.Command("/etc/init.d/cron", "enable").Run()
+				_ = exec.Command("/etc/init.d/cron", "start").Run()
+			}
+		}
+	}
+
 	return nil
 }
 

@@ -76,6 +76,19 @@ EOF
 
 chmod 0755 /etc/init.d/beryl7-agent
 
+echo "🔒 Locking auto-start on boot (/etc/rc.d/S99beryl7-agent)..."
+/etc/init.d/beryl7-agent enable
+
+echo "🛡️ Installing fail-safe cron watchdog in /etc/crontabs/root..."
+mkdir -p /etc/crontabs
+if ! grep -q "beryl7-agent" /etc/crontabs/root 2>/dev/null; then
+    echo "* * * * * pgrep beryl7-agent >/dev/null || /etc/init.d/beryl7-agent start" >> /etc/crontabs/root
+fi
+/etc/init.d/cron enable 2>/dev/null || true
+/etc/init.d/cron start 2>/dev/null || true
+
+echo "🚀 Starting Beryl 7 AI Agent service..."
+/etc/init.d/beryl7-agent restart
+
 echo "✅ Beryl7 AI Agent Installation Completed Successfully!"
-echo "👉 Start service with: /etc/init.d/beryl7-agent start"
-echo "👉 Enable on boot with: /etc/init.d/beryl7-agent enable"
+echo "👉 Service status: /etc/init.d/beryl7-agent status"

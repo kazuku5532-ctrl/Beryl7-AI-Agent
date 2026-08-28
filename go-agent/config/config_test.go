@@ -55,7 +55,9 @@ func TestV16EnterpriseConfigFunctions(t *testing.T) {
 
 	_ = EnsureSysupgradePreservation()
 	_ = EnsureFilePermissions()
-	_ = EnsureProcdInitService()
+	if err := EnsureProcdInitService(); err != nil {
+		t.Errorf("EnsureProcdInitService failed: %v", err)
+	}
 	_ = DetectSystemCapability(cfg)
 
 	warnings := DryRunUpgradeCheck("5.0")
