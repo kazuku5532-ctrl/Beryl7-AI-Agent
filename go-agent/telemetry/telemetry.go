@@ -36,40 +36,42 @@ type Metric struct {
 	WANStatus       string    `json:"wan_status"`
 	DownloadMbps    float64   `json:"download_mbps"`
 	UploadMbps      float64   `json:"upload_mbps"`
-	ActiveClients   int       `json:"active_clients"`
-	WiFi5GGhzStatus string    `json:"wifi_5g_status"`
-	SystemUptimeSec int64     `json:"system_uptime_sec"`
-	IsStreamingActive bool    `json:"is_streaming_active"`
-	NetworkToken    string    `json:"network_token"`
+	ActiveClients        int       `json:"active_clients"`
+	WiFi5GGhzStatus      string    `json:"wifi_5g_status"`
+	SystemUptimeSec      int64     `json:"system_uptime_sec"`
+	IsStreamingActive    bool      `json:"is_streaming_active"`
+	IsBulkDownloadActive bool      `json:"is_bulk_download_active"`
+	NetworkToken         string    `json:"network_token"`
 }
 
 type TelemetryCollector struct {
-	mu                  sync.Mutex
-	cachedLatencyBits   uint64
-	pingProbeInProgress atomic.Bool
-	lastCollect         time.Time
-	lastRxBytes         uint64
-	lastTxBytes         uint64
-	lastDLMbps          float64
-	lastULMbps          float64
-	peakDLMbps          float64
-	peakULMbps          float64
-	activeClientsCount  int
-	prevCPUTotal        float64
-	prevCPUIdle         float64
-	lastFlapTime        time.Time
-	debounceWindow      time.Duration
-	ubusPath            string
-	ewmaLatency         float64
-	ewmaVariance        float64
-	skillHitsTotal      int64
-	skillMissesTotal    int64
-	healSuccessTotal    int64
-	healFailuresTotal   int64
-	rollbacksTotal      int64
-	falsePositivesTotal int64
-	streamingCycleCount int
-	lastMetric          *Metric
+	mu                     sync.Mutex
+	cachedLatencyBits      uint64
+	pingProbeInProgress    atomic.Bool
+	lastCollect            time.Time
+	lastRxBytes            uint64
+	lastTxBytes            uint64
+	lastDLMbps             float64
+	lastULMbps             float64
+	peakDLMbps             float64
+	peakULMbps             float64
+	activeClientsCount     int
+	prevCPUTotal           float64
+	prevCPUIdle            float64
+	lastFlapTime           time.Time
+	debounceWindow         time.Duration
+	ubusPath               string
+	ewmaLatency            float64
+	ewmaVariance           float64
+	skillHitsTotal         int64
+	skillMissesTotal       int64
+	healSuccessTotal       int64
+	healFailuresTotal      int64
+	rollbacksTotal         int64
+	falsePositivesTotal    int64
+	streamingCycleCount    int
+	bulkDownloadCycleCount int
+	lastMetric             *Metric
 }
 
 func NewCollector() *TelemetryCollector {
@@ -174,16 +176,34 @@ func (t *TelemetryCollector) CollectMetrics(ctx context.Context) *Metric {
 	}
 	t.activeClientsCount = m.ActiveClients
 
-	// Detect sustained streaming pattern (continuous download between 1.5 Mbps and 120 Mbps across cycles)
-	if m.DownloadMbps >= 1.5 && m.DownloadMbps <= 120.0 {
+	// Intelligent Traffic Flow Classifier: Distinguish Burst/Chunk Video Streaming vs Sustained Bulk Download
+	if m.DownloadMbps >= 25.0 {
+		// Sustained high throughput indicates bulk transfer (large file download, app update, game download)
+		t.bulkDownloadCycleCount++
+		if t.streamingCycleCount > 0 {
+			t.streamingCycleCount--
+		}
+	} else if m.DownloadMbps >= 1.5 && m.DownloadMbps < 25.0 {
+		// Moderate bitrate chunk delivery typical of 1080p/4K video streams
 		t.streamingCycleCount++
+		if t.bulkDownloadCycleCount > 0 {
+			t.bulkDownloadCycleCount--
+		}
 	} else if m.DownloadMbps < 0.5 {
 		if t.streamingCycleCount > 0 {
 			t.streamingCycleCount--
 		}
+		if t.bulkDownloadCycleCount > 0 {
+			t.bulkDownloadCycleCount--
+		}
 	}
-	if t.streamingCycleCount >= 3 {
+
+	if t.bulkDownloadCycleCount >= 2 {
+		m.IsBulkDownloadActive = true
+		m.IsStreamingActive = false
+	} else if t.streamingCycleCount >= 3 {
 		m.IsStreamingActive = true
+		m.IsBulkDownloadActive = false
 	}
 
 	m.NetworkToken = m.Tokenize()

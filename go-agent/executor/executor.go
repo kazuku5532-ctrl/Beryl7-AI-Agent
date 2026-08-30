@@ -353,20 +353,20 @@ func (e *Executor) actionTuneNetworkPerformance(ctx context.Context, target stri
 	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.tcp_sack=1")
 	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.tcp_fastopen=3")
 	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.tcp_slow_start_after_idle=0")                      // Prevents HLS / m3u8 browser video stalls
-	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.tcp_mtu_probing=1")                              // Prevents black-hole packet drops on video CDNs
-	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.tcp_adv_win_scale=2")                            // Maximize 75% buffer window for instant chunk prefetching
+	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.tcp_mtu_probing=1")                              // Prevents black-hole packet drops on CDNs
+	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.tcp_adv_win_scale=1")                            // Balanced 50% buffer window for max-throughput bulk downloads
 	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.tcp_moderate_rcvbuf=1")
 	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.tcp_autocorking=0")
 	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.tcp_early_retrans=3")
-	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.tcp_notsent_lowat=16384")
+	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.tcp_notsent_lowat=4294967295")                  // Completely unclamp write buffer to allow maximum wire-speed file downloads
 	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.tcp_rfc1337=1")
 	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.netfilter.nf_conntrack_max=65536")                     // nolint:errcheck
 	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.tcp_fin_timeout=15")                              // nolint:errcheck
 	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.netfilter.nf_conntrack_tcp_timeout_close_wait=10")     // nolint:errcheck
 	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.netfilter.nf_conntrack_tcp_timeout_fin_wait=10")        // nolint:errcheck
 
-	// OpenWrt Reliable Flow Configuration (Disable buggy MTK PPE hardware flow table to prevent video stream stalls)
-	_ = runSystemCmd(ctx, "/sbin/uci", "set", "firewall.@defaults[0].flow_offloading=0")     // nolint:errcheck
+	// OpenWrt Software Flow Offloading (Accelerates kernel packet forwarding for wire-speed downloads while avoiding MTK PPE hardware bugs)
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "firewall.@defaults[0].flow_offloading=1")     // nolint:errcheck
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "firewall.@defaults[0].flow_offloading_hw=0")  // nolint:errcheck
 
 	// OpenWrt fw4/nftables compatible MTU Fix (MSS Clamping)
@@ -430,10 +430,10 @@ func (e *Executor) actionTuneNetworkPerformance(ctx context.Context, target stri
 func (e *Executor) actionOptimizeStreamingPipeline(ctx context.Context, target string, params map[string]interface{}) error {
 	logger.Info("SMART VIDEO STREAMING PIPELINE: Optimizing video chunk delivery, unthrottled TCP window scaling & WMM Video QoS...")
 	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.tcp_slow_start_after_idle=0")
-	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.tcp_adv_win_scale=2")
+	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.tcp_adv_win_scale=1")
 	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.tcp_autocorking=0")
 	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.tcp_early_retrans=3")
-	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.tcp_notsent_lowat=16384")
+	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.tcp_notsent_lowat=4294967295") // Never throttle socket write buffer on transit traffic
 
 	// Ensure Apple iOS Private Relay NXDOMAIN rules are active to prevent iPhone video stalling
 	appleConf := "/tmp/dnsmasq.d/apple_private_relay.conf"

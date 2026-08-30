@@ -547,6 +547,8 @@ func main() {
 	}
 	lastActionByAnomaly := make(map[string]time.Time)
 	lowTrafficCycles := 0
+	streamingPipelineActive := false
+	bulkDownloadActive := false
 
 	cfgAtomic.Store(cfg)
 
@@ -697,9 +699,20 @@ func main() {
 
 			_, zScore := collector.UpdateEWMALatency(m.LatencyMs, 0.2)
 
-			// Smart Sustained Video Streaming Pipeline Acceleration: Ensures zero-stutter video buffer delivery
-			if m.IsStreamingActive {
+			// Smart Sustained Video Streaming Pipeline Acceleration (Edge-Triggered on state entry, avoiding continuous 5s execution loops)
+			if m.IsStreamingActive && !streamingPipelineActive {
+				streamingPipelineActive = true
 				_ = execEngine.ExecuteAction(ctx, &executor.ActionRequest{ActionName: "optimize_streaming_pipeline", Target: "lan"}, false)
+			} else if !m.IsStreamingActive && streamingPipelineActive {
+				streamingPipelineActive = false
+			}
+
+			// Smart Bulk Download Acceleration: Ensure unthrottled high-throughput TCP window scaling & Flow Offloading
+			if m.IsBulkDownloadActive && !bulkDownloadActive {
+				bulkDownloadActive = true
+				_ = execEngine.ExecuteAction(ctx, &executor.ActionRequest{ActionName: "tune_network_performance", Target: "lan"}, false)
+			} else if !m.IsBulkDownloadActive && bulkDownloadActive {
+				bulkDownloadActive = false
 			}
 
 			var anomalyType, anomalyDesc string

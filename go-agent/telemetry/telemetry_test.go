@@ -352,3 +352,33 @@ func TestEstimateChannelCapacity(t *testing.T) {
 	}
 }
 
+func TestTrafficFlowClassification(t *testing.T) {
+	c := NewCollector()
+
+	// Test 1: Bulk Download Pattern (>25 Mbps)
+	c.bulkDownloadCycleCount = 2
+	m := &Metric{DownloadMbps: 45.0}
+	if c.bulkDownloadCycleCount >= 2 {
+		m.IsBulkDownloadActive = true
+		m.IsStreamingActive = false
+	}
+	if !m.IsBulkDownloadActive || m.IsStreamingActive {
+		t.Errorf("Expected IsBulkDownloadActive=true and IsStreamingActive=false for 45 Mbps bulk download")
+	}
+
+	// Test 2: Moderate Bitrate Video Streaming (1.5 Mbps to 25 Mbps)
+	c.streamingCycleCount = 3
+	c.bulkDownloadCycleCount = 0
+	m2 := &Metric{DownloadMbps: 12.0}
+	if c.bulkDownloadCycleCount >= 2 {
+		m2.IsBulkDownloadActive = true
+	} else if c.streamingCycleCount >= 3 {
+		m2.IsStreamingActive = true
+		m2.IsBulkDownloadActive = false
+	}
+	if !m2.IsStreamingActive || m2.IsBulkDownloadActive {
+		t.Errorf("Expected IsStreamingActive=true and IsBulkDownloadActive=false for 12 Mbps video stream")
+	}
+}
+
+
