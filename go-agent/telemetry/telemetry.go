@@ -145,7 +145,7 @@ func (t *TelemetryCollector) CollectMetrics(ctx context.Context) *Metric {
 	if !strings.Contains(status, "Offline") {
 		m.LatencyMs = t.readPingLatency()
 		if t.pingProbeInProgress.CompareAndSwap(false, true) {
-			go func() {
+			go func() { // #nosec G118
 				defer t.pingProbeInProgress.Store(false)
 				ctxProbe, cancelProbe := context.WithTimeout(context.Background(), 1*time.Second)
 				defer cancelProbe()

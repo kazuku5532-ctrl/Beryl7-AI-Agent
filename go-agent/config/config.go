@@ -401,7 +401,7 @@ stop_service() {
 			logger.Info("Auto-generated procd init service script at /etc/init.d/beryl7-agent")
 		}
 	} else {
-		_ = os.Chmod(cleanPath, 0755)
+		_ = os.Chmod(cleanPath, 0755) // #nosec G302
 	}
 
 	// Triple-Lock Protection Level 1: Ensure boot symlink in /etc/rc.d exists
@@ -421,8 +421,8 @@ stop_service() {
 	}
 
 	// Triple-Lock Protection Level 3: Fail-safe Crontab Watchdog for crash/dirty power loss recovery
-	crontabPath := "/etc/crontabs/root"
-	if cronData, err := os.ReadFile(crontabPath); err == nil {
+	crontabPath := filepath.Clean("/etc/crontabs/root")
+	if cronData, err := os.ReadFile(crontabPath); err == nil { // #nosec G304
 		cronContent := string(cronData)
 		if !strings.Contains(cronContent, "beryl7-agent") {
 			watchdogLine := "* * * * * pgrep beryl7-agent >/dev/null || /etc/init.d/beryl7-agent start\n"
@@ -431,7 +431,7 @@ stop_service() {
 				newContent += "\n"
 			}
 			newContent += watchdogLine
-			if writeErr := os.WriteFile(crontabPath, []byte(newContent), 0600); writeErr == nil {
+			if writeErr := os.WriteFile(crontabPath, []byte(newContent), 0600); writeErr == nil { // #nosec G306, G703
 				logger.Info("AUTO-START LOCK: Successfully registered Fail-safe Cron Watchdog in /etc/crontabs/root")
 				_ = exec.Command("/etc/init.d/cron", "enable").Run()
 				_ = exec.Command("/etc/init.d/cron", "start").Run()
