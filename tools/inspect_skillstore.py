@@ -84,7 +84,7 @@ def inspect_db(db_path):
         return False
 
 if __name__ == "__main__":
-    target = sys.argv[1] if len(sys.argv) > 1 else "/tmp/skills.db"
+    target = sys.argv[1] if len(sys.argv) > 1 else "/tmp/skills.db"  # nosec B108
     if not os.path.exists(target) and sys.platform == "win32":
         target = "go-agent/tests/test_skills.db"
     inspect_db(target)
