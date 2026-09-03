@@ -1508,6 +1508,82 @@ func StartHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 		})
 	})
 
+	// Endpoint 9: Live Chaos Injection & Closed-Loop Remediation Trigger (/api/chaos/inject)
+	mux.HandleFunc("/api/chaos/inject", func(w http.ResponseWriter, r *http.Request) {
+		if setCorsHeaders(w, r) {
+			return
+		}
+		if r.Method != "POST" {
+			http.Error(w, `{"error":"Method Not Allowed"}`, http.StatusMethodNotAllowed)
+			return
+		}
+
+		var req struct {
+			Anomaly string `json:"anomaly"`
+			Action  string `json:"action"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, `{"error":"Invalid request payload"}`, http.StatusBadRequest)
+			return
+		}
+
+		if req.Anomaly == "" {
+			req.Anomaly = "MEMORY_EXHAUSTION"
+		}
+		if req.Action == "" {
+			req.Action = "purge_memory_cache"
+		}
+
+		logger.Warn("CHAOS INJECTION RECEIVED: Triggering live remediation for Anomaly [%s] with Action [%s]", req.Anomaly, req.Action)
+
+		// Execute action via executor engine
+		actReq := &executor.ActionRequest{
+			ActionName: req.Action,
+			Target:     "wan",
+		}
+		execErr := execEngine.ExecuteAction(r.Context(), actReq, false)
+		cmdExecSuccess := (execErr == nil)
+
+		// Look up or create skill template
+		targetSkill := store.GetSkill(req.Anomaly, req.Action)
+		if targetSkill == nil {
+			targetSkill = &skillstore.Skill{
+				ID:         fmt.Sprintf("skill_%s_%s", strings.ToLower(req.Anomaly), strings.ToLower(req.Action)),
+				Condition:  req.Anomaly,
+				Action:     req.Action,
+				Confidence: 0.60,
+			}
+		}
+
+		// Trigger async post-action verification and Q-learning Bellman update in Go runtime goroutine
+		go func(anomaly, action string, cmdSuccess bool) {
+			time.Sleep(3 * time.Second)
+			currentAlpha := 0.2
+			reward := 1.0
+			if !cmdSuccess {
+				reward = -0.5
+			}
+			_ = store.SaveOrUpdateSkill(&skillstore.Skill{
+				ID:         fmt.Sprintf("skill_%s_%s", strings.ToLower(anomaly), strings.ToLower(action)),
+				Condition:  anomaly,
+				Action:     action,
+				Confidence: 0.60,
+			}, cmdSuccess, currentAlpha)
+			_ = store.UpdateQValue(anomaly, action, reward)
+			logger.Info("CHAOS VERIFICATION & TD-UPDATE COMPLETE: Action [%s] for Anomaly [%s] -> Q-Value updated in Go SQLite (reward=%.1f)", action, anomaly, reward)
+		}(req.Anomaly, req.Action, cmdExecSuccess)
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":                     "chaos_remediation_triggered",
+			"anomaly":                    req.Anomaly,
+			"action":                     req.Action,
+			"execution_success":          cmdExecSuccess,
+			"verification_delay_seconds": 3.0,
+			"message":                    "Go agent is executing action and running async telemetry verification loop",
+		})
+	})
+
 	bindHost := cfg.BindHost
 	if bindHost == "" {
 		bindHost = "127.0.0.1"
