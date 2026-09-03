@@ -821,6 +821,7 @@ func main() {
 					if !cmdExecSuccess {
 						collector.RecordHealOutcome(false)
 						_ = store.SaveOrUpdateSkill(skillCopy, false, currentAlpha)
+						_ = store.UpdateQValue(skillCopy.Condition, skillCopy.Action, -0.5)
 						return
 					}
 					go func(sk *skillstore.Skill) {
@@ -838,10 +839,15 @@ func main() {
 						verifiedSuccess := verifyActionSuccess()
 						collector.RecordHealOutcome(verifiedSuccess)
 						_ = store.SaveOrUpdateSkill(sk, verifiedSuccess, currentAlpha)
+						reward := 1.0
+						if !verifiedSuccess {
+							reward = -0.5
+						}
+						_ = store.UpdateQValue(sk.Condition, sk.Action, reward)
 						if verifiedSuccess {
-							logger.Info("Post-Action Telemetry Verification SUCCESS for [%s:%s]", sk.Condition, sk.Action)
+							logger.Info("Post-Action Telemetry Verification SUCCESS for [%s:%s] -> Q-Value rewarded (+1.0)", sk.Condition, sk.Action)
 						} else {
-							logger.Warn("Post-Action Telemetry Verification FAILED for [%s:%s] - Anomaly persists!", sk.Condition, sk.Action)
+							logger.Warn("Post-Action Telemetry Verification FAILED for [%s:%s] -> Q-Value penalized (-0.5)", sk.Condition, sk.Action)
 						}
 					}(skillCopy)
 				}
