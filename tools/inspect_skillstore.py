@@ -24,6 +24,40 @@ DEFAULT_SEEDS = {
     ("DEVICE_STUCK_2G", "trigger_80211v_bss_transition"): 0.5,
 }
 
+def get_db_snapshot(db_path):
+    """Returns structured snapshot of Q-table and Skills table for automated delta verification."""
+    if not os.path.exists(db_path):
+        return None
+
+    snapshot = {
+        "q_table": {},
+        "skills": {},
+    }
+    try:
+        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT state, action, q_value, updated_at FROM q_table;")
+        for state, action, q_val, updated_at in cursor.fetchall():
+            snapshot["q_table"][(state, action)] = {
+                "q_value": float(q_val),
+                "updated_at": updated_at
+            }
+
+        cursor.execute("SELECT condition_query, action, confidence, success_count, failure_count, last_used_at FROM skills;")
+        for cond, act, conf, succ, fail, last_used in cursor.fetchall():
+            snapshot["skills"][(cond, act)] = {
+                "confidence": float(conf),
+                "success_count": int(succ),
+                "failure_count": int(fail),
+                "last_used_at": last_used
+            }
+
+        conn.close()
+        return snapshot
+    except Exception:
+        return None
+
 def inspect_db(db_path):
     if not os.path.exists(db_path):
         print(f"❌ Database not found at: {db_path}")
