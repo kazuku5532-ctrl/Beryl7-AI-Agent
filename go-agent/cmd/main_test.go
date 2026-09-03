@@ -17,6 +17,7 @@ import (
 	"beryl7-agent/config"
 	"beryl7-agent/executor"
 	"beryl7-agent/skillstore"
+	"beryl7-agent/telemetry"
 	"beryl7-agent/watchdog"
 )
 
@@ -108,7 +109,8 @@ func TestHealthCheckServerEndpoints(t *testing.T) {
 		UptimeSeconds: 100,
 	}
 
-	server := StartHealthCheckServer(cfg, health, execEngine, store, aiClient, wd)
+	collector := telemetry.NewCollector()
+	server := StartHealthCheckServer(cfg, health, execEngine, store, aiClient, wd, collector)
 	defer server.Close()
 
 	time.Sleep(100 * time.Millisecond)
@@ -301,7 +303,8 @@ func TestFullDaemonE2EWithHILEmulator(t *testing.T) {
 		UptimeSeconds: 100,
 	}
 
-	server := StartHealthCheckServer(cfg, health, execEngine, store, aiClient, wd)
+	collector := telemetry.NewCollector()
+	server := StartHealthCheckServer(cfg, health, execEngine, store, aiClient, wd, collector)
 	defer server.Close()
 
 	time.Sleep(100 * time.Millisecond)
@@ -371,7 +374,8 @@ func TestAdditionalAPIEndpoints(t *testing.T) {
 		UptimeSeconds: 100,
 	}
 
-	server := StartHealthCheckServer(cfg, health, execEngine, store, aiClient, wd)
+	collector := telemetry.NewCollector()
+	server := StartHealthCheckServer(cfg, health, execEngine, store, aiClient, wd, collector)
 	defer server.Close()
 
 	time.Sleep(100 * time.Millisecond)

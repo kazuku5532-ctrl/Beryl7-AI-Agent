@@ -326,7 +326,7 @@ func main() {
 		UptimeSeconds: 0,
 	}
 
-	httpServer := StartHealthCheckServer(cfg, health, execEngine, store, aiClient, wd)
+	httpServer := StartHealthCheckServer(cfg, health, execEngine, store, aiClient, wd, collector)
 	activeServer = httpServer
 
 	sigCh := make(chan os.Signal, 1)
@@ -1156,7 +1156,34 @@ func isLANOrLoopbackIP(ip net.IP) bool {
 	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast()
 }
 
-func StartHealthCheckServer(cfg *config.Config, health *HealthState, execEngine *executor.Executor, store *skillstore.SkillStore, aiClient *ai.AIClient, wd *watchdog.Watchdog) *http.Server {
+// VerifyActionSuccess measures real post-action hardware telemetry and returns whether the anomaly is truly resolved.
+func VerifyActionSuccess(ctx context.Context, collector *telemetry.TelemetryCollector, anomalyType string) bool {
+	if collector == nil {
+		return false
+	}
+	postMetric := collector.CollectMetrics(ctx)
+	if postMetric == nil {
+		return false
+	}
+	switch anomalyType {
+	case "MEMORY_EXHAUSTION":
+		return postMetric.RAMUsagePct < 88.0
+	case "WAN_DROP":
+		return !strings.Contains(postMetric.WANStatus, "Offline")
+	case "LATENCY_SPIKE", "BUFFERBLOAT_SPIKE":
+		return postMetric.LatencyMs < 100.0
+	case "WIFI_FAILURE":
+		statusLower := strings.ToLower(postMetric.WiFi5GGhzStatus)
+		return !strings.Contains(statusLower, "disabled") && !strings.Contains(statusLower, "failed")
+	case "REPEATER_SIGNAL_WEAK":
+		rep, _ := collector.CollectRepeaterMetrics(ctx)
+		return rep == nil || rep.Signal >= -75
+	default:
+		return postMetric.RAMUsagePct < 88.0 && !strings.Contains(postMetric.WANStatus, "Offline")
+	}
+}
+
+func StartHealthCheckServer(cfg *config.Config, health *HealthState, execEngine *executor.Executor, store *skillstore.SkillStore, aiClient *ai.AIClient, wd *watchdog.Watchdog, collector *telemetry.TelemetryCollector) *http.Server {
 	mux := http.NewServeMux()
 
 	var (
@@ -1555,22 +1582,40 @@ func StartHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 			}
 		}
 
-		// Trigger async post-action verification and Q-learning Bellman update in Go runtime goroutine
+		// 2. Trigger async post-action telemetry measurement & Q-learning Bellman update in Go runtime goroutine
 		go func(anomaly, action string, cmdSuccess bool) {
 			time.Sleep(3 * time.Second)
 			currentAlpha := 0.2
+
+			// CRITICAL: Measure REAL post-action hardware telemetry (NOT just cmdSuccess)
+			verifiedSuccess := false
+			if cmdSuccess {
+				verifiedSuccess = VerifyActionSuccess(context.Background(), collector, anomaly)
+			}
+
+			// Empirical Reward Assignment: +1.0 ONLY IF real telemetry proves anomaly is resolved
 			reward := 1.0
-			if !cmdSuccess {
+			if !verifiedSuccess {
 				reward = -0.5
 			}
+
+			if collector != nil {
+				collector.RecordHealOutcome(verifiedSuccess)
+			}
+
 			_ = store.SaveOrUpdateSkill(&skillstore.Skill{
 				ID:         fmt.Sprintf("skill_%s_%s", strings.ToLower(anomaly), strings.ToLower(action)),
 				Condition:  anomaly,
 				Action:     action,
 				Confidence: 0.60,
-			}, cmdSuccess, currentAlpha)
+			}, verifiedSuccess, currentAlpha)
 			_ = store.UpdateQValue(anomaly, action, reward)
-			logger.Info("CHAOS VERIFICATION & TD-UPDATE COMPLETE: Action [%s] for Anomaly [%s] -> Q-Value updated in Go SQLite (reward=%.1f)", action, anomaly, reward)
+
+			if verifiedSuccess {
+				logger.Info("CHAOS VERIFICATION SUCCESS: Real Telemetry confirmed Anomaly [%s] resolved by Action [%s] -> Q-Value rewarded (+1.0)", anomaly, action)
+			} else {
+				logger.Warn("CHAOS VERIFICATION FAILED: Real Telemetry shows Anomaly [%s] PERSISTS after Action [%s] -> Q-Value penalized (-0.5)", anomaly, action)
+			}
 		}(req.Anomaly, req.Action, cmdExecSuccess)
 
 		w.Header().Set("Content-Type", "application/json")
@@ -1580,7 +1625,7 @@ func StartHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 			"action":                     req.Action,
 			"execution_success":          cmdExecSuccess,
 			"verification_delay_seconds": 3.0,
-			"message":                    "Go agent is executing action and running async telemetry verification loop",
+			"message":                    "Go agent executed action and is measuring real hardware telemetry to compute empirical reward",
 		})
 	})
 
