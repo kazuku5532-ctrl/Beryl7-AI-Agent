@@ -424,7 +424,16 @@ func main() {
 					defaultAction = "enable_cake_sqm"
 				}
 
-				actionName, _, qErr := store.RecommendBestAction(anomalyType, defaultAction)
+				sig := &skillstore.StateSignature{
+					StateName:  anomalyType,
+					RAMPct:     m.RAMUsagePct,
+					LatencyMs:  m.LatencyMs,
+					CPUPct:     m.CPUUsagePct,
+					TempC:      m.HardwareTempC,
+					WANOffline: strings.Contains(m.WANStatus, "Offline"),
+					WiFiDown:   strings.Contains(strings.ToLower(m.WiFi5GGhzStatus), "disabled") || strings.Contains(strings.ToLower(m.WiFi5GGhzStatus), "failed"),
+				}
+				actionName, _, _, _, qErr := store.RecommendBestActionWithInterpolation(anomalyType, sig, defaultAction)
 				if qErr != nil || actionName == "" {
 					actionName = defaultAction
 				}
@@ -777,9 +786,22 @@ func main() {
 					defaultAction = "align_channels"
 				}
 
-				// Q-Learning V2 Engine: Active Decision Loop Wiring via RecommendBestAction
-				actionName, qVal, qErr := store.RecommendBestAction(anomalyType, defaultAction)
-				if qErr == nil && actionName != defaultAction {
+				// Construct quantitative telemetry feature signature for TinyML similarity matching
+				sig := &skillstore.StateSignature{
+					StateName:  anomalyType,
+					RAMPct:     m.RAMUsagePct,
+					LatencyMs:  m.LatencyMs,
+					CPUPct:     m.CPUUsagePct,
+					TempC:      m.HardwareTempC,
+					WANOffline: strings.Contains(m.WANStatus, "Offline"),
+					WiFiDown:   strings.Contains(strings.ToLower(m.WiFi5GGhzStatus), "disabled") || strings.Contains(strings.ToLower(m.WiFi5GGhzStatus), "failed"),
+				}
+
+				// Q-Learning V2 Engine: Active Decision Loop with TinyML Vector Similarity Interpolation
+				actionName, qVal, matchedState, isInterpolated, qErr := store.RecommendBestActionWithInterpolation(anomalyType, sig, defaultAction)
+				if qErr == nil && isInterpolated {
+					logger.Info("TINYML INTERPOLATION HIT: Novel Anomaly [%s] mapped to similar State [%s] -> Recommending Action '%s' (Q-Value=%.2f, Default='%s')", anomalyType, matchedState, actionName, qVal, defaultAction)
+				} else if qErr == nil && actionName != defaultAction {
 					logger.Info("Q-LEARNING ENGINE HIT: Best learned action for Anomaly [%s] is '%s' (Q-Value=%.2f, Default='%s')", anomalyType, actionName, qVal, defaultAction)
 				} else if qErr == nil {
 					logger.Info("Q-LEARNING ENGINE: Using default action '%s' for Anomaly [%s] (Q-Value=%.2f)", actionName, anomalyType, qVal)

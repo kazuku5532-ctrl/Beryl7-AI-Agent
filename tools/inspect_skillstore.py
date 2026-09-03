@@ -102,6 +102,19 @@ def inspect_db(db_path):
         for cond, act, conf, succ, fail, last_used in skill_rows:
             print(f"{cond:<22} {act:<22} {conf:<6.2f} {succ:<8} {fail:<6}")
 
+        # 3. Inspect State Signatures (TinyML Similarity Vector Space)
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='state_signatures';")
+        if cursor.fetchone():
+            print("\n🧠 3. TINYML STATE SIGNATURES & TELEMETRY VECTORS:")
+            print("-" * 66)
+            print(f"{'State Name':<24} {'RAM%':<7} {'Lat(ms)':<8} {'CPU%':<7} {'Temp':<6} {'WAN/WiFi':<8}")
+            print("-" * 66)
+            cursor.execute("SELECT state_name, ram_pct, latency_ms, cpu_pct, temp_c, wan_offline, wifi_fail FROM state_signatures ORDER BY state_name ASC;")
+            sig_rows = cursor.fetchall()
+            for sname, sram, slat, scpu, stemp, swan, swifi in sig_rows:
+                flags = f"W:{swan}/F:{swifi}"
+                print(f"{sname:<24} {sram:<7.1f} {slat:<8.1f} {scpu:<7.1f} {stemp:<6.1f} {flags:<8}")
+
         print("==================================================================")
         if q_learned_count > 0 or len(skill_rows) > 0:
             print(f"✅ VERDICT: Active Reinforcement Learning CONFIRMED!")
