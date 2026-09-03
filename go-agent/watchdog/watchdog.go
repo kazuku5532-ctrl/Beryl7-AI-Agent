@@ -135,6 +135,9 @@ func (w *Watchdog) saveCheckpointWithConfig(config map[string]string) error {
 }
 
 func (w *Watchdog) LoadAndVerifyCheckpoint() error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
 	data, err := os.ReadFile(w.checkpointPath)
 	if err != nil {
 		return err

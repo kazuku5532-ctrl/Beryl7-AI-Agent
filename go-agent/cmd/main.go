@@ -829,7 +829,7 @@ func main() {
 					return false // Fallback an toàn: trả false nếu sự cố chưa thực sự xóa sạch
 				}
 
-				verifyAndRecordSkillAsync := func(targetSkill *skillstore.Skill, cmdExecSuccess bool) {
+				verifyAndRecordSkillAsync := func(targetSkill *skillstore.Skill, sig *skillstore.StateSignature, cmdExecSuccess bool) {
 					if targetSkill == nil {
 						return
 					}
@@ -840,13 +840,18 @@ func main() {
 						Condition:  targetSkill.Condition,
 						Confidence: targetSkill.Confidence,
 					}
+					var sigCopy *skillstore.StateSignature
+					if sig != nil {
+						s := *sig
+						sigCopy = &s
+					}
 					if !cmdExecSuccess {
 						collector.RecordHealOutcome(false)
 						_ = store.SaveOrUpdateSkill(skillCopy, false, currentAlpha)
 						_ = store.UpdateQValue(skillCopy.Condition, skillCopy.Action, -0.5)
 						return
 					}
-					go func(sk *skillstore.Skill) {
+					go func(sk *skillstore.Skill, sSig *skillstore.StateSignature) {
 						defer func() {
 							if r := recover(); r != nil {
 								logger.Error("Recovered panic in verifyAndRecordSkillAsync: %v", r)
@@ -867,11 +872,14 @@ func main() {
 						}
 						_ = store.UpdateQValue(sk.Condition, sk.Action, reward)
 						if verifiedSuccess {
+							if sSig != nil {
+								_ = store.RecordStateSignature(sSig)
+							}
 							logger.Info("Post-Action Telemetry Verification SUCCESS for [%s:%s] -> Q-Value rewarded (+1.0)", sk.Condition, sk.Action)
 						} else {
 							logger.Warn("Post-Action Telemetry Verification FAILED for [%s:%s] -> Q-Value penalized (-0.5)", sk.Condition, sk.Action)
 						}
-					}(skillCopy)
+					}(skillCopy, sigCopy)
 				}
 
 				skill := store.GetSkill(anomalyType, actionName)
@@ -893,7 +901,7 @@ func main() {
 						saveUCICheckpoint(cfg.CheckpointPath)
 					}
 					execErr := execEngine.ExecuteAction(ctx, actReq, currentDryRun)
-					verifyAndRecordSkillAsync(skill, execErr == nil)
+					verifyAndRecordSkillAsync(skill, sig, execErr == nil)
 					continue
 				}
 
@@ -943,7 +951,7 @@ func main() {
 							Condition:  anomalyType,
 							Confidence: aiResp.Confidence,
 						}
-						verifyAndRecordSkillAsync(newSkill, execErr == nil)
+						verifyAndRecordSkillAsync(newSkill, sig, execErr == nil)
 					} else {
 						logger.Warn("SECURITY GATING TRIGGERED: AI Action [%s] Confidence (%.2f) below Required Risk Threshold (%.2f)! Queued for Operator Approval.", aiResp.Action, aiResp.Confidence, requiredThreshold)
 						queuePendingApproval(aiResp, requiredThreshold)
@@ -970,7 +978,7 @@ func main() {
 						Condition:  anomalyType,
 						Confidence: 0.90,
 					}
-					verifyAndRecordSkillAsync(offlineSkill, execErr == nil)
+					verifyAndRecordSkillAsync(offlineSkill, sig, execErr == nil)
 				}
 			}
 		}

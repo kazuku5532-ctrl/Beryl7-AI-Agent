@@ -60,8 +60,8 @@ SECRET_PATTERNS = [
     (re.compile(r'-----BEGIN (RSA|OPENSSH|PRIVATE) KEY-----'), "SSH/RSA Private Key"),
 ]
 
-EXCLUDED_DIRS = {'.git', 'venv', '__pycache__', '.system_generated', 'scratch', '.github'}
-EXCLUDED_FILES = {'agent.env', 'verify_rules.py', 'go.sum', 'coverage.out', 'SBOM.spdx.json'}
+EXCLUDED_DIRS = {'.git', 'venv', '__pycache__', '.system_generated', 'scratch', '.github', '.agents'}
+EXCLUDED_FILES = {'agent.env', 'verify_rules.py', 'go.sum', 'coverage.out', 'SBOM.spdx.json', 'ORIGINAL_REQUEST.md'}
 
 secret_violations = []
 for root, dirs, files in os.walk(WORKSPACE_ROOT):

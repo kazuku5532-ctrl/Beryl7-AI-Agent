@@ -58,6 +58,7 @@ func TestSkillStoreHighConcurrencyStress(t *testing.T) {
 	if checkSkill == nil {
 		t.Errorf("SkillStore GetSkill returned nil after high concurrency stress test")
 	}
+	t.Logf("STRESS TEST METRICS: Workers=%d, OpsPerWorker=%d, TotalOps=%d successfully executed", workers, opsPerWorker, workers*opsPerWorker)
 }
 
 // TestGoroutineAndMemoryLeakSyntheticSoak runs 1,000 synthetic anomaly-action cycles to prove memory stability (< 1MB growth) and 0 goroutine leaks
@@ -107,10 +108,13 @@ func TestGoroutineAndMemoryLeakSyntheticSoak(t *testing.T) {
 		t.Errorf("SOAK TEST LEAK WARNING: Goroutine leak detected! Initial=%d, Final=%d (Diff=%d > 5)", initialGoroutines, finalGoroutines, goroutineDiff)
 	}
 
-	memAllocDiffMB := float64(finalMem.HeapAlloc-initialMem.HeapAlloc) / (1024 * 1024)
+	memAllocDiffMB := float64(int64(finalMem.HeapAlloc)-int64(initialMem.HeapAlloc)) / 1024 / 1024
 	if memAllocDiffMB > 2.0 {
 		t.Errorf("SOAK TEST MEMORY WARNING: Heap allocation grew by %.2f MB (> 2.0MB limit)", memAllocDiffMB)
 	}
+
+	t.Logf("SOAK TEST METRICS: Cycles=%d | Initial Heap=%.3f MB, Final Heap=%.3f MB, Growth=%.3f MB (Limit < 2.0 MB) | Initial Goroutines=%d, Final Goroutines=%d, Diff=%d (Limit <= 5)",
+		cycles, float64(initialMem.HeapAlloc)/(1024*1024), float64(finalMem.HeapAlloc)/(1024*1024), memAllocDiffMB, initialGoroutines, finalGoroutines, goroutineDiff)
 }
 
 // TestMultiComponentConcurrentRaceStress runs multi-package concurrent operations simultaneously (SkillStore, Telemetry atomic cache, Watchdog, EventBus)
@@ -172,6 +176,7 @@ func TestMultiComponentConcurrentRaceStress(t *testing.T) {
 	}
 
 	wg.Wait()
+	t.Logf("MULTI-COMPONENT RACE STRESS: Workers=%d, OpsPerWorker=%d, TotalOps=%d multi-package operations completed without race conditions", concurrentWorkers, opsPerWorker, concurrentWorkers*opsPerWorker)
 }
 
 

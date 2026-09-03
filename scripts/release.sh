@@ -9,16 +9,18 @@ DIST_DIR="dist"
 echo "=== Building Beryl 7 AI Agent ${VERSION} Release Artifacts ==="
 mkdir -p ${DIST_DIR}
 
-# 1. Cross-compile ARM64 Linux (GL-MT3600BE / Beryl 7)
-echo "Cross-compiling linux/arm64 binary..."
+# 1. Cross-compile Multi-Architecture Linux Binaries (ARM64, ARMv7, AMD64)
+echo "Cross-compiling linux/arm64, linux/armv7, and linux/amd64 binaries..."
 cd go-agent
-GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o ../${DIST_DIR}/beryl7-agent-linux-arm64 ./cmd
-GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o ../${DIST_DIR}/beryl7-agent-linux-amd64 ./cmd
+CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o ../${DIST_DIR}/beryl7-agent-linux-arm64 ./cmd
+CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 go build -ldflags="-s -w" -o ../${DIST_DIR}/beryl7-agent-linux-armv7 ./cmd
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o ../${DIST_DIR}/beryl7-agent-linux-amd64 ./cmd
 cd ..
 
 # 2. Package release archives
 cd ${DIST_DIR}
 tar -czvf beryl7-agent-${VERSION}-linux-arm64.tar.gz beryl7-agent-linux-arm64
+tar -czvf beryl7-agent-${VERSION}-linux-armv7.tar.gz beryl7-agent-linux-armv7
 tar -czvf beryl7-agent-${VERSION}-linux-amd64.tar.gz beryl7-agent-linux-amd64
 
 # 3. Generate SHA256 checksums & optional GPG Signature

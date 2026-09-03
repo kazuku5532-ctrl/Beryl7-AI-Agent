@@ -17,6 +17,7 @@ deploy/inventory.ini
 
 # Build output & Binaries
 bin/
+dist/
 go-agent/beryl7-agent
 go-agent/beryl7-agent-*
 *.exe

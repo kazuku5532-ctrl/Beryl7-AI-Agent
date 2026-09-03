@@ -112,15 +112,22 @@ func (s *SkillStore) OpenAndInit() error {
 	var integrity string
 	row := db.QueryRow("PRAGMA integrity_check")
 	err = row.Scan(&integrity)
-	if err != nil {
-		logger.Error("CRITICAL: Database integrity check query failed (connection issue): %v", err)
-	} else if integrity != "ok" {
-		logger.Error("CRITICAL SQLITE INTEGRITY FAILURE (%s)! Initiating emergency salvage procedure...", integrity)
+	if err != nil || integrity != "ok" {
+		if err != nil {
+			logger.Error("CRITICAL SQLITE INTEGRITY QUERY FAILURE (%v)! Initiating emergency salvage procedure...", err)
+		} else {
+			logger.Error("CRITICAL SQLITE INTEGRITY FAILURE (%s)! Initiating emergency salvage procedure...", integrity)
+		}
 		_ = db.Close()
+		s.db = nil
 
 		// 1. Sao lưu file bị hỏng
 		backupPath := fmt.Sprintf("%s.corrupt.%s", s.dbPath, time.Now().Format("20060102150405"))
-		_ = os.Rename(s.dbPath, backupPath)
+		if renameErr := os.Rename(s.dbPath, backupPath); renameErr != nil {
+			_ = os.Remove(s.dbPath)
+		}
+		_ = os.Remove(s.dbPath + "-wal")
+		_ = os.Remove(s.dbPath + "-shm")
 		logger.Error("Corrupted DB safely archived to %s for offline forensic salvage", backupPath)
 
 		// 2. Thử xuất SQL Dump khôi phục trực tiếp qua CLI `sqlite3 .dump`
@@ -143,7 +150,20 @@ func (s *SkillStore) OpenAndInit() error {
 		if err != nil {
 			return fmt.Errorf("failed to reopen sqlite database: %w", err)
 		}
+		db.SetMaxOpenConns(1)
+		db.SetMaxIdleConns(1)
+		db.SetConnMaxLifetime(0)
 		s.db = db
+
+		if _, err := db.Exec(`
+		PRAGMA journal_mode = WAL;
+		PRAGMA synchronous = NORMAL;
+		PRAGMA temp_store = MEMORY;
+		PRAGMA busy_timeout = 5000;
+		PRAGMA wal_autocheckpoint = 1000;
+	`); err != nil {
+			logger.Warn("Failed to set SQLite pragmas on reopened DB: %v", err)
+		}
 	}
 
 	schema := `
@@ -667,13 +687,13 @@ func (s *SkillStore) RecordStateSignature(sig *StateSignature) error {
 		INSERT INTO state_signatures (state_name, ram_pct, latency_ms, cpu_pct, temp_c, wan_offline, wifi_fail, sample_count, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP)
 		ON CONFLICT(state_name) DO UPDATE SET
-			ram_pct = (state_signatures.ram_pct * state_signatures.sample_count + excluded.ram_pct) / (state_signatures.sample_count + 1),
-			latency_ms = (state_signatures.latency_ms * state_signatures.sample_count + excluded.latency_ms) / (state_signatures.sample_count + 1),
-			cpu_pct = (state_signatures.cpu_pct * state_signatures.sample_count + excluded.cpu_pct) / (state_signatures.sample_count + 1),
-			temp_c = (state_signatures.temp_c * state_signatures.sample_count + excluded.temp_c) / (state_signatures.sample_count + 1),
+			ram_pct = (state_signatures.ram_pct * MIN(state_signatures.sample_count, 499) + excluded.ram_pct) / (MIN(state_signatures.sample_count, 499) + 1),
+			latency_ms = (state_signatures.latency_ms * MIN(state_signatures.sample_count, 499) + excluded.latency_ms) / (MIN(state_signatures.sample_count, 499) + 1),
+			cpu_pct = (state_signatures.cpu_pct * MIN(state_signatures.sample_count, 499) + excluded.cpu_pct) / (MIN(state_signatures.sample_count, 499) + 1),
+			temp_c = (state_signatures.temp_c * MIN(state_signatures.sample_count, 499) + excluded.temp_c) / (MIN(state_signatures.sample_count, 499) + 1),
 			wan_offline = excluded.wan_offline,
 			wifi_fail = excluded.wifi_fail,
-			sample_count = state_signatures.sample_count + 1,
+			sample_count = MIN(state_signatures.sample_count + 1, 500),
 			updated_at = CURRENT_TIMESTAMP`,
 		sig.StateName, sig.RAMPct, sig.LatencyMs, sig.CPUPct, sig.TempC, wanInt, wifiInt)
 

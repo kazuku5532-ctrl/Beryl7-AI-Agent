@@ -14,7 +14,7 @@ coverage:
 
 build:
 	@echo "=== Cross-Compiling Go ARM64 Binary for OpenWrt ==="
-	cd go-agent && GOOS=linux GOARCH=arm64 go build -o beryl7-agent ./cmd
+	cd go-agent && CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o beryl7-agent ./cmd
 
 deploy: build
 	@echo "=== Deploying to GL-MT3600BE Router via Ansible ==="
