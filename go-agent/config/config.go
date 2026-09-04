@@ -48,6 +48,8 @@ type Config struct {
 	TelegramChatID         string
 	StateDistanceThreshold float64
 	StateDecayLambda       float64
+	GracefulShutdownPath   string
+	MilestoneQThreshold    int
 	apiKeyAtomic           atomic.Value
 }
 
@@ -117,6 +119,8 @@ func LoadConfigWithFlags(configPath, keyPath string, dryRun, showVersion bool) (
 		LogBackupCount:         5,
 		StateDistanceThreshold: constants.DefaultDistanceThreshold,
 		StateDecayLambda:       constants.DefaultDecayLambda,
+		GracefulShutdownPath:   "/root/.beryl7_graceful_shutdown",
+		MilestoneQThreshold:    25,
 	}
 
 	if configPath != "" {
@@ -640,6 +644,14 @@ func parseEnvFile(filePath string, cfg *Config) error {
 					logger.Warn("Invalid range for BERYL7_STATE_DECAY_LAMBDA: '%s' (expected [%.2f, %.1f]). Keeping default %.2f",
 						val, constants.MinDecayLambda, constants.MaxDecayLambda, cfg.StateDecayLambda)
 				}
+			}
+		case "BERYL7_GRACEFUL_SHUTDOWN_PATH":
+			if val != "" {
+				cfg.GracefulShutdownPath = val
+			}
+		case "BERYL7_MILESTONE_Q_THRESHOLD":
+			if i, err := strconv.Atoi(val); err == nil && i > 0 {
+				cfg.MilestoneQThreshold = i
 			}
 		}
 	}

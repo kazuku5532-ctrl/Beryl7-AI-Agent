@@ -67,6 +67,8 @@ type SkillStore struct {
 	fallbackDefaultCount atomic.Uint64
 	verifiedSuccesses    atomic.Uint64
 	verifiedFailures     atomic.Uint64
+	milestoneCallback    func(metrics OperationalMetrics)
+	milestoneThreshold   int
 }
 
 func (s *SkillStore) GetOperationalMetrics() OperationalMetrics {
@@ -82,11 +84,12 @@ func (s *SkillStore) GetOperationalMetrics() OperationalMetrics {
 
 func New(dbPath string) (*SkillStore, error) {
 	s := &SkillStore{
-		dbPath:            dbPath,
-		maxSkills:         1000,
-		lastPruneTime:     time.Now(),
-		distanceThreshold: constants.DefaultDistanceThreshold,
-		decayLambda:       constants.DefaultDecayLambda,
+		dbPath:             dbPath,
+		maxSkills:          1000,
+		lastPruneTime:      time.Now(),
+		distanceThreshold:  constants.DefaultDistanceThreshold,
+		decayLambda:        constants.DefaultDecayLambda,
+		milestoneThreshold: 25,
 	}
 
 	if err := s.OpenAndInit(); err != nil {
@@ -226,6 +229,10 @@ func (s *SkillStore) OpenAndInit() error {
 		wifi_fail INTEGER NOT NULL DEFAULT 0,
 		sample_count INTEGER NOT NULL DEFAULT 1,
 		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+	);
+	CREATE TABLE IF NOT EXISTS metadata (
+		key TEXT PRIMARY KEY,
+		value TEXT
 	);
 	PRAGMA user_version = 2;
 	`
@@ -553,7 +560,7 @@ func (s *SkillStore) UpdateQValue(state string, action string, reward float64) e
 		q_value = MAX(-0.8, MIN(1.0, q_value + ? * (? - q_value))),
 		updated_at = CURRENT_TIMESTAMP`,
 		state, action, reward, learningRate, reward)
-	
+
 	if err == nil {
 		s.qUpdatesTotal.Add(1)
 		if reward > 0 {
@@ -561,8 +568,43 @@ func (s *SkillStore) UpdateQValue(state string, action string, reward float64) e
 		} else if reward < 0 {
 			s.verifiedFailures.Add(1)
 		}
+
+		total := s.qUpdatesTotal.Load()
+		if s.milestoneThreshold > 0 && total == uint64(s.milestoneThreshold) {
+			if cb := s.milestoneCallback; cb != nil {
+				latchKey := fmt.Sprintf("milestone_%d_q_updates_notified", s.milestoneThreshold)
+				if isFirstTime, _ := s.CheckAndSetMilestoneLatch(latchKey); isFirstTime {
+					cb(s.GetOperationalMetrics())
+				}
+			}
+		}
 	}
 	return err
+}
+
+func (s *SkillStore) CheckAndSetMilestoneLatch(latchKey string) (bool, error) {
+	if s.closed || s.db == nil {
+		return false, ErrStoreClosed
+	}
+
+	res, err := s.db.Exec(`INSERT OR IGNORE INTO metadata (key, value) VALUES (?, ?)`, latchKey, time.Now().Format(time.RFC3339))
+	if err != nil {
+		return false, err
+	}
+	rows, _ := res.RowsAffected()
+	return rows > 0, nil
+}
+
+func (s *SkillStore) SetMilestoneCallback(cb func(metrics OperationalMetrics)) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.milestoneCallback = cb
+}
+
+func (s *SkillStore) SetMilestoneThreshold(threshold int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.milestoneThreshold = threshold
 }
 
 // RecommendBestAction queries Q-Table for action with highest Q-value for the current anomaly state.

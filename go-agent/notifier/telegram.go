@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"beryl7-agent/logger"
+	"beryl7-agent/skillstore"
 )
 
 type TelegramNotifier struct {
@@ -102,6 +103,72 @@ func (t *TelegramNotifier) SendAlert(ctx context.Context, message string) error 
 	}
 
 	return nil
+}
+
+func (t *TelegramNotifier) SendAlertWithBackoff(ctx context.Context, message string, maxWait time.Duration) error {
+	if t == nil || t.airgapped {
+		return nil
+	}
+
+	backoffs := []time.Duration{5 * time.Second, 10 * time.Second, 20 * time.Second, 30 * time.Second, 60 * time.Second}
+	deadline := time.Now().Add(maxWait)
+
+	var err error
+	for _, delay := range backoffs {
+		if time.Now().After(deadline) {
+			break
+		}
+
+		err = t.SendAlert(ctx, message)
+		if err == nil {
+			return nil
+		}
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(delay):
+		}
+	}
+
+	// Keep trying every 60s until deadline
+	for time.Now().Before(deadline) {
+		err = t.SendAlert(ctx, message)
+		if err == nil {
+			return nil
+		}
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(60 * time.Second):
+		}
+	}
+
+	return fmt.Errorf("failed to send telegram alert after backoff: %w", err)
+}
+
+func (t *TelegramNotifier) SendPowerLossRecoveryAlert(ctx context.Context, rebootTime time.Time, wanStatus string) error {
+	msg := fmt.Sprintf("⚠️ *CẢNH BÁO: Mất điện đột ngột / Sập nguồn!*\n\n"+
+		"Beryl 7 AI Agent vừa khởi động lại sau một sự cố tắt nguồn không an toàn.\n"+
+		"🕒 *Thời điểm khởi động:* `%s`\n"+
+		"🌐 *Trạng thái WAN hiện tại:* `%s`\n\n"+
+		"💡 Agent đã tự động khôi phục cấu hình an toàn.", rebootTime.Format(time.RFC1123), wanStatus)
+
+	return t.SendAlertWithBackoff(ctx, msg, 10*time.Minute)
+}
+
+func (t *TelegramNotifier) SendMilestoneAlert(ctx context.Context, metrics skillstore.OperationalMetrics, threshold int) error {
+	msg := fmt.Sprintf("🏆 *CỘT MỐC AI: Đạt %d lần tự học!*\n\n"+
+		"Beryl 7 AI Agent đã hoàn thành %d vòng học tăng cường Q-Learning.\n"+
+		"📈 *Tổng hành động thành công:* `%d`\n"+
+		"📉 *Tổng hành động thất bại:* `%d`\n"+
+		"🎯 *Tỷ lệ chính xác ước tính:* `%.1f%%`\n\n"+
+		"💡 Agent đang ngày càng thông minh hơn trong việc tự động tối ưu hóa mạng của bạn.",
+		threshold, threshold, metrics.VerifiedSuccesses, metrics.VerifiedFailures,
+		float64(metrics.VerifiedSuccesses)/float64(metrics.TotalQUpdates)*100.0)
+
+	return t.SendAlert(ctx, msg)
 }
 
 func (t *TelegramNotifier) checkCommandCooldown(cmdKey string, cooldownDur time.Duration) bool {

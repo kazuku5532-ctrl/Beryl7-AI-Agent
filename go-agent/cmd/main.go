@@ -385,6 +385,56 @@ func main() {
 
 	ai.ProbeDNSAsync()
 
+	type shutdownMarker struct {
+		Magic     string `json:"magic"`
+		Timestamp string `json:"timestamp"`
+		PID       int    `json:"pid"`
+		Reason    string `json:"reason"`
+	}
+
+	hasUncleanShutdown := false
+	if markerData, err := os.ReadFile(cfg.GracefulShutdownPath); err == nil {
+		var m shutdownMarker
+		if err := json.Unmarshal(markerData, &m); err == nil && m.Magic == "BERYL7_GRACEFUL_EXIT_V1" {
+			logger.Info("Clean shutdown marker verified. Power-loss alert skipped.")
+		} else {
+			logger.Warn("Unclean shutdown / sudden power-loss detected! Scheduling Telegram notification...")
+			hasUncleanShutdown = true
+		}
+		_ = os.Remove(cfg.GracefulShutdownPath)
+	} else if os.IsNotExist(err) {
+		logger.Warn("Unclean shutdown / sudden power-loss detected! Scheduling Telegram notification...")
+		hasUncleanShutdown = true
+	} else {
+		_ = os.Remove(cfg.GracefulShutdownPath)
+		logger.Warn("Unclean shutdown / sudden power-loss detected! Scheduling Telegram notification...")
+		hasUncleanShutdown = true
+	}
+
+	if hasUncleanShutdown && tgNotifier != nil {
+		go func() {
+			time.Sleep(10 * time.Second) // Wait for network
+			healthCheckWan := "Unknown"
+			if m := collector.CollectMetrics(context.Background()); m != nil {
+				healthCheckWan = m.WANStatus
+			}
+			if err := tgNotifier.SendPowerLossRecoveryAlert(context.Background(), time.Now(), healthCheckWan); err != nil {
+				logger.Warn("Failed to send power-loss alert: %v", err)
+			}
+		}()
+	}
+
+	activeStore.SetMilestoneThreshold(cfg.MilestoneQThreshold)
+	activeStore.SetMilestoneCallback(func(m skillstore.OperationalMetrics) {
+		if tgNotifier != nil {
+			go func() {
+				if err := tgNotifier.SendMilestoneAlert(context.Background(), m, cfg.MilestoneQThreshold); err != nil {
+					logger.Warn("Failed to send milestone alert: %v", err)
+				}
+			}()
+		}
+	})
+
 	health := &HealthState{
 		Status:        "healthy",
 		LastAction:    "none",
@@ -583,6 +633,28 @@ func main() {
 			logger.Error("HTTP server shutdown error: %v", err)
 		}
 		cancelHTTP()
+
+		cfgSnap := cfgAtomic.Load().(*config.Config)
+		if cfgSnap != nil && cfgSnap.GracefulShutdownPath != "" {
+			tmpPath := cfgSnap.GracefulShutdownPath + ".tmp"
+			markerData, _ := json.Marshal(map[string]interface{}{
+				"magic":     "BERYL7_GRACEFUL_EXIT_V1",
+				"timestamp": time.Now().Format(time.RFC3339),
+				"pid":       os.Getpid(),
+				"reason":    sig.String(),
+			})
+			f, err := os.OpenFile(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+			if err == nil {
+				_, _ = f.Write(markerData)
+				_ = f.Sync()
+				_ = f.Close()
+				if renameErr := os.Rename(tmpPath, cfgSnap.GracefulShutdownPath); renameErr != nil {
+					logger.Error("CRITICAL: Failed to write graceful shutdown marker: %v", renameErr)
+				}
+			} else {
+				logger.Error("CRITICAL: Failed to write graceful shutdown marker: %v", err)
+			}
+		}
 
 		// Hardware NAND Flash Protection: Flush RAM DB to persistent /etc/beryl7/skills.db on shutdown
 		if flushErr := store.FlushToPersistent(cfg.SkillStorePath); flushErr != nil {
