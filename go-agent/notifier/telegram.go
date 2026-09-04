@@ -16,12 +16,14 @@ import (
 )
 
 type TelegramNotifier struct {
-	token      string
-	chatID     int64
-	airgapped  bool
-	httpClient *http.Client
-	cooldownMu sync.Mutex
-	lastCmd    map[string]time.Time
+	token       string
+	chatID      int64
+	airgapped   bool
+	httpClient  *http.Client
+	cooldownMu  sync.Mutex
+	lastCmd     map[string]time.Time
+	baseURL     string
+	retryDelays []time.Duration
 }
 
 type telegramUpdate struct {
@@ -52,14 +54,37 @@ func NewTelegramNotifier(token string, chatIDStr string, airgapped bool) *Telegr
 	}
 
 	return &TelegramNotifier{
-		token:     cleanToken,
-		chatID:    chatID,
-		airgapped: airgapped,
-		lastCmd:   make(map[string]time.Time),
+		token:       cleanToken,
+		chatID:      chatID,
+		airgapped:   airgapped,
+		lastCmd:     make(map[string]time.Time),
+		baseURL:     "https://api.telegram.org",
+		retryDelays: []time.Duration{5 * time.Second, 10 * time.Second, 20 * time.Second, 30 * time.Second, 60 * time.Second},
 		httpClient: &http.Client{
 			Timeout: 35 * time.Second, // Timeout >= 30s to allow native long-polling
 		},
 	}
+}
+
+func (t *TelegramNotifier) SetBaseURL(url string) {
+	if t == nil {
+		return
+	}
+	t.baseURL = url
+}
+
+func (t *TelegramNotifier) SetRetryDelays(delays []time.Duration) {
+	if t == nil {
+		return
+	}
+	t.retryDelays = delays
+}
+
+func (t *TelegramNotifier) SetHTTPClient(client *http.Client) {
+	if t == nil {
+		return
+	}
+	t.httpClient = client
 }
 
 func (t *TelegramNotifier) SetAirgapped(enabled bool) {
@@ -74,7 +99,7 @@ func (t *TelegramNotifier) SendAlert(ctx context.Context, message string) error 
 		return nil
 	}
 
-	apiURL := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", t.token)
+	apiURL := fmt.Sprintf("%s/bot%s/sendMessage", t.baseURL, t.token)
 	payload := map[string]interface{}{
 		"chat_id":    t.chatID,
 		"text":       message,
@@ -110,42 +135,40 @@ func (t *TelegramNotifier) SendAlertWithBackoff(ctx context.Context, message str
 		return nil
 	}
 
-	backoffs := []time.Duration{5 * time.Second, 10 * time.Second, 20 * time.Second, 30 * time.Second, 60 * time.Second}
-	deadline := time.Now().Add(maxWait)
+	ctxTimeout, cancel := context.WithTimeout(ctx, maxWait)
+	defer cancel()
 
 	var err error
-	for _, delay := range backoffs {
-		if time.Now().After(deadline) {
-			break
-		}
-
-		err = t.SendAlert(ctx, message)
+	for _, delay := range t.retryDelays {
+		err = t.SendAlert(ctxTimeout, message)
 		if err == nil {
 			return nil
 		}
+		logger.Warn("TELEGRAM: Alert delivery failed: %v. Retrying in %v...", err, delay)
 
 		select {
-		case <-ctx.Done():
-			return ctx.Err()
+		case <-ctxTimeout.Done():
+			logger.Warn("TELEGRAM: Alert delivery expired after %v backoff limit: %v", maxWait, err)
+			return ctxTimeout.Err()
 		case <-time.After(delay):
 		}
 	}
 
 	// Keep trying every 60s until deadline
-	for time.Now().Before(deadline) {
-		err = t.SendAlert(ctx, message)
+	for {
+		err = t.SendAlert(ctxTimeout, message)
 		if err == nil {
 			return nil
 		}
+		logger.Warn("TELEGRAM: Alert delivery failed: %v. Retrying in %v...", err, 60*time.Second)
 
 		select {
-		case <-ctx.Done():
-			return ctx.Err()
+		case <-ctxTimeout.Done():
+			logger.Warn("TELEGRAM: Alert delivery expired after %v backoff limit: %v", maxWait, err)
+			return ctxTimeout.Err()
 		case <-time.After(60 * time.Second):
 		}
 	}
-
-	return fmt.Errorf("failed to send telegram alert after backoff: %w", err)
 }
 
 func (t *TelegramNotifier) SendPowerLossRecoveryAlert(ctx context.Context, rebootTime time.Time, wanStatus string) error {
@@ -159,14 +182,22 @@ func (t *TelegramNotifier) SendPowerLossRecoveryAlert(ctx context.Context, reboo
 }
 
 func (t *TelegramNotifier) SendMilestoneAlert(ctx context.Context, metrics skillstore.OperationalMetrics, threshold int) error {
-	msg := fmt.Sprintf("🏆 *CỘT MỐC AI: Đạt %d lần tự học!*\n\n"+
-		"Beryl 7 AI Agent đã hoàn thành %d vòng học tăng cường Q-Learning.\n"+
-		"📈 *Tổng hành động thành công:* `%d`\n"+
-		"📉 *Tổng hành động thất bại:* `%d`\n"+
-		"🎯 *Tỷ lệ chính xác ước tính:* `%.1f%%`\n\n"+
-		"💡 Agent đang ngày càng thông minh hơn trong việc tự động tối ưu hóa mạng của bạn.",
-		threshold, threshold, metrics.VerifiedSuccesses, metrics.VerifiedFailures,
-		float64(metrics.VerifiedSuccesses)/float64(metrics.TotalQUpdates)*100.0)
+	msg := fmt.Sprintf("📊 *Beryl 7 AI Agent - Milestone Report*\n\n"+
+		"Threshold reached: %d\n"+
+		"Total Q-Updates: `%d`\n"+
+		"Verified Successes: `%d`\n"+
+		"Verified Failures: `%d`\n"+
+		"Interpolations: `%d`\n"+
+		"Exact Matches: `%d`\n"+
+		"Fallback Defaults: `%d`\n\n"+
+		"Data is ready for user review.",
+		threshold,
+		metrics.TotalQUpdates,
+		metrics.VerifiedSuccesses,
+		metrics.VerifiedFailures,
+		metrics.Interpolations,
+		metrics.ExactMatchCount,
+		metrics.FallbackDefaultCount)
 
 	return t.SendAlert(ctx, msg)
 }
@@ -266,7 +297,7 @@ func (t *TelegramNotifier) StartCommandListener(ctx context.Context, execCmd fun
 }
 
 func (t *TelegramNotifier) getUpdates(ctx context.Context, offset int, timeoutSec int) ([]telegramUpdate, error) {
-	apiURL := fmt.Sprintf("https://api.telegram.org/bot%s/getUpdates?offset=%d&timeout=%d", t.token, offset, timeoutSec)
+	apiURL := fmt.Sprintf("%s/bot%s/getUpdates?offset=%d&timeout=%d", t.baseURL, t.token, offset, timeoutSec)
 
 	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
 	if err != nil {
