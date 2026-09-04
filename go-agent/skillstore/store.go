@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"beryl7-agent/constants"
 	"beryl7-agent/logger"
 	_ "modernc.org/sqlite"
 )
@@ -42,19 +43,23 @@ type StateSignature struct {
 }
 
 type SkillStore struct {
-	mu            sync.RWMutex
-	db            *sql.DB
-	dbPath        string
-	lastPruneTime time.Time
-	maxSkills     int
-	closed        bool
+	mu                sync.RWMutex
+	db                *sql.DB
+	dbPath            string
+	lastPruneTime     time.Time
+	maxSkills         int
+	closed            bool
+	distanceThreshold float64
+	decayLambda       float64
 }
 
 func New(dbPath string) (*SkillStore, error) {
 	s := &SkillStore{
-		dbPath:        dbPath,
-		maxSkills:     1000,
-		lastPruneTime: time.Now(),
+		dbPath:            dbPath,
+		maxSkills:         1000,
+		lastPruneTime:     time.Now(),
+		distanceThreshold: constants.DefaultDistanceThreshold,
+		decayLambda:       constants.DefaultDecayLambda,
 	}
 
 	if err := s.OpenAndInit(); err != nil {
@@ -701,9 +706,40 @@ func (s *SkillStore) RecordStateSignature(sig *StateSignature) error {
 }
 
 const (
-	DefaultDistanceThreshold = 2.5
-	DecayLambda              = 0.15
+	DefaultDistanceThreshold = constants.DefaultDistanceThreshold
+	DecayLambda              = constants.DefaultDecayLambda
 )
+
+// SetInterpolationParams dynamically updates the distance threshold and decay lambda for similarity interpolation.
+func (s *SkillStore) SetInterpolationParams(threshold, lambda float64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if threshold >= constants.MinDistanceThreshold && threshold <= constants.MaxDistanceThreshold {
+		s.distanceThreshold = threshold
+	} else {
+		s.distanceThreshold = constants.DefaultDistanceThreshold
+	}
+	if lambda >= constants.MinDecayLambda && lambda <= constants.MaxDecayLambda {
+		s.decayLambda = lambda
+	} else {
+		s.decayLambda = constants.DefaultDecayLambda
+	}
+}
+
+// GetInterpolationParams returns the currently active distance threshold and decay lambda.
+func (s *SkillStore) GetInterpolationParams() (float64, float64) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	th := s.distanceThreshold
+	if th < constants.MinDistanceThreshold || th > constants.MaxDistanceThreshold {
+		th = constants.DefaultDistanceThreshold
+	}
+	lm := s.decayLambda
+	if lm < constants.MinDecayLambda || lm > constants.MaxDecayLambda {
+		lm = constants.DefaultDecayLambda
+	}
+	return th, lm
+}
 
 // RecommendBestActionWithInterpolation finds the best action via exact Q-Table match first.
 // If unseen, it performs TinyML nearest-neighbor state interpolation, weighting Q-value by distance decay exp(-lambda * d).
@@ -714,6 +750,15 @@ func (s *SkillStore) RecommendBestActionWithInterpolation(state string, sig *Sta
 
 	if s.closed || s.db == nil {
 		return defaultAction, 0.0, state, false, ErrStoreClosed
+	}
+
+	th := s.distanceThreshold
+	if th < constants.MinDistanceThreshold || th > constants.MaxDistanceThreshold {
+		th = constants.DefaultDistanceThreshold
+	}
+	lm := s.decayLambda
+	if lm < constants.MinDecayLambda || lm > constants.MaxDecayLambda {
+		lm = constants.DefaultDecayLambda
 	}
 
 	// 1. Exact Match Look-up in Q-Table
@@ -735,7 +780,7 @@ func (s *SkillStore) RecommendBestActionWithInterpolation(state string, sig *Sta
 
 	// 2. Similarity Interpolation Look-up
 	if sig != nil {
-		nearestState, dist, errNearest := s.findNearestStateLocked(sig, DefaultDistanceThreshold)
+		nearestState, dist, errNearest := s.findNearestStateLocked(sig, th)
 		if errNearest == nil && nearestState != "" {
 			var neighborAction string
 			var neighborQ float64
@@ -751,9 +796,9 @@ func (s *SkillStore) RecommendBestActionWithInterpolation(state string, sig *Sta
 				}
 
 				// Apply exponential distance decay: Q_interpolated = Q_neighbor * exp(-lambda * dist)
-				interpolatedQ := neighborQ * math.Exp(-DecayLambda*dist)
-				logger.Info("TINYML SIMILARITY INTERPOLATION: Unseen State [%s] mapped to Nearest [%s] (dist=%.2f) -> Inheriting Action '%s' (Q: %.2f -> %.2f)",
-					state, nearestState, dist, neighborAction, neighborQ, interpolatedQ)
+				interpolatedQ := neighborQ * math.Exp(-lm*dist)
+				logger.Info("TINYML SIMILARITY INTERPOLATION: Unseen State [%s] mapped to Nearest [%s] (dist=%.2f, th=%.2f) -> Inheriting Action '%s' (Q: %.2f -> %.2f)",
+					state, nearestState, dist, th, neighborAction, neighborQ, interpolatedQ)
 
 				return neighborAction, interpolatedQ, nearestState, true, nil
 			}

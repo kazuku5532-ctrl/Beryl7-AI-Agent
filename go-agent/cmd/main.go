@@ -290,6 +290,8 @@ func main() {
 	}
 	defer store.Close()
 	activeStore = store
+	store.SetInterpolationParams(cfg.StateDistanceThreshold, cfg.StateDecayLambda)
+	logger.Info("TinyML Similarity Interpolation initialized: DistanceThreshold=%.2f, DecayLambda=%.2f", cfg.StateDistanceThreshold, cfg.StateDecayLambda)
 
 	// Periodic 12-Hour Async Flush-to-Flash to preserve learned skills permanently
 	go func() {
@@ -1406,6 +1408,10 @@ func StartHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 			}
 			*cfg = *newCfg
 			cfgAtomic.Store(newCfg)
+			if activeStore != nil {
+				activeStore.SetInterpolationParams(newCfg.StateDistanceThreshold, newCfg.StateDecayLambda)
+				logger.Info("TinyML Similarity Interpolation parameters dynamically updated: DistanceThreshold=%.2f, DecayLambda=%.2f", newCfg.StateDistanceThreshold, newCfg.StateDecayLambda)
+			}
 		}
 		configMu.Unlock()
 

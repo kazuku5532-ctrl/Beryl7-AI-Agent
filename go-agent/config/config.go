@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"beryl7-agent/constants"
 	"beryl7-agent/logger"
 )
 
@@ -46,6 +47,8 @@ type Config struct {
 	AirgappedMode       bool
 	TelegramBotToken    string
 	TelegramChatID      string
+	StateDistanceThreshold float64
+	StateDecayLambda       float64
 	apiKeyAtomic      atomic.Value
 }
 
@@ -108,6 +111,8 @@ func LoadConfig() (*Config, error) {
 		WiFiDisconnectCount:    3,
 		LogMaxBytes:            2 * 1024 * 1024,
 		LogBackupCount:         5,
+		StateDistanceThreshold: constants.DefaultDistanceThreshold,
+		StateDecayLambda:       constants.DefaultDecayLambda,
 	}
 
 	var showVersion bool
@@ -229,6 +234,32 @@ func LoadConfig() (*Config, error) {
 	if val := os.Getenv("BERYL7_AIRGAPPED_MODE"); val == "1" || strings.ToLower(val) == "true" {
 		cfg.AirgappedMode = true
 		logger.Info("AIR-GAPPED MODE ENABLED: Outbound Cloud AI traffic disabled.")
+	}
+
+	if val := os.Getenv("BERYL7_STATE_DISTANCE_THRESHOLD"); val != "" {
+		if f, err := strconv.ParseFloat(val, 64); err == nil {
+			if f >= constants.MinDistanceThreshold && f <= constants.MaxDistanceThreshold {
+				cfg.StateDistanceThreshold = f
+			} else {
+				logger.Warn("Invalid range for BERYL7_STATE_DISTANCE_THRESHOLD: '%s' (expected [%.1f, %.1f]). Keeping default %.2f",
+					val, constants.MinDistanceThreshold, constants.MaxDistanceThreshold, cfg.StateDistanceThreshold)
+			}
+		} else {
+			logger.Warn("Invalid float for BERYL7_STATE_DISTANCE_THRESHOLD: '%s'. Keeping default %.2f", val, cfg.StateDistanceThreshold)
+		}
+	}
+
+	if val := os.Getenv("BERYL7_STATE_DECAY_LAMBDA"); val != "" {
+		if f, err := strconv.ParseFloat(val, 64); err == nil {
+			if f >= constants.MinDecayLambda && f <= constants.MaxDecayLambda {
+				cfg.StateDecayLambda = f
+			} else {
+				logger.Warn("Invalid range for BERYL7_STATE_DECAY_LAMBDA: '%s' (expected [%.2f, %.1f]). Keeping default %.2f",
+					val, constants.MinDecayLambda, constants.MaxDecayLambda, cfg.StateDecayLambda)
+			}
+		} else {
+			logger.Warn("Invalid float for BERYL7_STATE_DECAY_LAMBDA: '%s'. Keeping default %.2f", val, cfg.StateDecayLambda)
+		}
 	}
 
 	if val := os.Getenv("TELEGRAM_BOT_TOKEN"); val != "" {
@@ -587,6 +618,24 @@ func parseEnvFile(filePath string, cfg *Config) error {
 			cfg.SkillStorePath = val
 		case "BERYL7_CHECKPOINT_PATH":
 			cfg.CheckpointPath = val
+		case "BERYL7_STATE_DISTANCE_THRESHOLD":
+			if f, err := strconv.ParseFloat(val, 64); err == nil {
+				if f >= constants.MinDistanceThreshold && f <= constants.MaxDistanceThreshold {
+					cfg.StateDistanceThreshold = f
+				} else {
+					logger.Warn("Invalid range for BERYL7_STATE_DISTANCE_THRESHOLD: '%s' (expected [%.1f, %.1f]). Keeping default %.2f",
+						val, constants.MinDistanceThreshold, constants.MaxDistanceThreshold, cfg.StateDistanceThreshold)
+				}
+			}
+		case "BERYL7_STATE_DECAY_LAMBDA":
+			if f, err := strconv.ParseFloat(val, 64); err == nil {
+				if f >= constants.MinDecayLambda && f <= constants.MaxDecayLambda {
+					cfg.StateDecayLambda = f
+				} else {
+					logger.Warn("Invalid range for BERYL7_STATE_DECAY_LAMBDA: '%s' (expected [%.2f, %.1f]). Keeping default %.2f",
+						val, constants.MinDecayLambda, constants.MaxDecayLambda, cfg.StateDecayLambda)
+				}
+			}
 		}
 	}
 
