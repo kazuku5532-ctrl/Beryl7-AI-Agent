@@ -35,8 +35,6 @@ import (
 	"beryl7-agent/watchdog"
 )
 
-
-
 type HealthState struct {
 	mu                    sync.RWMutex
 	Status                string                      `json:"status"`
@@ -239,7 +237,7 @@ func setCorsHeaders(w http.ResponseWriter, r *http.Request, cfg *config.Config) 
 
 func runBenchmarks() {
 	fmt.Println("Running in-memory hardware micro-benchmarks...")
-	
+
 	// Component 1: skillstore.ComputeStateDistance
 	start1 := time.Now()
 	iters1 := 100000
@@ -249,7 +247,7 @@ func runBenchmarks() {
 		skillstore.ComputeStateDistance(sig1, sig2)
 	}
 	dur1 := time.Since(start1)
-	
+
 	// Component 2: SkillStore Operations
 	iters2 := 10000
 	store, err := skillstore.New(":memory:")
@@ -264,7 +262,7 @@ func runBenchmarks() {
 		store.RecommendBestActionWithInterpolation(fmt.Sprintf("state-%d", (i+1)%10), sig1, "action-fallback")
 	}
 	dur2 := time.Since(start2)
-	
+
 	// Component 3: telemetry.GetProcessResourceStats
 	iters3 := 500
 	start3 := time.Now()
@@ -273,7 +271,7 @@ func runBenchmarks() {
 		tc.GetProcessResourceStats()
 	}
 	dur3 := time.Since(start3)
-	
+
 	fmt.Println("\n==========================================================================================")
 	fmt.Printf("%-35s | %-10s | %-12s | %-12s | %-12s\n", "Component", "Iterations", "Total Time", "Latency/Op", "Ops/Sec")
 	fmt.Println("------------------------------------+------------+--------------+--------------+----------")
@@ -285,8 +283,16 @@ func runBenchmarks() {
 
 func main() {
 	benchmarkFlag := flag.Bool("benchmark", false, "Run in-memory hardware micro-benchmarks and exit")
-	_ = flag.String("config", "", "Path to configuration file")
+	configFlag := flag.String("config", "/etc/beryl7/agent.env", "Path to configuration file")
+	keyfileFlag := flag.String("keyfile", "/etc/beryl7/agent.key", "Path to secure API key file")
+	dryRunFlag := flag.Bool("dry-run", false, "Enable dry-run mode (no network modifications)")
+	versionFlag := flag.Bool("version", false, "Print daemon version and exit")
 	flag.Parse()
+
+	if *versionFlag {
+		fmt.Println("beryl7-agent version v16.0")
+		os.Exit(0)
+	}
 
 	if *benchmarkFlag {
 		runBenchmarks()
@@ -300,7 +306,7 @@ func main() {
 	setOOMScore()
 
 	configMu.Lock()
-	cfg, err := config.LoadConfig()
+	cfg, err := config.LoadConfigWithFlags(*configFlag, *keyfileFlag, *dryRunFlag, *versionFlag)
 	configMu.Unlock()
 	if err != nil {
 		fmt.Printf("Failed to load config: %v\n", err)
@@ -1298,8 +1304,6 @@ func StartHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 		return setCorsHeaders(w, r, cfg)
 	}
 
-
-
 	// Endpoint 1: Health Check (/api/health)
 	mux.HandleFunc("/api/health", func(w http.ResponseWriter, r *http.Request) {
 		if setCorsHeaders(w, r) {
@@ -1509,7 +1513,7 @@ func StartHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 		configMu.Lock()
 		oldHost := cfg.BindHost
 		oldPort := cfg.HealthPort
-		newCfg, loadErr := config.LoadConfig()
+		newCfg, loadErr := config.LoadConfigWithFlags(cfg.ConfigFilePath, cfg.KeyFilePath, cfg.DryRun, false)
 		netChanged := false
 		if loadErr == nil && newCfg != nil {
 			if newCfg.BindHost != oldHost || newCfg.HealthPort != oldPort {

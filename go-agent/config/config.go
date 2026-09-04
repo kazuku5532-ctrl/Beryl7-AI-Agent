@@ -2,7 +2,6 @@ package config
 
 import (
 	"bufio"
-	"flag"
 	"fmt"
 	"os"
 	"os/exec"
@@ -17,39 +16,39 @@ import (
 )
 
 type Config struct {
-	ConfigFilePath    string
-	KeyFilePath       string
-	GeminiAPIKey      string
-	AuthToken         string
-	ApproveToken      string
-	LogLevel          string
-	HealthPort        int
-	TelemetryInterval time.Duration
-	EMAAlpha          float64
-	DryRun            bool
-	CheckpointPath    string
-	SkillStorePath    string
-	DisableAutoHeal   bool
-	FirmwareVersion   string
-	BindHost          string
-	CORSAllowedOrigins string
-	RAMExhaustionPct   float64
-	CPUSpikeLoad       float64
-	LatencySpikeMs     float64
+	ConfigFilePath         string
+	KeyFilePath            string
+	GeminiAPIKey           string
+	AuthToken              string
+	ApproveToken           string
+	LogLevel               string
+	HealthPort             int
+	TelemetryInterval      time.Duration
+	EMAAlpha               float64
+	DryRun                 bool
+	CheckpointPath         string
+	SkillStorePath         string
+	DisableAutoHeal        bool
+	FirmwareVersion        string
+	BindHost               string
+	CORSAllowedOrigins     string
+	RAMExhaustionPct       float64
+	CPUSpikeLoad           float64
+	LatencySpikeMs         float64
 	LatencyZScoreThreshold float64
-	BandwidthBoostMbps float64
-	BandwidthRestoreMbps float64
-	WiFiDisconnectCount int
-	LogMaxBytes         int64
-	LogBackupCount      int
-	TrustReverseProxy   bool
+	BandwidthBoostMbps     float64
+	BandwidthRestoreMbps   float64
+	WiFiDisconnectCount    int
+	LogMaxBytes            int64
+	LogBackupCount         int
+	TrustReverseProxy      bool
 	DisableLocalhostBypass bool
-	AirgappedMode       bool
-	TelegramBotToken    string
-	TelegramChatID      string
+	AirgappedMode          bool
+	TelegramBotToken       string
+	TelegramChatID         string
 	StateDistanceThreshold float64
 	StateDecayLambda       float64
-	apiKeyAtomic      atomic.Value
+	apiKeyAtomic           atomic.Value
 }
 
 type FirmwareCapability struct {
@@ -85,23 +84,28 @@ var CapabilityMatrix = map[string]FirmwareCapability{
 	},
 }
 
-func LoadConfig() (*Config, error) {
+func LoadConfigWithFlags(configPath, keyPath string, dryRun, showVersion bool) (*Config, error) {
+	if showVersion {
+		fmt.Println("beryl7-agent version v16.0")
+		os.Exit(0)
+	}
+
 	cfg := &Config{
-		ConfigFilePath:     "/etc/beryl7/agent.env",
-		KeyFilePath:        "/etc/beryl7/agent.key",
-		AuthToken:          "",
-		ApproveToken:       "",
-		LogLevel:           "INFO",
-		HealthPort:         8888,
-		BindHost:           "0.0.0.0",
-		CORSAllowedOrigins: "http://192.168.8.1:8888,http://127.0.0.1:8888,http://localhost:8888",
-		TelemetryInterval:  5 * time.Second,
-		EMAAlpha:           0.3,
-		DryRun:             false,
-		CheckpointPath:     "/root/.agent_checkpoint.uci",
-		SkillStorePath:     "/root/skills.db",
-		DisableAutoHeal:    false,
-		FirmwareVersion:    "4.9.0",
+		ConfigFilePath:         "/etc/beryl7/agent.env",
+		KeyFilePath:            "/etc/beryl7/agent.key",
+		AuthToken:              "",
+		ApproveToken:           "",
+		LogLevel:               "INFO",
+		HealthPort:             8888,
+		BindHost:               "0.0.0.0",
+		CORSAllowedOrigins:     "http://192.168.8.1:8888,http://127.0.0.1:8888,http://localhost:8888",
+		TelemetryInterval:      5 * time.Second,
+		EMAAlpha:               0.3,
+		DryRun:                 false,
+		CheckpointPath:         "/root/.agent_checkpoint.uci",
+		SkillStorePath:         "/root/skills.db",
+		DisableAutoHeal:        false,
+		FirmwareVersion:        "4.9.0",
 		RAMExhaustionPct:       95.0,
 		CPUSpikeLoad:           1.5,
 		LatencySpikeMs:         100.0,
@@ -115,18 +119,14 @@ func LoadConfig() (*Config, error) {
 		StateDecayLambda:       constants.DefaultDecayLambda,
 	}
 
-	var showVersion bool
-	if !flag.Parsed() {
-		flag.StringVar(&cfg.ConfigFilePath, "config", cfg.ConfigFilePath, "Path to environment config file")
-		flag.StringVar(&cfg.KeyFilePath, "keyfile", cfg.KeyFilePath, "Path to secure API key file")
-		flag.BoolVar(&cfg.DryRun, "dry-run", cfg.DryRun, "Enable dry-run mode (no network modifications)")
-		flag.BoolVar(&showVersion, "version", false, "Print daemon version and exit")
-		flag.Parse()
+	if configPath != "" {
+		cfg.ConfigFilePath = configPath
 	}
-
-	if showVersion {
-		fmt.Println("beryl7-agent version v16.0")
-		os.Exit(0)
+	if keyPath != "" {
+		cfg.KeyFilePath = keyPath
+	}
+	if dryRun {
+		cfg.DryRun = true
 	}
 
 	if err := parseEnvFile(cfg.ConfigFilePath, cfg); err != nil {
@@ -331,6 +331,10 @@ func LoadConfig() (*Config, error) {
 	}
 
 	return cfg, nil
+}
+
+func LoadConfig() (*Config, error) {
+	return LoadConfigWithFlags("", "", false, false)
 }
 
 func EnsureSysupgradePreservation() error {
