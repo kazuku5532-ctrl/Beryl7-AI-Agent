@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"beryl7-agent/constants"
@@ -42,6 +43,13 @@ type StateSignature struct {
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
+type OperationalMetrics struct {
+	TotalQUpdates     uint64 `json:"total_q_updates"`
+	Interpolations    uint64 `json:"interpolations"`
+	VerifiedSuccesses uint64 `json:"verified_successes"`
+	VerifiedFailures  uint64 `json:"verified_failures"`
+}
+
 type SkillStore struct {
 	mu                sync.RWMutex
 	db                *sql.DB
@@ -51,6 +59,19 @@ type SkillStore struct {
 	closed            bool
 	distanceThreshold float64
 	decayLambda       float64
+	qUpdatesTotal     atomic.Uint64
+	interpolationsTotal atomic.Uint64
+	verifiedSuccesses atomic.Uint64
+	verifiedFailures  atomic.Uint64
+}
+
+func (s *SkillStore) GetOperationalMetrics() OperationalMetrics {
+	return OperationalMetrics{
+		TotalQUpdates:     s.qUpdatesTotal.Load(),
+		Interpolations:    s.interpolationsTotal.Load(),
+		VerifiedSuccesses: s.verifiedSuccesses.Load(),
+		VerifiedFailures:  s.verifiedFailures.Load(),
+	}
 }
 
 func New(dbPath string) (*SkillStore, error) {
@@ -355,6 +376,9 @@ func (s *SkillStore) SaveOrUpdateSkill(sk *Skill, isSuccess bool, alpha float64)
 
 	if isSuccess {
 		_, _ = s.db.Exec("PRAGMA wal_checkpoint(PASSIVE);")
+		s.verifiedSuccesses.Add(1)
+	} else {
+		s.verifiedFailures.Add(1)
 	}
 
 	return nil
@@ -526,6 +550,10 @@ func (s *SkillStore) UpdateQValue(state string, action string, reward float64) e
 		q_value = MAX(-0.8, MIN(1.0, q_value + ? * (? - q_value))),
 		updated_at = CURRENT_TIMESTAMP`,
 		state, action, reward, learningRate, reward)
+	
+	if err == nil {
+		s.qUpdatesTotal.Add(1)
+	}
 	return err
 }
 
@@ -800,6 +828,7 @@ func (s *SkillStore) RecommendBestActionWithInterpolation(state string, sig *Sta
 				logger.Info("TINYML SIMILARITY INTERPOLATION: Unseen State [%s] mapped to Nearest [%s] (dist=%.2f, th=%.2f) -> Inheriting Action '%s' (Q: %.2f -> %.2f)",
 					state, nearestState, dist, th, neighborAction, neighborQ, interpolatedQ)
 
+				s.interpolationsTotal.Add(1)
 				return neighborAction, interpolatedQ, nearestState, true, nil
 			}
 		}

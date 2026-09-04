@@ -57,6 +57,9 @@ type HealthState struct {
 	ConnectedDevices      []telemetry.ConnectedDevice `json:"connected_devices"`
 	NetworkToken          string                      `json:"network_token"`
 	StartTime             time.Time                   `json:"start_time"`
+	Goroutines            int                         `json:"goroutines"`
+	HeapAllocMB           float64                     `json:"heap_alloc_mb"`
+	RSSMB                 float64                     `json:"rss_mb"`
 }
 
 type PendingApproval struct {
@@ -1259,6 +1262,12 @@ func StartHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 		safeMode := wd.IsSafeMode()
 
 		health.mu.Lock()
+		if collector != nil {
+			proc := collector.GetProcessResourceStats()
+			health.Goroutines = proc.Goroutines
+			health.HeapAllocMB = proc.HeapAllocMB
+			health.RSSMB = proc.RSSMB
+		}
 		if safeMode {
 			health.Status = "degraded (safe_mode)"
 		} else if cbState == "OPEN" {
@@ -1275,6 +1284,51 @@ func StartHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write(data)
 		}
+	})
+
+	// Endpoint 1b: Empirical Process & Operational Metrics (/api/v1/metrics)
+	mux.HandleFunc("/api/v1/metrics", func(w http.ResponseWriter, r *http.Request) {
+		if setCorsHeaders(w, r) {
+			return
+		}
+		host, _, _ := net.SplitHostPort(r.RemoteAddr)
+		if host == "" {
+			host = r.RemoteAddr
+		}
+		if !rateLimitCheck(host) {
+			http.Error(w, `{"error":"Too Many Requests: Rate limit exceeded"}`, http.StatusTooManyRequests)
+			return
+		}
+
+		var procStats telemetry.ProcessResourceStats
+		var opCounters telemetry.CollectorCounters
+		if collector != nil {
+			procStats = collector.GetProcessResourceStats()
+			opCounters = collector.GetOperationalCounters()
+		}
+
+		var opMetrics skillstore.OperationalMetrics
+		if store != nil {
+			opMetrics = store.GetOperationalMetrics()
+		}
+
+		health.mu.RLock()
+		telData := map[string]interface{}{
+			"cpu_usage_pct":   health.CPUUsagePct,
+			"ram_usage_pct":   health.RAMUsagePct,
+			"hardware_temp_c": health.HardwareTempC,
+			"latency_ms":      health.LatencyMs,
+		}
+		health.mu.RUnlock()
+
+		resp := map[string]interface{}{
+			"process":            procStats,
+			"telemetry":          telData,
+			"operational":        opMetrics,
+			"collector_counters": opCounters,
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(resp)
 	})
 
 	// Endpoint 2: Module Status (/api/modules/status)

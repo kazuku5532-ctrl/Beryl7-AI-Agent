@@ -63,12 +63,12 @@ type TelemetryCollector struct {
 	ubusPath               string
 	ewmaLatency            float64
 	ewmaVariance           float64
-	skillHitsTotal         int64
-	skillMissesTotal       int64
-	healSuccessTotal       int64
-	healFailuresTotal      int64
-	rollbacksTotal         int64
-	falsePositivesTotal    int64
+	skillHitsTotal         atomic.Int64
+	skillMissesTotal       atomic.Int64
+	healSuccessTotal       atomic.Int64
+	healFailuresTotal      atomic.Int64
+	rollbacksTotal         atomic.Int64
+	falsePositivesTotal    atomic.Int64
 	streamingCycleCount    int
 	bulkDownloadCycleCount int
 	lastMetric             *Metric
@@ -627,61 +627,49 @@ func (t *TelemetryCollector) ExportPrometheusMetrics(m *Metric) string {
 	sb.WriteString("# TYPE beryl7_router_reachable gauge\n")
 	sb.WriteString(fmt.Sprintf("beryl7_router_reachable %d\n", reachableVal))
 
-	t.mu.Lock()
 	sb.WriteString("# HELP beryl7_skill_hits_total Total SkillStore cache hits\n")
 	sb.WriteString("# TYPE beryl7_skill_hits_total counter\n")
-	sb.WriteString(fmt.Sprintf("beryl7_skill_hits_total %d\n", t.skillHitsTotal))
+	sb.WriteString(fmt.Sprintf("beryl7_skill_hits_total %d\n", t.skillHitsTotal.Load()))
 	sb.WriteString("# HELP beryl7_cache_misses_total Total SkillStore cache misses\n")
 	sb.WriteString("# TYPE beryl7_cache_misses_total counter\n")
-	sb.WriteString(fmt.Sprintf("beryl7_cache_misses_total %d\n", t.skillMissesTotal))
+	sb.WriteString(fmt.Sprintf("beryl7_cache_misses_total %d\n", t.skillMissesTotal.Load()))
 	sb.WriteString("# HELP beryl7_healing_success_total Total verified successful auto-healings\n")
 	sb.WriteString("# TYPE beryl7_healing_success_total counter\n")
-	sb.WriteString(fmt.Sprintf("beryl7_healing_success_total %d\n", t.healSuccessTotal))
+	sb.WriteString(fmt.Sprintf("beryl7_healing_success_total %d\n", t.healSuccessTotal.Load()))
 	sb.WriteString("# HELP beryl7_healing_failures_total Total failed auto-healing attempts\n")
 	sb.WriteString("# TYPE beryl7_healing_failures_total counter\n")
-	sb.WriteString(fmt.Sprintf("beryl7_healing_failures_total %d\n", t.healFailuresTotal))
+	sb.WriteString(fmt.Sprintf("beryl7_healing_failures_total %d\n", t.healFailuresTotal.Load()))
 	sb.WriteString("# HELP beryl7_rollbacks_total Total Watchdog rollback triggers\n")
 	sb.WriteString("# TYPE beryl7_rollbacks_total counter\n")
-	sb.WriteString(fmt.Sprintf("beryl7_rollbacks_total %d\n", t.rollbacksTotal))
+	sb.WriteString(fmt.Sprintf("beryl7_rollbacks_total %d\n", t.rollbacksTotal.Load()))
 	sb.WriteString("# HELP beryl7_false_positives_total Total false positive anomaly detections\n")
 	sb.WriteString("# TYPE beryl7_false_positives_total counter\n")
-	sb.WriteString(fmt.Sprintf("beryl7_false_positives_total %d\n", t.falsePositivesTotal))
-	t.mu.Unlock()
+	sb.WriteString(fmt.Sprintf("beryl7_false_positives_total %d\n", t.falsePositivesTotal.Load()))
 
 	return sb.String()
 }
 
 func (t *TelemetryCollector) RecordSkillHit() {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	t.skillHitsTotal++
+	t.skillHitsTotal.Add(1)
 }
 
 func (t *TelemetryCollector) RecordSkillMiss() {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	t.skillMissesTotal++
+	t.skillMissesTotal.Add(1)
 }
 
 func (t *TelemetryCollector) RecordRollback() {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	t.rollbacksTotal++
+	t.rollbacksTotal.Add(1)
 }
 
 func (t *TelemetryCollector) RecordFalsePositive() {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	t.falsePositivesTotal++
+	t.falsePositivesTotal.Add(1)
 }
 
 func (t *TelemetryCollector) RecordHealOutcome(success bool) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
 	if success {
-		t.healSuccessTotal++
+		t.healSuccessTotal.Add(1)
 	} else {
-		t.healFailuresTotal++
+		t.healFailuresTotal.Add(1)
 	}
 }
 
@@ -1058,3 +1046,68 @@ func (t *TelemetryCollector) EstimateChannelCapacity(ctx context.Context, iface 
 }
 
 
+type ProcessResourceStats struct {
+	RSSBytes    uint64  `json:"rss_bytes"`
+	RSSMB       float64 `json:"rss_mb"`
+	HeapAllocMB float64 `json:"heap_alloc_mb"`
+	HeapSysMB   float64 `json:"heap_sys_mb"`
+	Goroutines  int     `json:"goroutines"`
+	CPUTimeSec  float64 `json:"cpu_time_sec"`
+}
+
+func (t *TelemetryCollector) GetProcessResourceStats() ProcessResourceStats {
+	stats := ProcessResourceStats{}
+	stats.Goroutines = runtime.NumGoroutine()
+
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	stats.HeapAllocMB = float64(m.Alloc) / 1024 / 1024
+	stats.HeapSysMB = float64(m.Sys-m.HeapReleased) / 1024 / 1024
+
+	if runtime.GOOS == "linux" {
+		data, err := os.ReadFile("/proc/self/statm")
+		if err == nil {
+			fields := strings.Fields(string(data))
+			if len(fields) >= 2 {
+				if pages, err := strconv.ParseUint(fields[1], 10, 64); err == nil {
+					stats.RSSBytes = pages * uint64(os.Getpagesize())
+				}
+			}
+		}
+		
+		data2, err2 := os.ReadFile("/proc/self/stat")
+		if err2 == nil {
+			fields := strings.Fields(string(data2))
+			if len(fields) >= 15 {
+				utime, _ := strconv.ParseFloat(fields[13], 64)
+				stime, _ := strconv.ParseFloat(fields[14], 64)
+				stats.CPUTimeSec = (utime + stime) / 100.0
+			}
+		}
+	} else {
+		stats.RSSBytes = m.Sys - m.HeapReleased
+	}
+	stats.RSSMB = float64(stats.RSSBytes) / 1024 / 1024
+
+	return stats
+}
+
+type CollectorCounters struct {
+	SkillHitsTotal      int64 `json:"skill_hits_total"`
+	SkillMissesTotal    int64 `json:"skill_misses_total"`
+	HealSuccessTotal    int64 `json:"heal_success_total"`
+	HealFailuresTotal   int64 `json:"heal_failures_total"`
+	RollbacksTotal      int64 `json:"rollbacks_total"`
+	FalsePositivesTotal int64 `json:"false_positives_total"`
+}
+
+func (t *TelemetryCollector) GetOperationalCounters() CollectorCounters {
+	return CollectorCounters{
+		SkillHitsTotal:      t.skillHitsTotal.Load(),
+		SkillMissesTotal:    t.skillMissesTotal.Load(),
+		HealSuccessTotal:    t.healSuccessTotal.Load(),
+		HealFailuresTotal:   t.healFailuresTotal.Load(),
+		RollbacksTotal:      t.rollbacksTotal.Load(),
+		FalsePositivesTotal: t.falsePositivesTotal.Load(),
+	}
+}

@@ -119,6 +119,7 @@ func TestHealthCheckServerEndpoints(t *testing.T) {
 
 	endpoints := []string{
 		baseURL + "/api/health",
+		baseURL + "/api/v1/metrics",
 		baseURL + "/api/modules/status",
 		baseURL + "/metrics",
 		baseURL + "/api/budget/status",
