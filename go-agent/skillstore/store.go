@@ -44,33 +44,39 @@ type StateSignature struct {
 }
 
 type OperationalMetrics struct {
-	TotalQUpdates     uint64 `json:"total_q_updates"`
-	Interpolations    uint64 `json:"interpolations"`
-	VerifiedSuccesses uint64 `json:"verified_successes"`
-	VerifiedFailures  uint64 `json:"verified_failures"`
+	TotalQUpdates        uint64 `json:"total_q_updates"`
+	Interpolations       uint64 `json:"interpolations"`
+	ExactMatchCount      uint64 `json:"exact_match_count"`
+	FallbackDefaultCount uint64 `json:"fallback_default_count"`
+	VerifiedSuccesses    uint64 `json:"verified_successes"`
+	VerifiedFailures     uint64 `json:"verified_failures"`
 }
 
 type SkillStore struct {
-	mu                sync.RWMutex
-	db                *sql.DB
-	dbPath            string
-	lastPruneTime     time.Time
-	maxSkills         int
-	closed            bool
-	distanceThreshold float64
-	decayLambda       float64
-	qUpdatesTotal     atomic.Uint64
-	interpolationsTotal atomic.Uint64
-	verifiedSuccesses atomic.Uint64
-	verifiedFailures  atomic.Uint64
+	mu                   sync.RWMutex
+	db                   *sql.DB
+	dbPath               string
+	lastPruneTime        time.Time
+	maxSkills            int
+	closed               bool
+	distanceThreshold    float64
+	decayLambda          float64
+	qUpdatesTotal        atomic.Uint64
+	interpolationsTotal  atomic.Uint64
+	exactMatchCount      atomic.Uint64
+	fallbackDefaultCount atomic.Uint64
+	verifiedSuccesses    atomic.Uint64
+	verifiedFailures     atomic.Uint64
 }
 
 func (s *SkillStore) GetOperationalMetrics() OperationalMetrics {
 	return OperationalMetrics{
-		TotalQUpdates:     s.qUpdatesTotal.Load(),
-		Interpolations:    s.interpolationsTotal.Load(),
-		VerifiedSuccesses: s.verifiedSuccesses.Load(),
-		VerifiedFailures:  s.verifiedFailures.Load(),
+		TotalQUpdates:        s.qUpdatesTotal.Load(),
+		Interpolations:       s.interpolationsTotal.Load(),
+		ExactMatchCount:      s.exactMatchCount.Load(),
+		FallbackDefaultCount: s.fallbackDefaultCount.Load(),
+		VerifiedSuccesses:    s.verifiedSuccesses.Load(),
+		VerifiedFailures:     s.verifiedFailures.Load(),
 	}
 }
 
@@ -376,9 +382,6 @@ func (s *SkillStore) SaveOrUpdateSkill(sk *Skill, isSuccess bool, alpha float64)
 
 	if isSuccess {
 		_, _ = s.db.Exec("PRAGMA wal_checkpoint(PASSIVE);")
-		s.verifiedSuccesses.Add(1)
-	} else {
-		s.verifiedFailures.Add(1)
 	}
 
 	return nil
@@ -553,6 +556,11 @@ func (s *SkillStore) UpdateQValue(state string, action string, reward float64) e
 	
 	if err == nil {
 		s.qUpdatesTotal.Add(1)
+		if reward > 0 {
+			s.verifiedSuccesses.Add(1)
+		} else if reward < 0 {
+			s.verifiedFailures.Add(1)
+		}
 	}
 	return err
 }
@@ -575,8 +583,10 @@ func (s *SkillStore) RecommendBestAction(state string, defaultAction string) (st
 
 	if err != nil {
 		// Cold Start Handling: Return defaultAction with 0.0 Q-value when no learned history exists
+		s.fallbackDefaultCount.Add(1)
 		return defaultAction, 0.0, nil
 	}
+	s.exactMatchCount.Add(1)
 	return bestAction, qValue, nil
 }
 
@@ -801,8 +811,10 @@ func (s *SkillStore) RecommendBestActionWithInterpolation(state string, sig *Sta
 		// Exact Match Found!
 		if exactQ < 0.0 {
 			logger.Warn("HARMONIZATION GUARD: Exact match Action [%s] for State [%s] rejected due to negative Q (%.2f) -> Fallback to defaultAction", exactAction, state, exactQ)
+			s.fallbackDefaultCount.Add(1)
 			return defaultAction, 0.0, state, false, nil
 		}
+		s.exactMatchCount.Add(1)
 		return exactAction, exactQ, state, false, nil
 	}
 
@@ -820,6 +832,7 @@ func (s *SkillStore) RecommendBestActionWithInterpolation(state string, sig *Sta
 			if neighborErr == nil {
 				if neighborQ < 0.0 {
 					logger.Warn("HARMONIZATION GUARD: Interpolated neighbor Action [%s] (State: %s) has negative Q (%.2f) -> Fallback to defaultAction", neighborAction, nearestState, neighborQ)
+					s.fallbackDefaultCount.Add(1)
 					return defaultAction, 0.0, state, false, nil
 				}
 
@@ -835,6 +848,7 @@ func (s *SkillStore) RecommendBestActionWithInterpolation(state string, sig *Sta
 	}
 
 	// 3. Fallback to defaultAction if completely unfamiliar
+	s.fallbackDefaultCount.Add(1)
 	return defaultAction, 0.0, state, false, nil
 }
 

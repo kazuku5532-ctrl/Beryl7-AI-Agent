@@ -137,3 +137,44 @@ func TestSkillStoreOptimizeAndVacuum(t *testing.T) {
 	}
 }
 
+func TestSkillStore_OperationalMetrics_SixFields(t *testing.T) {
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "metrics_skills.db")
+
+	store, err := New(dbPath)
+	if err != nil {
+		t.Fatalf("Failed to init store: %v", err)
+	}
+	defer store.Close()
+
+	store.UpdateQValue("state-1", "action-1", 1.0)
+	store.UpdateQValue("state-2", "action-2", -0.5)
+	store.UpdateQValue("state-3", "action-3", 0.0)
+
+	store.RecommendBestAction("state-1", "default")
+	store.RecommendBestAction("state-unknown", "default")
+
+	store.RecommendBestActionWithInterpolation("state-1", nil, "default")
+	store.RecommendBestActionWithInterpolation("state-2", nil, "default")
+
+	sig1 := &StateSignature{StateName: "state-1", RAMPct: 100.0, LatencyMs: 50.0}
+	store.RecordStateSignature(sig1)
+	sig2 := &StateSignature{StateName: "state-new", RAMPct: 105.0, LatencyMs: 55.0}
+	store.RecommendBestActionWithInterpolation("state-new", sig2, "default")
+
+	sig3 := &StateSignature{StateName: "state-2", RAMPct: 200.0, LatencyMs: 80.0}
+	store.RecordStateSignature(sig3)
+	sig4 := &StateSignature{StateName: "state-new2", RAMPct: 205.0, LatencyMs: 85.0}
+	store.RecommendBestActionWithInterpolation("state-new2", sig4, "default")
+
+	store.RecommendBestActionWithInterpolation("state-completely-new", nil, "default")
+
+	m := store.GetOperationalMetrics()
+	
+	if m.TotalQUpdates != 3 { t.Errorf("Expected 3 TotalQUpdates, got %d", m.TotalQUpdates) }
+	if m.VerifiedSuccesses != 1 { t.Errorf("Expected 1 VerifiedSuccesses, got %d", m.VerifiedSuccesses) }
+	if m.VerifiedFailures != 1 { t.Errorf("Expected 1 VerifiedFailures, got %d", m.VerifiedFailures) }
+	if m.ExactMatchCount != 2 { t.Errorf("Expected 2 ExactMatchCount, got %d", m.ExactMatchCount) }
+	if m.FallbackDefaultCount != 4 { t.Errorf("Expected 4 FallbackDefaultCount, got %d", m.FallbackDefaultCount) }
+	if m.Interpolations != 1 { t.Errorf("Expected 1 Interpolations, got %d", m.Interpolations) }
+}

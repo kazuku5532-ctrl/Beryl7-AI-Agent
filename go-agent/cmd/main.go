@@ -6,6 +6,7 @@ import (
 	"database/sql"
 
 	"encoding/json"
+	"flag"
 	"fmt"
 	"net"
 	"net/http"
@@ -236,7 +237,72 @@ func setCorsHeaders(w http.ResponseWriter, r *http.Request, cfg *config.Config) 
 	return false
 }
 
+func runBenchmarks() {
+	fmt.Println("Running in-memory hardware micro-benchmarks...")
+	
+	// Component 1: skillstore.ComputeStateDistance
+	start1 := time.Now()
+	iters1 := 100000
+	sig1 := &skillstore.StateSignature{StateName: "bench-1", RAMPct: 100.0, LatencyMs: 50.0, CPUPct: 10.0, TempC: 40.0}
+	sig2 := &skillstore.StateSignature{StateName: "bench-2", RAMPct: 110.0, LatencyMs: 55.0, CPUPct: 12.0, TempC: 42.0}
+	for i := 0; i < iters1; i++ {
+		skillstore.ComputeStateDistance(sig1, sig2)
+	}
+	dur1 := time.Since(start1)
+	
+	// Component 2: SkillStore Operations
+	iters2 := 10000
+	store, err := skillstore.New(":memory:")
+	if err != nil {
+		fmt.Printf("Failed to create in-memory store: %v\n", err)
+		os.Exit(1)
+	}
+	start2 := time.Now()
+	for i := 0; i < iters2; i++ {
+		state := fmt.Sprintf("state-%d", i%10)
+		store.UpdateQValue(state, "action-default", 1.0)
+		store.RecommendBestActionWithInterpolation(fmt.Sprintf("state-%d", (i+1)%10), sig1, "action-fallback")
+	}
+	dur2 := time.Since(start2)
+	
+	// Component 3: telemetry.GetProcessResourceStats
+	iters3 := 500
+	start3 := time.Now()
+	tc := telemetry.NewCollector()
+	for i := 0; i < iters3; i++ {
+		tc.GetProcessResourceStats()
+	}
+	dur3 := time.Since(start3)
+	
+	metrics := store.GetOperationalMetrics()
+	
+	fmt.Println("\n==========================================================================================")
+	fmt.Printf("%-35s | %-10s | %-12s | %-12s | %-12s\n", "Component", "Iterations", "Total Time", "Latency/Op", "Ops/Sec")
+	fmt.Println("------------------------------------+------------+--------------+--------------+----------")
+	fmt.Printf("%-35s | %-10d | %-12s | %-12s | %.0f\n", "ComputeStateDistance", iters1, dur1, dur1/time.Duration(iters1), float64(iters1)/dur1.Seconds())
+	fmt.Printf("%-35s | %-10d | %-12s | %-12s | %.0f\n", "SkillStore Ops", iters2, dur2, dur2/time.Duration(iters2), float64(iters2)/dur2.Seconds())
+	fmt.Printf("%-35s | %-10d | %-12s | %-12s | %.0f\n", "GetProcessResourceStats", iters3, dur3, dur3/time.Duration(iters3), float64(iters3)/dur3.Seconds())
+	fmt.Println("==========================================================================================")
+	
+	fmt.Println("\nSKILLSTORE OPERATIONAL METRICS:")
+	fmt.Printf("  Total Q-Updates:        %d\n", metrics.TotalQUpdates)
+	fmt.Printf("  Interpolations:         %d\n", metrics.Interpolations)
+	fmt.Printf("  Exact Matches:          %d\n", metrics.ExactMatchCount)
+	fmt.Printf("  Fallback Defaults:      %d\n", metrics.FallbackDefaultCount)
+	fmt.Printf("  Verified Successes:     %d\n", metrics.VerifiedSuccesses)
+	fmt.Printf("  Verified Failures:      %d\n", metrics.VerifiedFailures)
+	fmt.Println("==========================================================================================")
+}
+
 func main() {
+	benchmarkFlag := flag.Bool("benchmark", false, "Run in-memory hardware micro-benchmarks and exit")
+	flag.Parse()
+
+	if *benchmarkFlag {
+		runBenchmarks()
+		os.Exit(0)
+	}
+
 	// Portable GC tuning: Memory limits managed dynamically via OS environment & Go runtime soft limit (16MB)
 	debug.SetGCPercent(20)
 	debug.SetMemoryLimit(16 * 1024 * 1024)

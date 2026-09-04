@@ -381,6 +381,7 @@ func EnsureSysupgradePreservation() error {
 
 func EnsureFilePermissions() error {
 	files := map[string]os.FileMode{
+		"/etc/beryl7/agent.key":    0400,
 		"/etc/beryl7/agent.env":    0600,
 		"/usr/bin/beryl7-agent":    0755,
 		"/etc/init.d/beryl7-agent": 0755,

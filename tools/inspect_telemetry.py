@@ -46,6 +46,8 @@ def main():
             print("SKILLSTORE OPERATIONAL METRICS:")
             print(f"  Q-Updates:            {o.get('total_q_updates', 0)}")
             print(f"  Interpolations:       {o.get('interpolations', 0)}")
+            print(f"  Exact Matches:        {o.get('exact_match_count', 0)}")
+            print(f"  Fallback Defaults:    {o.get('fallback_default_count', 0)}")
             print(f"  Verified Successes:   {o.get('verified_successes', 0)}")
             print(f"  Verified Failures:    {o.get('verified_failures', 0)}")
             print()
