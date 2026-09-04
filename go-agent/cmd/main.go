@@ -296,6 +296,7 @@ func runBenchmarks() {
 
 func main() {
 	benchmarkFlag := flag.Bool("benchmark", false, "Run in-memory hardware micro-benchmarks and exit")
+	_ = flag.String("config", "", "Path to configuration file")
 	flag.Parse()
 
 	if *benchmarkFlag {
