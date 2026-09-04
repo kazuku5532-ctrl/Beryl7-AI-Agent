@@ -274,23 +274,12 @@ func runBenchmarks() {
 	}
 	dur3 := time.Since(start3)
 	
-	metrics := store.GetOperationalMetrics()
-	
 	fmt.Println("\n==========================================================================================")
 	fmt.Printf("%-35s | %-10s | %-12s | %-12s | %-12s\n", "Component", "Iterations", "Total Time", "Latency/Op", "Ops/Sec")
 	fmt.Println("------------------------------------+------------+--------------+--------------+----------")
 	fmt.Printf("%-35s | %-10d | %-12s | %-12s | %.0f\n", "ComputeStateDistance", iters1, dur1, dur1/time.Duration(iters1), float64(iters1)/dur1.Seconds())
 	fmt.Printf("%-35s | %-10d | %-12s | %-12s | %.0f\n", "SkillStore Ops", iters2, dur2, dur2/time.Duration(iters2), float64(iters2)/dur2.Seconds())
 	fmt.Printf("%-35s | %-10d | %-12s | %-12s | %.0f\n", "GetProcessResourceStats", iters3, dur3, dur3/time.Duration(iters3), float64(iters3)/dur3.Seconds())
-	fmt.Println("==========================================================================================")
-	
-	fmt.Println("\nSKILLSTORE OPERATIONAL METRICS:")
-	fmt.Printf("  Total Q-Updates:        %d\n", metrics.TotalQUpdates)
-	fmt.Printf("  Interpolations:         %d\n", metrics.Interpolations)
-	fmt.Printf("  Exact Matches:          %d\n", metrics.ExactMatchCount)
-	fmt.Printf("  Fallback Defaults:      %d\n", metrics.FallbackDefaultCount)
-	fmt.Printf("  Verified Successes:     %d\n", metrics.VerifiedSuccesses)
-	fmt.Printf("  Verified Failures:      %d\n", metrics.VerifiedFailures)
 	fmt.Println("==========================================================================================")
 }
 
