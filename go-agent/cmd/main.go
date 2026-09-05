@@ -787,6 +787,25 @@ func main() {
 			}
 			if stats, errStats := store.GetTelemetryHistoryStats(ctx); errStats == nil {
 				logger.Info("TELEMETRY HISTORY FOOTPRINT: %d total records, estimated %d bytes in DB", stats.TotalRecords, stats.EstimatedBytes)
+
+				// One-shot 14-day telemetry data readiness check for Predictive Analysis (Phase 2b)
+				if isNotified, errLatch := store.IsMilestoneLatchSet("telemetry_14d_readiness_notified"); errLatch == nil && !isNotified {
+					if stats.TotalRecords > 0 && (stats.NewestUnix-stats.OldestUnix) >= 14*86400 {
+						if tgNotifier != nil {
+							go func(oldest, newest, total int64) {
+								if errSend := tgNotifier.SendTelemetryReadinessAlert(context.Background(), oldest, newest, total); errSend != nil {
+									logger.Warn("TELEMETRY READINESS: Failed to send Telegram alert: %v (will retry on next maintenance cycle)", errSend)
+								} else {
+									if errSet := store.SetMilestoneLatch("telemetry_14d_readiness_notified"); errSet != nil {
+										logger.Warn("TELEMETRY READINESS: Failed to persist milestone latch: %v", errSet)
+									} else {
+										logger.Info("TELEMETRY READINESS: 14-day telemetry data readiness alert successfully dispatched and latched.")
+									}
+								}
+							}(stats.OldestUnix, stats.NewestUnix, stats.TotalRecords)
+						}
+					}
+				}
 			}
 		case <-ticker.C:
 			cfgSnap := cfgAtomic.Load().(*config.Config)

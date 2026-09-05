@@ -419,3 +419,60 @@ func TestTelemetryHistory_Stats(t *testing.T) {
 		t.Errorf("Expected EstimatedBytes %d, got %d", 5*64, stats.EstimatedBytes)
 	}
 }
+
+func TestMilestoneLatch_SetAndQuery(t *testing.T) {
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "latch_test.db")
+
+	store, err := New(dbPath)
+	if err != nil {
+		t.Fatalf("Failed to init store: %v", err)
+	}
+	defer store.Close()
+
+	key := "test_custom_latch"
+
+	// 1. Check before setting
+	isSet, err := store.IsMilestoneLatchSet(key)
+	if err != nil {
+		t.Fatalf("IsMilestoneLatchSet failed: %v", err)
+	}
+	if isSet {
+		t.Errorf("Expected isSet=false before setting latch")
+	}
+
+	// 2. Set latch
+	if err := store.SetMilestoneLatch(key); err != nil {
+		t.Fatalf("SetMilestoneLatch failed: %v", err)
+	}
+
+	// 3. Check after setting
+	isSetAfter, err := store.IsMilestoneLatchSet(key)
+	if err != nil {
+		t.Fatalf("IsMilestoneLatchSet after setting failed: %v", err)
+	}
+	if !isSetAfter {
+		t.Errorf("Expected isSet=true after setting latch")
+	}
+
+	// 4. Overwrite latch (INSERT OR REPLACE)
+	if err := store.SetMilestoneLatch(key); err != nil {
+		t.Fatalf("SetMilestoneLatch overwrite failed: %v", err)
+	}
+	isSetAfterOverwrite, err := store.IsMilestoneLatchSet(key)
+	if err != nil || !isSetAfterOverwrite {
+		t.Errorf("Expected isSet=true after overwrite, got %v (err: %v)", isSetAfterOverwrite, err)
+	}
+
+	// 5. Check behavior when store is closed
+	store.Close()
+	if _, err := store.IsMilestoneLatchSet(key); err != ErrStoreClosed {
+		t.Errorf("Expected ErrStoreClosed on IsMilestoneLatchSet, got %v", err)
+	}
+	if err := store.SetMilestoneLatch(key); err != ErrStoreClosed {
+		t.Errorf("Expected ErrStoreClosed on SetMilestoneLatch, got %v", err)
+	}
+	if _, err := store.CheckAndSetMilestoneLatch(key); err != ErrStoreClosed {
+		t.Errorf("Expected ErrStoreClosed on CheckAndSetMilestoneLatch, got %v", err)
+	}
+}

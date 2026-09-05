@@ -107,7 +107,7 @@ func TestMemoryGrowthUnderContinuousLoad(t *testing.T) {
 	var m2 runtime.MemStats
 	runtime.ReadMemStats(&m2)
 
-	growthMB := float64(m2.Alloc - m1.Alloc) / 1024 / 1024
+	growthMB := float64(int64(m2.Alloc)-int64(m1.Alloc)) / 1024 / 1024
 	if growthMB > 1.0 {
 		t.Errorf("Heap growth exceeded 1.0MB: grew by %f MB", growthMB)
 	}

@@ -139,6 +139,7 @@ The daemon continuously captures hardware and network metric snapshots into an e
 ### Storage Schema & Automated Pruning
 - **Table:** `telemetry_history (id, timestamp, ram_pct, latency_ms, cpu_pct, temp_c, wan_offline, wifi_fail, active_intent)`
 - **Retention Lifecycle:** Automatically prunes records older than `BERYL7_TELEMETRY_RETENTION_DAYS` (default: **30 days**) on a daily maintenance cycle (`pruneTicker`), preventing unbounded NAND/tmpfs growth.
+- **14-Day Data Readiness Notification:** Dispatches a one-shot Telegram alert when $\ge 14$ days of continuous time-series records have accumulated, notifying the operator that telemetry data is primed for Phase 2b predictive analytics.
 - **REST API (`GET /api/telemetry/history` & `GET /api/v1/telemetry/history`):** Accepts query parameter `?hours=N` (clamped between 1 and retention window or max 720h, default 24h) and returns chronological time-series JSON array bounded to 5,000 records.
 
 > [!NOTE]

@@ -629,6 +629,36 @@ func (s *SkillStore) CheckAndSetMilestoneLatch(latchKey string) (bool, error) {
 	return rows > 0, nil
 }
 
+// IsMilestoneLatchSet checks whether a milestone latch key exists in metadata table.
+func (s *SkillStore) IsMilestoneLatchSet(latchKey string) (bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if s.closed || s.db == nil {
+		return false, ErrStoreClosed
+	}
+
+	var count int
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM metadata WHERE key = ?`, latchKey).Scan(&count)
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+// SetMilestoneLatch marks a milestone latch key as set in metadata table.
+func (s *SkillStore) SetMilestoneLatch(latchKey string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.closed || s.db == nil {
+		return ErrStoreClosed
+	}
+
+	_, err := s.db.Exec(`INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?)`, latchKey, time.Now().Format(time.RFC3339))
+	return err
+}
+
 func (s *SkillStore) SetMilestoneCallback(cb func(metrics OperationalMetrics)) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

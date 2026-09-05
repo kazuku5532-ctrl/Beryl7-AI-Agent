@@ -202,6 +202,21 @@ func (t *TelegramNotifier) SendMilestoneAlert(ctx context.Context, metrics skill
 	return t.SendAlert(ctx, msg)
 }
 
+func (t *TelegramNotifier) SendTelemetryReadinessAlert(ctx context.Context, oldestUnix, newestUnix, totalRecords int64) error {
+	startDate := time.Unix(oldestUnix, 0).UTC().Format("2006-01-02 15:04:05 UTC")
+	endDate := time.Unix(newestUnix, 0).UTC().Format("2006-01-02 15:04:05 UTC")
+
+	msg := fmt.Sprintf("📈 *Beryl 7 AI Agent - Telemetry Data Readiness (14 Days)*\n\n"+
+		"Hệ thống đã tích lũy đủ 14 ngày dữ liệu telemetry liên tục.\n"+
+		"🕒 *Thời gian bắt đầu:* `%s`\n"+
+		"🕒 *Thời gian kết thúc:* `%s`\n"+
+		"📊 *Tổng số bản ghi:* `%d`\n\n"+
+		"💡 Dữ liệu chuỗi thời gian (time-series) đã sẵn sàng phục vụ Phân tích Dự đoán (Predictive Analysis - Phase 2b).",
+		startDate, endDate, totalRecords)
+
+	return t.SendAlert(ctx, msg)
+}
+
 func (t *TelegramNotifier) checkCommandCooldown(cmdKey string, cooldownDur time.Duration) bool {
 	t.cooldownMu.Lock()
 	defer t.cooldownMu.Unlock()
