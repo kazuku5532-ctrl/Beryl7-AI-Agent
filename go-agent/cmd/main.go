@@ -775,6 +775,19 @@ func main() {
 			if pruneErr := store.PruneSkillsPeriodic(); pruneErr != nil {
 				logger.Error("Scheduled SkillStore pruning failed: %v", pruneErr)
 			}
+			cfgSnap := cfgAtomic.Load().(*config.Config)
+			retentionDays := 30
+			if cfgSnap != nil && cfgSnap.TelemetryRetentionDays > 0 {
+				retentionDays = cfgSnap.TelemetryRetentionDays
+			}
+			if prunedCount, errPrune := store.PruneTelemetryHistory(ctx, retentionDays); errPrune != nil {
+				logger.Warn("Failed to prune telemetry history: %v", errPrune)
+			} else if prunedCount > 0 {
+				logger.Info("PRUNED TELEMETRY HISTORY: Removed %d records older than %d days", prunedCount, retentionDays)
+			}
+			if stats, errStats := store.GetTelemetryHistoryStats(ctx); errStats == nil {
+				logger.Info("TELEMETRY HISTORY FOOTPRINT: %d total records, estimated %d bytes in DB", stats.TotalRecords, stats.EstimatedBytes)
+			}
 		case <-ticker.C:
 			cfgSnap := cfgAtomic.Load().(*config.Config)
 			effective := cfgSnap.GetEffectiveThresholds(time.Now())
@@ -784,6 +797,25 @@ func main() {
 			m := collector.CollectMetrics(ctx)
 			if m == nil {
 				continue
+			}
+
+			// Telemetry History Recording (Stage 2 - Time-series store foundation)
+			wanOffline := m.WANStatus == "Offline (0/1)" || strings.Contains(m.WANStatus, "Offline")
+			wifiFail := strings.Contains(strings.ToLower(m.WiFi5GGhzStatus), "disabled") || strings.Contains(strings.ToLower(m.WiFi5GGhzStatus), "failed")
+			telemetryRec := skillstore.TelemetryRecord{
+				Timestamp:    time.Now().Unix(),
+				RAMPct:       m.RAMUsagePct,
+				LatencyMs:    m.LatencyMs,
+				CPUPct:       m.CPUUsagePct,
+				TempC:        m.HardwareTempC,
+				WANOffline:   wanOffline,
+				WiFiFail:     wifiFail,
+				ActiveIntent: effective.ActiveIntent,
+			}
+			if store != nil {
+				if recErr := store.RecordTelemetryHistory(ctx, telemetryRec); recErr != nil {
+					logger.Warn("Failed to record telemetry history: %v", recErr)
+				}
 			}
 
 			health.mu.Lock()
@@ -1515,6 +1547,76 @@ func StartHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(resp)
 	})
+
+	// Endpoint 1c: Telemetry History (/api/telemetry/history & /api/v1/telemetry/history)
+	handleTelemetryHistory := func(w http.ResponseWriter, r *http.Request) {
+		if setCorsHeaders(w, r) {
+			return
+		}
+		if r.Method != "GET" {
+			http.Error(w, `{"error":"Method Not Allowed"}`, http.StatusMethodNotAllowed)
+			return
+		}
+
+		host, _, _ := net.SplitHostPort(r.RemoteAddr)
+		if host == "" {
+			host = r.RemoteAddr
+		}
+		if !rateLimitCheck(host) {
+			http.Error(w, `{"error":"Too Many Requests: Rate limit exceeded"}`, http.StatusTooManyRequests)
+			return
+		}
+
+		hours := 24
+		if hStr := r.URL.Query().Get("hours"); hStr != "" {
+			if h, err := strconv.Atoi(hStr); err == nil && h > 0 {
+				hours = h
+			}
+		}
+
+		var currentCfg *config.Config
+		if val := cfgAtomic.Load(); val != nil {
+			currentCfg = val.(*config.Config)
+		} else {
+			currentCfg = cfg
+		}
+
+		maxHours := 720
+		if currentCfg != nil && currentCfg.TelemetryRetentionDays > 0 {
+			maxHours = currentCfg.TelemetryRetentionDays * 24
+		}
+		if hours < 1 {
+			hours = 1
+		}
+		if hours > maxHours {
+			hours = maxHours
+		}
+
+		sinceUnix := time.Now().Add(-time.Duration(hours) * time.Hour).Unix()
+		records := make([]skillstore.TelemetryRecord, 0)
+		var stats skillstore.TelemetryHistoryStats
+
+		if store != nil {
+			var err error
+			records, err = store.GetTelemetryHistory(r.Context(), sinceUnix, 5000)
+			if err != nil {
+				logger.Warn("Failed to query telemetry history: %v", err)
+				records = make([]skillstore.TelemetryRecord, 0)
+			}
+			stats, _ = store.GetTelemetryHistoryStats(r.Context())
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":          "success",
+			"hours":           hours,
+			"record_count":    len(records),
+			"estimated_bytes": stats.EstimatedBytes,
+			"records":         records,
+		})
+	}
+	mux.HandleFunc("/api/telemetry/history", handleTelemetryHistory)
+	mux.HandleFunc("/api/v1/telemetry/history", handleTelemetryHistory)
 
 	// Endpoint 2: Module Status (/api/modules/status)
 	mux.HandleFunc("/api/modules/status", func(w http.ResponseWriter, r *http.Request) {

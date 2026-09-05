@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -603,6 +604,167 @@ func TestIntentAwareEndpoints(t *testing.T) {
 	}
 	if metricsRes.EffectiveThresholds.RAMExhaustionPct != 88.5 {
 		t.Errorf("Expected metrics effective RAM threshold 88.5, got %.1f", metricsRes.EffectiveThresholds.RAMExhaustionPct)
+	}
+}
+
+func TestTelemetryHistory_APIEndpoint(t *testing.T) {
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "telemetry_api_test.db")
+	cpPath := filepath.Join(tempDir, "cp_tel.uci")
+
+	store, err := skillstore.New(dbPath)
+	if err != nil {
+		t.Fatalf("Failed to init store: %v", err)
+	}
+	defer store.Close()
+
+	wd := watchdog.New(cpPath)
+	execEngine := executor.New()
+	aiClient := ai.NewClient("dummy-key")
+	collector := telemetry.NewCollector()
+
+	listener, lErr := net.Listen("tcp", "127.0.0.1:0")
+	if lErr != nil {
+		t.Fatalf("Failed to bind dynamic test port: %v", lErr)
+	}
+	testPort := listener.Addr().(*net.TCPAddr).Port
+	_ = listener.Close()
+
+	cfg := &config.Config{
+		HealthPort:             testPort,
+		BindHost:               "127.0.0.1",
+		AuthToken:              "admin-secret",
+		ApproveToken:           "operator-secret",
+		DryRun:                 true,
+		TelemetryRetentionDays: 30,
+	}
+
+	health := &HealthState{
+		Status:        "healthy",
+		LastAction:    "none",
+		StartTime:     time.Now(),
+		UptimeSeconds: 100,
+	}
+
+	server := StartHealthCheckServer(cfg, health, execEngine, store, aiClient, wd, collector)
+	defer server.Close()
+
+	time.Sleep(100 * time.Millisecond)
+
+	baseURL := fmt.Sprintf("http://127.0.0.1:%d", testPort)
+
+	// 1. Test GET /api/telemetry/history on empty DB
+	respEmpty, err := http.Get(baseURL + "/api/telemetry/history")
+	if err != nil {
+		t.Fatalf("Failed GET /api/telemetry/history: %v", err)
+	}
+	defer respEmpty.Body.Close()
+
+	if respEmpty.StatusCode != http.StatusOK {
+		t.Fatalf("Expected 200 OK on empty DB, got %d", respEmpty.StatusCode)
+	}
+
+	var resEmpty struct {
+		Status         string                      `json:"status"`
+		Hours          int                         `json:"hours"`
+		RecordCount    int                         `json:"record_count"`
+		EstimatedBytes int64                       `json:"estimated_bytes"`
+		Records        []skillstore.TelemetryRecord `json:"records"`
+	}
+	if err := json.NewDecoder(respEmpty.Body).Decode(&resEmpty); err != nil {
+		t.Fatalf("Failed to decode empty response: %v", err)
+	}
+	if resEmpty.Status != "success" || resEmpty.Hours != 24 || resEmpty.RecordCount != 0 || resEmpty.Records == nil {
+		t.Errorf("Unexpected empty response payload: %+v", resEmpty)
+	}
+
+	// 2. Insert test records
+	ctx := context.Background()
+	now := time.Now().Unix()
+	_ = store.RecordTelemetryHistory(ctx, skillstore.TelemetryRecord{
+		Timestamp:    now - 7200, // 2 hours ago
+		RAMPct:       45.0,
+		LatencyMs:    12.0,
+		CPUPct:       20.0,
+		TempC:        50.0,
+		WANOffline:   false,
+		WiFiFail:     false,
+		ActiveIntent: "default",
+	})
+	_ = store.RecordTelemetryHistory(ctx, skillstore.TelemetryRecord{
+		Timestamp:    now - 1800, // 30 minutes ago
+		RAMPct:       60.0,
+		LatencyMs:    25.0,
+		CPUPct:       35.0,
+		TempC:        55.0,
+		WANOffline:   true,
+		WiFiFail:     false,
+		ActiveIntent: "gaming",
+	})
+	_ = store.RecordTelemetryHistory(ctx, skillstore.TelemetryRecord{
+		Timestamp:    now - 300, // 5 minutes ago
+		RAMPct:       50.0,
+		LatencyMs:    15.0,
+		CPUPct:       22.0,
+		TempC:        52.0,
+		WANOffline:   false,
+		WiFiFail:     false,
+		ActiveIntent: "eco",
+	})
+
+	// 3. Test GET /api/telemetry/history?hours=3 (should return all 3)
+	resp3h, err := http.Get(baseURL + "/api/telemetry/history?hours=3")
+	if err != nil {
+		t.Fatalf("Failed GET /api/telemetry/history?hours=3: %v", err)
+	}
+	defer resp3h.Body.Close()
+
+	var res3h struct {
+		Status         string                      `json:"status"`
+		Hours          int                         `json:"hours"`
+		RecordCount    int                         `json:"record_count"`
+		EstimatedBytes int64                       `json:"estimated_bytes"`
+		Records        []skillstore.TelemetryRecord `json:"records"`
+	}
+	if err := json.NewDecoder(resp3h.Body).Decode(&res3h); err != nil {
+		t.Fatalf("Failed to decode 3h response: %v", err)
+	}
+	if res3h.RecordCount != 3 || len(res3h.Records) != 3 {
+		t.Errorf("Expected 3 records for 3h window, got count=%d len=%d", res3h.RecordCount, len(res3h.Records))
+	}
+	if res3h.EstimatedBytes != 3*64 {
+		t.Errorf("Expected EstimatedBytes %d, got %d", 3*64, res3h.EstimatedBytes)
+	}
+
+	// 4. Test GET /api/v1/telemetry/history?hours=1 (alias endpoint, should return 2 records from last hour)
+	resp1h, err := http.Get(baseURL + "/api/v1/telemetry/history?hours=1")
+	if err != nil {
+		t.Fatalf("Failed GET /api/v1/telemetry/history?hours=1: %v", err)
+	}
+	defer resp1h.Body.Close()
+
+	var res1h struct {
+		Status         string                      `json:"status"`
+		Hours          int                         `json:"hours"`
+		RecordCount    int                         `json:"record_count"`
+		Records        []skillstore.TelemetryRecord `json:"records"`
+	}
+	if err := json.NewDecoder(resp1h.Body).Decode(&res1h); err != nil {
+		t.Fatalf("Failed to decode 1h response: %v", err)
+	}
+	if res1h.RecordCount != 2 || len(res1h.Records) != 2 {
+		t.Errorf("Expected 2 records for 1h window, got count=%d len=%d", res1h.RecordCount, len(res1h.Records))
+	}
+
+	// 5. Test POST method rejection
+	postReq, _ := http.NewRequest("POST", baseURL+"/api/telemetry/history", bytes.NewBufferString("{}"))
+	respPost, errPost := http.DefaultClient.Do(postReq)
+	if errPost != nil {
+		t.Fatalf("Failed POST /api/telemetry/history: %v", errPost)
+	}
+	defer respPost.Body.Close()
+	if respPost.StatusCode != http.StatusMethodNotAllowed {
+		t.Errorf("Expected 405 Method Not Allowed on POST, got %d", respPost.StatusCode)
 	}
 }
 

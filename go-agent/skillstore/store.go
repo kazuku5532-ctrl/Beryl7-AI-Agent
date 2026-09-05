@@ -1,6 +1,7 @@
 package skillstore
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"math"
@@ -41,6 +42,27 @@ type StateSignature struct {
 	WiFiDown    bool      `json:"wifi_down"`
 	SampleCount int       `json:"sample_count"`
 	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+// TelemetryRecord represents a discrete telemetry snapshot in time.
+type TelemetryRecord struct {
+	ID           int64   `json:"id,omitempty"`
+	Timestamp    int64   `json:"timestamp"`
+	RAMPct       float64 `json:"ram_pct"`
+	LatencyMs    float64 `json:"latency_ms"`
+	CPUPct       float64 `json:"cpu_pct"`
+	TempC        float64 `json:"temp_c"`
+	WANOffline   bool    `json:"wan_offline"`
+	WiFiFail     bool    `json:"wifi_fail"`
+	ActiveIntent string  `json:"active_intent"`
+}
+
+// TelemetryHistoryStats represents summary telemetry history database statistics.
+type TelemetryHistoryStats struct {
+	TotalRecords   int64 `json:"total_records"`
+	OldestUnix     int64 `json:"oldest_unix"`
+	NewestUnix     int64 `json:"newest_unix"`
+	EstimatedBytes int64 `json:"estimated_bytes"`
 }
 
 type OperationalMetrics struct {
@@ -234,6 +256,18 @@ func (s *SkillStore) OpenAndInit() error {
 		key TEXT PRIMARY KEY,
 		value TEXT
 	);
+	CREATE TABLE IF NOT EXISTS telemetry_history (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		timestamp INTEGER NOT NULL,
+		ram_pct REAL NOT NULL,
+		latency_ms REAL NOT NULL,
+		cpu_pct REAL NOT NULL,
+		temp_c REAL NOT NULL,
+		wan_offline INTEGER NOT NULL DEFAULT 0,
+		wifi_fail INTEGER NOT NULL DEFAULT 0,
+		active_intent TEXT NOT NULL DEFAULT 'default'
+	);
+	CREATE INDEX IF NOT EXISTS idx_telemetry_history_timestamp ON telemetry_history(timestamp);
 	PRAGMA user_version = 2;
 	`
 	if _, err := db.Exec(schema); err != nil {
@@ -892,6 +926,150 @@ func (s *SkillStore) RecommendBestActionWithInterpolation(state string, sig *Sta
 	// 3. Fallback to defaultAction if completely unfamiliar
 	s.fallbackDefaultCount.Add(1)
 	return defaultAction, 0.0, state, false, nil
+}
+
+// RecordTelemetryHistory inserts a discrete telemetry snapshot into the telemetry_history table.
+func (s *SkillStore) RecordTelemetryHistory(ctx context.Context, record TelemetryRecord) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.closed || s.db == nil {
+		return ErrStoreClosed
+	}
+
+	if record.Timestamp <= 0 {
+		record.Timestamp = time.Now().Unix()
+	}
+	if record.ActiveIntent == "" {
+		record.ActiveIntent = "default"
+	}
+
+	wanInt := 0
+	if record.WANOffline {
+		wanInt = 1
+	}
+	wifiInt := 0
+	if record.WiFiFail {
+		wifiInt = 1
+	}
+
+	query := `
+	INSERT INTO telemetry_history (timestamp, ram_pct, latency_ms, cpu_pct, temp_c, wan_offline, wifi_fail, active_intent)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+	`
+	_, err := s.db.ExecContext(ctx, query,
+		record.Timestamp,
+		record.RAMPct,
+		record.LatencyMs,
+		record.CPUPct,
+		record.TempC,
+		wanInt,
+		wifiInt,
+		record.ActiveIntent,
+	)
+	return err
+}
+
+// GetTelemetryHistory returns historical telemetry records since a given unix timestamp, bounded up to limit rows (max 5000).
+// Always returns a non-nil empty slice if no records match.
+func (s *SkillStore) GetTelemetryHistory(ctx context.Context, sinceUnix int64, limit int) ([]TelemetryRecord, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if s.closed || s.db == nil {
+		return []TelemetryRecord{}, ErrStoreClosed
+	}
+
+	if limit <= 0 || limit > 5000 {
+		limit = 5000
+	}
+
+	records := make([]TelemetryRecord, 0)
+	query := `
+	SELECT id, timestamp, ram_pct, latency_ms, cpu_pct, temp_c, wan_offline, wifi_fail, active_intent
+	FROM telemetry_history
+	WHERE timestamp >= ?
+	ORDER BY timestamp ASC
+	LIMIT ?
+	`
+	rows, err := s.db.QueryContext(ctx, query, sinceUnix, limit)
+	if err != nil {
+		return records, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var r TelemetryRecord
+		var wanInt, wifiInt int
+		if err := rows.Scan(&r.ID, &r.Timestamp, &r.RAMPct, &r.LatencyMs, &r.CPUPct, &r.TempC, &wanInt, &wifiInt, &r.ActiveIntent); err != nil {
+			return records, err
+		}
+		r.WANOffline = (wanInt != 0)
+		r.WiFiFail = (wifiInt != 0)
+		records = append(records, r)
+	}
+
+	if err := rows.Err(); err != nil {
+		return records, err
+	}
+
+	return records, nil
+}
+
+// PruneTelemetryHistory deletes telemetry records older than retentionDays and returns the number of rows deleted.
+func (s *SkillStore) PruneTelemetryHistory(ctx context.Context, retentionDays int) (int64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.closed || s.db == nil {
+		return 0, ErrStoreClosed
+	}
+
+	if retentionDays <= 0 {
+		retentionDays = 30
+	}
+
+	cutoff := time.Now().AddDate(0, 0, -retentionDays).Unix()
+	res, err := s.db.ExecContext(ctx, "DELETE FROM telemetry_history WHERE timestamp < ?", cutoff)
+	if err != nil {
+		return 0, err
+	}
+
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+
+	return rows, nil
+}
+
+// GetTelemetryHistoryStats calculates summary metrics of the telemetry history database.
+func (s *SkillStore) GetTelemetryHistoryStats(ctx context.Context) (TelemetryHistoryStats, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if s.closed || s.db == nil {
+		return TelemetryHistoryStats{}, ErrStoreClosed
+	}
+
+	var stats TelemetryHistoryStats
+	var minUnix, maxUnix sql.NullInt64
+
+	query := `SELECT COUNT(*), MIN(timestamp), MAX(timestamp) FROM telemetry_history`
+	err := s.db.QueryRowContext(ctx, query).Scan(&stats.TotalRecords, &minUnix, &maxUnix)
+	if err != nil {
+		return stats, err
+	}
+
+	if minUnix.Valid {
+		stats.OldestUnix = minUnix.Int64
+	}
+	if maxUnix.Valid {
+		stats.NewestUnix = maxUnix.Int64
+	}
+	stats.EstimatedBytes = stats.TotalRecords * 64
+
+	return stats, nil
 }
 
 func (s *SkillStore) Close() error {

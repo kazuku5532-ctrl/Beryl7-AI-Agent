@@ -51,6 +51,7 @@ type Config struct {
 	StateDecayLambda       float64
 	GracefulShutdownPath   string
 	MilestoneQThreshold    int
+	TelemetryRetentionDays int
 	apiKeyAtomic           atomic.Value
 }
 
@@ -123,6 +124,7 @@ func LoadConfigWithFlags(configPath, keyPath string, dryRun, showVersion bool) (
 		StateDecayLambda:       constants.DefaultDecayLambda,
 		GracefulShutdownPath:   "/root/.beryl7_graceful_shutdown",
 		MilestoneQThreshold:    25,
+		TelemetryRetentionDays: 30,
 	}
 
 	if configPath != "" {
@@ -276,6 +278,20 @@ func LoadConfigWithFlags(configPath, keyPath string, dryRun, showVersion bool) (
 	}
 	if val := os.Getenv("TELEGRAM_CHAT_ID"); val != "" {
 		cfg.TelegramChatID = strings.TrimSpace(val)
+	}
+
+	if val := os.Getenv("BERYL7_TELEMETRY_RETENTION_DAYS"); val != "" {
+		if d, err := strconv.Atoi(val); err == nil && d > 0 {
+			cfg.TelemetryRetentionDays = d
+		} else {
+			logger.Warn("Invalid integer value for BERYL7_TELEMETRY_RETENTION_DAYS: '%s'. Keeping default %d", val, cfg.TelemetryRetentionDays)
+		}
+	} else if val := os.Getenv("TELEMETRY_RETENTION_DAYS"); val != "" {
+		if d, err := strconv.Atoi(val); err == nil && d > 0 {
+			cfg.TelemetryRetentionDays = d
+		} else {
+			logger.Warn("Invalid integer value for TELEMETRY_RETENTION_DAYS: '%s'. Keeping default %d", val, cfg.TelemetryRetentionDays)
+		}
 	}
 
 	if cfg.GeminiAPIKey == "" {
@@ -661,6 +677,10 @@ func parseEnvFile(filePath string, cfg *Config) error {
 		case "BERYL7_MILESTONE_Q_THRESHOLD":
 			if i, err := strconv.Atoi(val); err == nil && i > 0 {
 				cfg.MilestoneQThreshold = i
+			}
+		case "BERYL7_TELEMETRY_RETENTION_DAYS", "TELEMETRY_RETENTION_DAYS":
+			if d, err := strconv.Atoi(val); err == nil && d > 0 {
+				cfg.TelemetryRetentionDays = d
 			}
 		}
 	}

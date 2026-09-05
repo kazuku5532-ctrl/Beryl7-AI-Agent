@@ -97,6 +97,7 @@ BERYL7_BANDWIDTH_RESTORE_MBPS=20.0
 BERYL7_WIFI_DISCONNECT_COUNT=3
 BERYL7_LOG_MAX_BYTES=2097152
 BERYL7_LOG_BACKUP_COUNT=5
+BERYL7_TELEMETRY_RETENTION_DAYS=30
 EOF
 
 chmod 0600 /etc/beryl7/agent.env
@@ -107,7 +108,7 @@ chmod 0600 /etc/beryl7/agent.env
 Interact with the daemon and inspect telemetry using:
 - **Telegram Bot:** Real-time conversational interface, status inspection (`/status`), forced health checks (`/health`), Wi-Fi boost (`/boost`), and reboots (`/reboot`).
 - **Prometheus Metrics:** Standard metrics endpoint available at `http://192.168.8.1:8888/metrics` for Prometheus / Grafana scraping.
-- **REST Management API:** Secure JSON API on port `8888` for local automation and status inspection.
+- **REST Management API:** Secure JSON API on port `8888` for local automation, health status, and historical telemetry data.
 
 ### 3. Verify Endpoints with `curl`
 
@@ -124,7 +125,25 @@ curl -s -X POST http://192.168.8.1:8888/api/approve \
 # 3. Admin Access (Hot Config Reload)
 curl -s -X POST http://192.168.8.1:8888/api/config/reload \
   -H "Authorization: Bearer $AUTH_TOKEN"
+
+# 4. Telemetry History Inspection (Default 24h window)
+curl -s "http://192.168.8.1:8888/api/telemetry/history?hours=24"
 ```
+
+---
+
+## 📊 Telemetry History Store & Retention Engine
+
+The daemon continuously captures hardware and network metric snapshots into an embedded SQLite table (`telemetry_history`) with indexed timestamps (`idx_telemetry_history_timestamp`).
+
+### Storage Schema & Automated Pruning
+- **Table:** `telemetry_history (id, timestamp, ram_pct, latency_ms, cpu_pct, temp_c, wan_offline, wifi_fail, active_intent)`
+- **Retention Lifecycle:** Automatically prunes records older than `BERYL7_TELEMETRY_RETENTION_DAYS` (default: **30 days**) on a daily maintenance cycle (`pruneTicker`), preventing unbounded NAND/tmpfs growth.
+- **REST API (`GET /api/telemetry/history` & `GET /api/v1/telemetry/history`):** Accepts query parameter `?hours=N` (clamped between 1 and retention window or max 720h, default 24h) and returns chronological time-series JSON array bounded to 5,000 records.
+
+> [!NOTE]
+> **Data Collection Foundation Disclaimer:**
+> The `telemetry_history` store is strictly a continuous time-series data collection layer designed to provide historical baseline data for future predictive analysis. It does **NOT** execute active predictive AI models or predictive decision-making algorithms yet, avoiding any misrepresentation of current daemon capabilities.
 
 ---
 
