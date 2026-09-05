@@ -276,3 +276,68 @@ func TestSkillStore_InterpolationParamLifecycle(t *testing.T) {
 	_ = isInterp1
 	_ = isInterp2
 }
+
+func TestRecordStateSignature_SaturationCapM500(t *testing.T) {
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "test_saturation_cap.db")
+
+	store, err := New(dbPath)
+	if err != nil {
+		t.Fatalf("Failed to initialize SkillStore: %v", err)
+	}
+	defer store.Close()
+
+	sig := &StateSignature{
+		StateName:  "SATURATION_TEST",
+		RAMPct:     50.0,
+		LatencyMs:  20.0,
+		CPUPct:     10.0,
+		TempC:      40.0,
+		WANOffline: false,
+		WiFiDown:   false,
+	}
+
+	// 1. Initial insert
+	if err := store.RecordStateSignature(sig); err != nil {
+		t.Fatalf("Initial RecordStateSignature failed: %v", err)
+	}
+
+	// 2. Fast-forward sample_count to 500 directly in DB to test boundary
+	_, err = store.db.Exec("UPDATE state_signatures SET sample_count = 500, ram_pct = 50.0 WHERE state_name = 'SATURATION_TEST'")
+	if err != nil {
+		t.Fatalf("Failed to update sample_count: %v", err)
+	}
+
+	// 3. Record new sample with RAM = 100.0
+	newSig := &StateSignature{
+		StateName:  "SATURATION_TEST",
+		RAMPct:     100.0,
+		LatencyMs:  20.0,
+		CPUPct:     10.0,
+		TempC:      40.0,
+		WANOffline: false,
+		WiFiDown:   false,
+	}
+	if err := store.RecordStateSignature(newSig); err != nil {
+		t.Fatalf("RecordStateSignature at cap failed: %v", err)
+	}
+
+	// 4. Verify sample_count is capped at 500 and RAM is updated with N=500 EMA weighting
+	var sampleCount int
+	var ramPct float64
+	err = store.db.QueryRow("SELECT sample_count, ram_pct FROM state_signatures WHERE state_name = 'SATURATION_TEST'").Scan(&sampleCount, &ramPct)
+	if err != nil {
+		t.Fatalf("Failed to query state signature: %v", err)
+	}
+
+	if sampleCount != 500 {
+		t.Errorf("Expected sample_count to be capped at 500, got %d", sampleCount)
+	}
+
+	// Expected RAM: (50.0 * 499 + 100.0) / 500 = (24950 + 100) / 500 = 25050 / 500 = 50.1
+	expectedRAM := (50.0*499.0 + 100.0) / 500.0
+	if math.Abs(ramPct-expectedRAM) > 0.001 {
+		t.Errorf("Expected weighted RAM %.4f, got %.4f", expectedRAM, ramPct)
+	}
+}
+
