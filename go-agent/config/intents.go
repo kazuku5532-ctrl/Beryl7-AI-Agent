@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"beryl7-agent/logger"
 )
 
 type Intent struct {
@@ -32,6 +34,34 @@ type EffectiveThresholds struct {
 	CPUSpikeLoad           float64 `json:"cpu_spike_load"`
 	LatencySpikeMs         float64 `json:"latency_spike_ms"`
 	LatencyZScoreThreshold float64 `json:"latency_zscore_threshold"`
+}
+
+// validateAndSanitizeIntents validates that all threshold overrides are strictly positive (> 0).
+// Any override <= 0 is safely discarded with a warning, preserving the rest of the intent.
+func validateAndSanitizeIntents(intents []Intent) []Intent {
+	for i := range intents {
+		name := strings.TrimSpace(intents[i].Name)
+		if name == "" {
+			name = "unnamed_intent"
+		}
+		if intents[i].RAMExhaustionPct != nil && *intents[i].RAMExhaustionPct <= 0 {
+			logger.Warn("INTENT VALIDATION: Intent [%s] has invalid ram_exhaustion_pct (%.2f <= 0) -> Discarding field override", name, *intents[i].RAMExhaustionPct)
+			intents[i].RAMExhaustionPct = nil
+		}
+		if intents[i].CPUSpikeLoad != nil && *intents[i].CPUSpikeLoad <= 0 {
+			logger.Warn("INTENT VALIDATION: Intent [%s] has invalid cpu_spike_load (%.2f <= 0) -> Discarding field override", name, *intents[i].CPUSpikeLoad)
+			intents[i].CPUSpikeLoad = nil
+		}
+		if intents[i].LatencySpikeMs != nil && *intents[i].LatencySpikeMs <= 0 {
+			logger.Warn("INTENT VALIDATION: Intent [%s] has invalid latency_spike_ms (%.2f <= 0) -> Discarding field override", name, *intents[i].LatencySpikeMs)
+			intents[i].LatencySpikeMs = nil
+		}
+		if intents[i].LatencyZScoreThreshold != nil && *intents[i].LatencyZScoreThreshold <= 0 {
+			logger.Warn("INTENT VALIDATION: Intent [%s] has invalid latency_zscore_threshold (%.2f <= 0) -> Discarding field override", name, *intents[i].LatencyZScoreThreshold)
+			intents[i].LatencyZScoreThreshold = nil
+		}
+	}
+	return intents
 }
 
 // LoadIntents reads an intents configuration file with a 64KB upper safety bound.
@@ -65,13 +95,13 @@ func LoadIntents(filePath string) ([]Intent, error) {
 	// First try parsing as IntentConfigFile { "intents": [...] }
 	var cfgFile IntentConfigFile
 	if err := json.Unmarshal(data, &cfgFile); err == nil && len(cfgFile.Intents) > 0 {
-		return cfgFile.Intents, nil
+		return validateAndSanitizeIntents(cfgFile.Intents), nil
 	}
 
 	// Alternatively support direct JSON slice [ {...}, {...} ]
 	var directIntents []Intent
 	if err := json.Unmarshal(data, &directIntents); err == nil {
-		return directIntents, nil
+		return validateAndSanitizeIntents(directIntents), nil
 	}
 
 	var testObj interface{}
@@ -79,7 +109,7 @@ func LoadIntents(filePath string) ([]Intent, error) {
 		return []Intent{}, fmt.Errorf("failed to parse intent config JSON: %w", err)
 	}
 
-	return cfgFile.Intents, nil
+	return validateAndSanitizeIntents(cfgFile.Intents), nil
 }
 
 // ParseTimeOfDay parses "HH:MM" into the minute of day (0..1439).
@@ -163,16 +193,32 @@ func ResolveEffectiveThresholds(cfg *Config, intents []Intent, now time.Time) Ef
 				effective.ActiveIntent = strings.TrimSpace(intent.Name)
 			}
 			if intent.RAMExhaustionPct != nil {
-				effective.RAMExhaustionPct = *intent.RAMExhaustionPct
+				if *intent.RAMExhaustionPct > 0 {
+					effective.RAMExhaustionPct = *intent.RAMExhaustionPct
+				} else {
+					logger.Warn("INTENT VALIDATION: Intent [%s] has invalid ram_exhaustion_pct (%.2f <= 0) -> Keeping base threshold (%.2f)", effective.ActiveIntent, *intent.RAMExhaustionPct, effective.RAMExhaustionPct)
+				}
 			}
 			if intent.CPUSpikeLoad != nil {
-				effective.CPUSpikeLoad = *intent.CPUSpikeLoad
+				if *intent.CPUSpikeLoad > 0 {
+					effective.CPUSpikeLoad = *intent.CPUSpikeLoad
+				} else {
+					logger.Warn("INTENT VALIDATION: Intent [%s] has invalid cpu_spike_load (%.2f <= 0) -> Keeping base threshold (%.2f)", effective.ActiveIntent, *intent.CPUSpikeLoad, effective.CPUSpikeLoad)
+				}
 			}
 			if intent.LatencySpikeMs != nil {
-				effective.LatencySpikeMs = *intent.LatencySpikeMs
+				if *intent.LatencySpikeMs > 0 {
+					effective.LatencySpikeMs = *intent.LatencySpikeMs
+				} else {
+					logger.Warn("INTENT VALIDATION: Intent [%s] has invalid latency_spike_ms (%.2f <= 0) -> Keeping base threshold (%.2f)", effective.ActiveIntent, *intent.LatencySpikeMs, effective.LatencySpikeMs)
+				}
 			}
 			if intent.LatencyZScoreThreshold != nil {
-				effective.LatencyZScoreThreshold = *intent.LatencyZScoreThreshold
+				if *intent.LatencyZScoreThreshold > 0 {
+					effective.LatencyZScoreThreshold = *intent.LatencyZScoreThreshold
+				} else {
+					logger.Warn("INTENT VALIDATION: Intent [%s] has invalid latency_zscore_threshold (%.2f <= 0) -> Keeping base threshold (%.2f)", effective.ActiveIntent, *intent.LatencyZScoreThreshold, effective.LatencyZScoreThreshold)
+				}
 			}
 			break
 		}

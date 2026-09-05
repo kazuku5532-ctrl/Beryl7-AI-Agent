@@ -277,3 +277,121 @@ func TestAdversarial_ConcurrentConfigReloadAndThresholdResolve(t *testing.T) {
 	close(stopCh)
 	wg.Wait()
 }
+
+// TestAdversarial_ZeroAndNegativeThresholdValidation verifies that setting 0.0 or negative values
+// for any threshold field (RAM, CPU, Latency, ZScore) is rejected and falls back to base thresholds.
+func TestAdversarial_ZeroAndNegativeThresholdValidation(t *testing.T) {
+	tempDir := t.TempDir()
+	filePath := filepath.Join(tempDir, "zero_and_negative.json")
+
+	content := `{
+		"intents": [
+			{
+				"name": "zero_thresholds_intent",
+				"start_time": "00:00",
+				"end_time": "12:00",
+				"ram_exhaustion_pct": 0.0,
+				"cpu_spike_load": 0.0,
+				"latency_spike_ms": 0.0,
+				"latency_zscore_threshold": 0.0
+			},
+			{
+				"name": "negative_thresholds_intent",
+				"start_time": "12:00",
+				"end_time": "23:59",
+				"ram_exhaustion_pct": -10.0,
+				"cpu_spike_load": -2.5,
+				"latency_spike_ms": -100.0,
+				"latency_zscore_threshold": -3.0
+			}
+		]
+	}`
+
+	if err := os.WriteFile(filePath, []byte(content), 0600); err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	// 1. Test LoadIntents sanitization
+	intents, err := LoadIntents(filePath)
+	if err != nil {
+		t.Fatalf("LoadIntents failed: %v", err)
+	}
+	if len(intents) != 2 {
+		t.Fatalf("Expected 2 intents loaded, got %d", len(intents))
+	}
+
+	// All invalid pointers should have been sanitized to nil on load
+	if intents[0].RAMExhaustionPct != nil || intents[0].CPUSpikeLoad != nil || intents[0].LatencySpikeMs != nil || intents[0].LatencyZScoreThreshold != nil {
+		t.Errorf("Expected all zero-value pointers to be sanitized to nil, got %+v", intents[0])
+	}
+	if intents[1].RAMExhaustionPct != nil || intents[1].CPUSpikeLoad != nil || intents[1].LatencySpikeMs != nil || intents[1].LatencyZScoreThreshold != nil {
+		t.Errorf("Expected all negative-value pointers to be sanitized to nil, got %+v", intents[1])
+	}
+
+	cfg := &Config{
+		IntentsFilePath:        filePath,
+		RAMExhaustionPct:       90.0,
+		CPUSpikeLoad:           2.0,
+		LatencySpikeMs:         80.0,
+		LatencyZScoreThreshold: 2.0,
+	}
+
+	// 2. Test Morning resolution (Zero thresholds intent)
+	morning := time.Date(2026, 9, 6, 8, 0, 0, 0, time.UTC)
+	effMorning := ResolveEffectiveThresholds(cfg, intents, morning)
+
+	if effMorning.ActiveIntent != "zero_thresholds_intent" {
+		t.Errorf("Expected ActiveIntent 'zero_thresholds_intent', got %s", effMorning.ActiveIntent)
+	}
+	if effMorning.RAMExhaustionPct != 90.0 || effMorning.CPUSpikeLoad != 2.0 || effMorning.LatencySpikeMs != 80.0 || effMorning.LatencyZScoreThreshold != 2.0 {
+		t.Errorf("Expected base thresholds to be preserved for zero values, got %+v", effMorning)
+	}
+
+	// 3. Test Afternoon resolution (Negative thresholds intent)
+	afternoon := time.Date(2026, 9, 6, 15, 0, 0, 0, time.UTC)
+	effAfternoon := ResolveEffectiveThresholds(cfg, intents, afternoon)
+
+	if effAfternoon.ActiveIntent != "negative_thresholds_intent" {
+		t.Errorf("Expected ActiveIntent 'negative_thresholds_intent', got %s", effAfternoon.ActiveIntent)
+	}
+	if effAfternoon.RAMExhaustionPct != 90.0 || effAfternoon.CPUSpikeLoad != 2.0 || effAfternoon.LatencySpikeMs != 80.0 || effAfternoon.LatencyZScoreThreshold != 2.0 {
+		t.Errorf("Expected base thresholds to be preserved for negative values, got %+v", effAfternoon)
+	}
+
+	// 4. Test direct in-memory Intent structs (bypassing LoadIntents)
+	zeroRAM := 0.0
+	negCPU := -1.5
+	validLat := 45.0
+	zeroZ := -0.0
+
+	directIntents := []Intent{
+		{
+			Name:                   "direct_mixed_intent",
+			StartTime:              "00:00",
+			EndTime:                "23:59",
+			RAMExhaustionPct:       &zeroRAM,
+			CPUSpikeLoad:           &negCPU,
+			LatencySpikeMs:         &validLat, // Only valid field
+			LatencyZScoreThreshold: &zeroZ,
+		},
+	}
+
+	effDirect := ResolveEffectiveThresholds(cfg, directIntents, time.Now())
+	if effDirect.ActiveIntent != "direct_mixed_intent" {
+		t.Errorf("Expected ActiveIntent 'direct_mixed_intent', got %s", effDirect.ActiveIntent)
+	}
+	// Invalid fields must fallback to base
+	if effDirect.RAMExhaustionPct != 90.0 {
+		t.Errorf("Expected RAM fallback 90.0, got %.1f", effDirect.RAMExhaustionPct)
+	}
+	if effDirect.CPUSpikeLoad != 2.0 {
+		t.Errorf("Expected CPU fallback 2.0, got %.1f", effDirect.CPUSpikeLoad)
+	}
+	if effDirect.LatencyZScoreThreshold != 2.0 {
+		t.Errorf("Expected ZScore fallback 2.0, got %.1f", effDirect.LatencyZScoreThreshold)
+	}
+	// Valid field must be applied
+	if effDirect.LatencySpikeMs != 45.0 {
+		t.Errorf("Expected Latency applied 45.0, got %.1f", effDirect.LatencySpikeMs)
+	}
+}
