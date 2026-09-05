@@ -3,7 +3,17 @@
 # BLOCKS ANY COMMIT IF ANY RULE VIOLATION IS DETECTED.
 
 echo "🔍 Running Mandatory Beryl 7 Rule Enforcement Engine..."
-python tools/dev_scripts/verify_rules.py
+if [ -f "./venv/Scripts/python.exe" ]; then
+    ./venv/Scripts/python.exe tools/dev_scripts/verify_rules.py
+elif [ -f "./venv/bin/python" ]; then
+    ./venv/bin/python tools/dev_scripts/verify_rules.py
+elif command -v py >/dev/null 2>&1; then
+    py -3 tools/dev_scripts/verify_rules.py
+elif command -v python3 >/dev/null 2>&1; then
+    python3 tools/dev_scripts/verify_rules.py
+else
+    python tools/dev_scripts/verify_rules.py
+fi
 if [ $? -ne 0 ]; then
     echo "❌ COMMIT BLOCKED: Rule Compliance Verification Failed!"
     exit 1

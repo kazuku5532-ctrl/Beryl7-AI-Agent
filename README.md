@@ -128,6 +128,58 @@ curl -s -X POST http://192.168.8.1:8888/api/config/reload \
 
 ---
 
+## 🎯 Intent-Aware Dynamic Threshold Layer
+
+The Beryl 7 AI Agent incorporates a dynamic intent adaptation engine that adjusts telemetry anomaly thresholds based on declarative time windows and operational policies (`/etc/beryl7/intents.json`). Instead of relying on rigid, static limits across 24 hours, the daemon dynamically switches between operational intents (such as low-latency gaming priority, prime work hours, or overnight maintenance).
+
+### Configuration (`/etc/beryl7/intents.json`)
+
+```json
+{
+  "intents": [
+    {
+      "name": "work_from_home",
+      "description": "High-reliability teleconferencing and business operations",
+      "start_time": "08:30",
+      "end_time": "17:30",
+      "latency_spike_ms": 60.0,
+      "latency_zscore_threshold": 2.0,
+      "ram_exhaustion_pct": 90.0
+    },
+    {
+      "name": "prime_gaming",
+      "description": "Ultra-low latency bufferbloat mitigation during evening peak",
+      "start_time": "18:00",
+      "end_time": "23:30",
+      "latency_spike_ms": 40.0,
+      "latency_zscore_threshold": 1.8
+    },
+    {
+      "name": "overnight_maintenance",
+      "description": "Relaxed thresholds allowing bulk backups and heavy background tasks",
+      "start_time": "23:30",
+      "end_time": "06:00",
+      "ram_exhaustion_pct": 98.0,
+      "cpu_spike_load": 3.0,
+      "latency_spike_ms": 300.0,
+      "latency_zscore_threshold": 4.0
+    }
+  ]
+}
+```
+
+### Architectural Capabilities & Standards Alignment
+
+1. **Declarative Time Windows & Overnight Wrap-around:** Supports standard diurnal time windows as well as overnight windows crossing midnight (e.g., `23:30` to `06:00`).
+2. **Safe Fallback & Partial Overrides:** When an intent specifies only a subset of fields (e.g., `latency_spike_ms`), unmodified parameters automatically fall back to baseline `/etc/beryl7/agent.env` settings. If no intent matches the current clock time or if `intents.json` is absent, the agent cleanly defaults to `"default"` operational thresholds with zero downtime or panics.
+3. **Observability Integration:** Real-time active intent names and effective thresholds are exported continuously via `/api/health` and `/api/v1/metrics`.
+
+> [!NOTE]
+> **TM Forum Autonomous Networks Alignment Statement:**
+> This intent-driven threshold mechanism aligns conceptually with the intent-driven autonomous operation philosophy outlined in TM Forum Autonomous Networks Level 4 (Intent-Driven Management). Note: This is an independent architectural alignment designed for edge routers, NOT an official TM Forum certification or endorsement.
+
+---
+
 ## 🛠️ Developer & CI Tooling Disclosure
 
 - **Zero Router Python Dependencies:** The router runs a single static Go binary (`/usr/bin/beryl7-agent`). Zero Python runtime or libraries are required on OpenWrt.
@@ -140,3 +192,4 @@ curl -s -X POST http://192.168.8.1:8888/api/config/reload \
 - **Unit Test Suite:** 100% PASS across all 10 Go packages (`ai`, `cmd`, `config`, `executor`, `logger`, `parser`, `skillstore`, `telemetry`, `tests`, `watchdog`).
 - **Resilience Certification:** Certified against cold reboots, sudden power outages, and firmware preservation (`/etc/sysupgrade.conf`).
 - **Code Coverage Gate:** CI Workflow configured with strict quality gate enforcement (`.github/workflows/coverage.yml`).
+

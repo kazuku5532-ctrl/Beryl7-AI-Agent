@@ -18,6 +18,7 @@ import (
 type Config struct {
 	ConfigFilePath         string
 	KeyFilePath            string
+	IntentsFilePath        string
 	GeminiAPIKey           string
 	AuthToken              string
 	ApproveToken           string
@@ -95,6 +96,7 @@ func LoadConfigWithFlags(configPath, keyPath string, dryRun, showVersion bool) (
 	cfg := &Config{
 		ConfigFilePath:         "/etc/beryl7/agent.env",
 		KeyFilePath:            "/etc/beryl7/agent.key",
+		IntentsFilePath:        "/etc/beryl7/intents.json",
 		AuthToken:              "",
 		ApproveToken:           "",
 		LogLevel:               "INFO",
@@ -235,6 +237,9 @@ func LoadConfigWithFlags(configPath, keyPath string, dryRun, showVersion bool) (
 	if val := os.Getenv("BERYL7_CHECKPOINT_PATH"); val != "" {
 		cfg.CheckpointPath = strings.TrimSpace(val)
 	}
+	if val := os.Getenv("BERYL7_INTENTS_PATH"); val != "" {
+		cfg.IntentsFilePath = strings.TrimSpace(val)
+	}
 	if val := os.Getenv("BERYL7_AIRGAPPED_MODE"); val == "1" || strings.ToLower(val) == "true" {
 		cfg.AirgappedMode = true
 		logger.Info("AIR-GAPPED MODE ENABLED: Outbound Cloud AI traffic disabled.")
@@ -350,6 +355,7 @@ func EnsureSysupgradePreservation() error {
 	requiredEntries := []string{
 		"/etc/beryl7/agent.env",
 		"/etc/beryl7/agent.key",
+		"/etc/beryl7/intents.json",
 		"/etc/beryl7/skills.db", // [Fix 3] Preserve Agent's self-learned remediation skills across firmware upgrades
 		"/usr/bin/beryl7-agent",
 		"/etc/init.d/beryl7-agent",
@@ -391,6 +397,7 @@ func EnsureFilePermissions() error {
 	files := map[string]os.FileMode{
 		"/etc/beryl7/agent.key":    0400,
 		"/etc/beryl7/agent.env":    0600,
+		"/etc/beryl7/intents.json": 0644,
 		"/usr/bin/beryl7-agent":    0755,
 		"/etc/init.d/beryl7-agent": 0755,
 		"/root/skills.db":          0600,
@@ -649,6 +656,8 @@ func parseEnvFile(filePath string, cfg *Config) error {
 			if val != "" {
 				cfg.GracefulShutdownPath = val
 			}
+		case "BERYL7_INTENTS_PATH", "BERYL7_INTENTS_FILE_PATH", "INTENTS_FILE_PATH":
+			cfg.IntentsFilePath = val
 		case "BERYL7_MILESTONE_Q_THRESHOLD":
 			if i, err := strconv.Atoi(val); err == nil && i > 0 {
 				cfg.MilestoneQThreshold = i
@@ -664,6 +673,21 @@ func (c *Config) GetAPIKeySnapshot() string {
 		return val.(string)
 	}
 	return c.GeminiAPIKey
+}
+
+func (cfg *Config) GetEffectiveThresholds(now time.Time) EffectiveThresholds {
+	if cfg == nil {
+		return ResolveEffectiveThresholds(nil, nil, now)
+	}
+	path := cfg.IntentsFilePath
+	if path == "" {
+		path = "/etc/beryl7/intents.json"
+	}
+	intents, err := LoadIntents(path)
+	if err != nil {
+		logger.Debug("Could not load intents from %s: %v. Using base thresholds.", path, err)
+	}
+	return ResolveEffectiveThresholds(cfg, intents, now)
 }
 
 func IsKillSwitchActive(cfg *Config) bool {

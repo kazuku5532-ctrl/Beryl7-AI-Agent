@@ -36,29 +36,34 @@ import (
 )
 
 type HealthState struct {
-	mu                    sync.RWMutex
-	Status                string                      `json:"status"`
-	UptimeSeconds         int64                       `json:"uptime_seconds"`
-	LastAction            string                      `json:"last_action"`
-	LastActionTime        string                      `json:"last_action_time"`
-	WANStatus             string                      `json:"wan_status"`
-	CPUUsagePct           float64                     `json:"cpu_usage_pct"`
-	RAMUsagePct           float64                     `json:"ram_usage_pct"`
-	HardwareTempC         float64                     `json:"hardware_temp_c"`
-	LatencyMs             float64                     `json:"latency_ms"`
-	SafeMode              bool                        `json:"safe_mode"`
-	KillSwitch            bool                        `json:"kill_switch"`
-	WifiBandwidthMHz      int                         `json:"wifi_bandwidth_mhz"`
-	IsWifiBoosted         bool                        `json:"is_wifi_boosted"`
-	DownloadMbps          float64                     `json:"download_mbps"`
-	UploadMbps            float64                     `json:"upload_mbps"`
-	ConnectedDevicesCount int                         `json:"connected_devices_count"`
-	ConnectedDevices      []telemetry.ConnectedDevice `json:"connected_devices"`
-	NetworkToken          string                      `json:"network_token"`
-	StartTime             time.Time                   `json:"start_time"`
-	Goroutines            int                         `json:"goroutines"`
-	HeapAllocMB           float64                     `json:"heap_alloc_mb"`
-	RSSMB                 float64                     `json:"rss_mb"`
+	mu                     sync.RWMutex
+	Status                 string                      `json:"status"`
+	ActiveIntent           string                      `json:"active_intent"`
+	RAMExhaustionPct       float64                     `json:"ram_exhaustion_pct"`
+	CPUSpikeLoad           float64                     `json:"cpu_spike_load"`
+	LatencySpikeMs         float64                     `json:"latency_spike_ms"`
+	LatencyZScoreThreshold float64                     `json:"latency_zscore_threshold"`
+	UptimeSeconds          int64                       `json:"uptime_seconds"`
+	LastAction             string                      `json:"last_action"`
+	LastActionTime         string                      `json:"last_action_time"`
+	WANStatus              string                      `json:"wan_status"`
+	CPUUsagePct            float64                     `json:"cpu_usage_pct"`
+	RAMUsagePct            float64                     `json:"ram_usage_pct"`
+	HardwareTempC          float64                     `json:"hardware_temp_c"`
+	LatencyMs              float64                     `json:"latency_ms"`
+	SafeMode               bool                        `json:"safe_mode"`
+	KillSwitch             bool                        `json:"kill_switch"`
+	WifiBandwidthMHz       int                         `json:"wifi_bandwidth_mhz"`
+	IsWifiBoosted          bool                        `json:"is_wifi_boosted"`
+	DownloadMbps           float64                     `json:"download_mbps"`
+	UploadMbps             float64                     `json:"upload_mbps"`
+	ConnectedDevicesCount  int                         `json:"connected_devices_count"`
+	ConnectedDevices       []telemetry.ConnectedDevice `json:"connected_devices"`
+	NetworkToken           string                      `json:"network_token"`
+	StartTime              time.Time                   `json:"start_time"`
+	Goroutines             int                         `json:"goroutines"`
+	HeapAllocMB            float64                     `json:"heap_alloc_mb"`
+	RSSMB                  float64                     `json:"rss_mb"`
 }
 
 type PendingApproval struct {
@@ -435,12 +440,18 @@ func main() {
 		}
 	})
 
+	effInitial := cfg.GetEffectiveThresholds(time.Now())
 	health := &HealthState{
-		Status:        "healthy",
-		LastAction:    "none",
-		WANStatus:     "Active (1/1)",
-		StartTime:     time.Now(),
-		UptimeSeconds: 0,
+		Status:                 "healthy",
+		ActiveIntent:           effInitial.ActiveIntent,
+		RAMExhaustionPct:       effInitial.RAMExhaustionPct,
+		CPUSpikeLoad:           effInitial.CPUSpikeLoad,
+		LatencySpikeMs:         effInitial.LatencySpikeMs,
+		LatencyZScoreThreshold: effInitial.LatencyZScoreThreshold,
+		LastAction:             "none",
+		WANStatus:              "Active (1/1)",
+		StartTime:              time.Now(),
+		UptimeSeconds:          0,
 	}
 
 	httpServer := StartHealthCheckServer(cfg, health, execEngine, store, aiClient, wd, collector)
@@ -502,6 +513,7 @@ func main() {
 				}
 
 				cfgSnap := cfgAtomic.Load().(*config.Config)
+				effective := cfgSnap.GetEffectiveThresholds(time.Now())
 				liveLogSample := logParser.SanitizeLog(getSystemLogSample())
 				_, zScore := collector.UpdateEWMALatency(m.LatencyMs, 0.2)
 
@@ -517,12 +529,12 @@ func main() {
 							break
 						}
 					}
-					if anomalyType == "" && m.RAMUsagePct > cfgSnap.RAMExhaustionPct {
+					if anomalyType == "" && m.RAMUsagePct > effective.RAMExhaustionPct {
 						anomalyType = "MEMORY_EXHAUSTION"
-						anomalyDesc = fmt.Sprintf("RAM usage high: %.1f%% (>%.1f%%)", m.RAMUsagePct, cfgSnap.RAMExhaustionPct)
-					} else if anomalyType == "" && zScore > cfgSnap.LatencyZScoreThreshold && m.LatencyMs > cfgSnap.LatencySpikeMs {
+						anomalyDesc = fmt.Sprintf("RAM usage high: %.1f%% (>%.1f%%, Intent: %s)", m.RAMUsagePct, effective.RAMExhaustionPct, effective.ActiveIntent)
+					} else if anomalyType == "" && zScore > effective.LatencyZScoreThreshold && m.LatencyMs > effective.LatencySpikeMs {
 						anomalyType = "BUFFERBLOAT_SPIKE"
-						anomalyDesc = fmt.Sprintf("Latency spike: %.1fms (Z-Score: %.2f)", m.LatencyMs, zScore)
+						anomalyDesc = fmt.Sprintf("Latency spike: %.1fms (Z-Score: %.2f > %.1f, Intent: %s)", m.LatencyMs, zScore, effective.LatencyZScoreThreshold, effective.ActiveIntent)
 					}
 				}
 
@@ -765,6 +777,7 @@ func main() {
 			}
 		case <-ticker.C:
 			cfgSnap := cfgAtomic.Load().(*config.Config)
+			effective := cfgSnap.GetEffectiveThresholds(time.Now())
 			currentDryRun := cfgSnap.DryRun
 			currentAlpha := cfgSnap.EMAAlpha
 
@@ -774,6 +787,11 @@ func main() {
 			}
 
 			health.mu.Lock()
+			health.ActiveIntent = effective.ActiveIntent
+			health.RAMExhaustionPct = effective.RAMExhaustionPct
+			health.CPUSpikeLoad = effective.CPUSpikeLoad
+			health.LatencySpikeMs = effective.LatencySpikeMs
+			health.LatencyZScoreThreshold = effective.LatencyZScoreThreshold
 			health.WANStatus = m.WANStatus
 			health.CPUUsagePct = m.CPUUsagePct
 			health.RAMUsagePct = m.RAMUsagePct
@@ -875,12 +893,12 @@ func main() {
 						break
 					}
 				}
-				if anomalyType == "" && m.RAMUsagePct > cfgSnap.RAMExhaustionPct {
+				if anomalyType == "" && m.RAMUsagePct > effective.RAMExhaustionPct {
 					anomalyType = "MEMORY_EXHAUSTION"
-					anomalyDesc = fmt.Sprintf("High RAM usage detected: %.1f%% (>%.1f%%)", m.RAMUsagePct, cfgSnap.RAMExhaustionPct)
-				} else if anomalyType == "" && zScore > cfgSnap.LatencyZScoreThreshold && m.LatencyMs > cfgSnap.LatencySpikeMs {
+					anomalyDesc = fmt.Sprintf("High RAM usage detected: %.1f%% (>%.1f%%, Intent: %s)", m.RAMUsagePct, effective.RAMExhaustionPct, effective.ActiveIntent)
+				} else if anomalyType == "" && zScore > effective.LatencyZScoreThreshold && m.LatencyMs > effective.LatencySpikeMs {
 					anomalyType = "BUFFERBLOAT_SPIKE"
-					anomalyDesc = fmt.Sprintf("Bufferbloat / Latency Spike detected: %.1fms (Z-Score: %.2f > %.1f)", m.LatencyMs, zScore, cfgSnap.LatencyZScoreThreshold)
+					anomalyDesc = fmt.Sprintf("Bufferbloat / Latency Spike detected: %.1fms (Z-Score: %.2f > %.1f, Intent: %s)", m.LatencyMs, zScore, effective.LatencyZScoreThreshold, effective.ActiveIntent)
 				} else if anomalyType == "" {
 					repeaterM, _ := collector.CollectRepeaterMetrics(ctx)
 					if repeaterM != nil && repeaterM.IsRepeater {
@@ -1393,7 +1411,25 @@ func StartHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 		cbState, _, _ := aiClient.GetCircuitBreakerStatus()
 		safeMode := wd.IsSafeMode()
 
+		var currentCfg *config.Config
+		if val := cfgAtomic.Load(); val != nil {
+			currentCfg = val.(*config.Config)
+		} else {
+			currentCfg = cfg
+		}
+		var effective config.EffectiveThresholds
+		if currentCfg != nil {
+			effective = currentCfg.GetEffectiveThresholds(time.Now())
+		}
+
 		health.mu.Lock()
+		if currentCfg != nil {
+			health.ActiveIntent = effective.ActiveIntent
+			health.RAMExhaustionPct = effective.RAMExhaustionPct
+			health.CPUSpikeLoad = effective.CPUSpikeLoad
+			health.LatencySpikeMs = effective.LatencySpikeMs
+			health.LatencyZScoreThreshold = effective.LatencyZScoreThreshold
+		}
 		if collector != nil {
 			proc := collector.GetProcessResourceStats()
 			health.Goroutines = proc.Goroutines
@@ -1444,6 +1480,17 @@ func StartHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 			opMetrics = store.GetOperationalMetrics()
 		}
 
+		var currentCfg *config.Config
+		if val := cfgAtomic.Load(); val != nil {
+			currentCfg = val.(*config.Config)
+		} else {
+			currentCfg = cfg
+		}
+		var effective config.EffectiveThresholds
+		if currentCfg != nil {
+			effective = currentCfg.GetEffectiveThresholds(time.Now())
+		}
+
 		health.mu.RLock()
 		telData := map[string]interface{}{
 			"cpu_usage_pct":   health.CPUUsagePct,
@@ -1451,13 +1498,19 @@ func StartHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 			"hardware_temp_c": health.HardwareTempC,
 			"latency_ms":      health.LatencyMs,
 		}
+		activeIntent := health.ActiveIntent
+		if activeIntent == "" {
+			activeIntent = effective.ActiveIntent
+		}
 		health.mu.RUnlock()
 
 		resp := map[string]interface{}{
-			"process":            procStats,
-			"telemetry":          telData,
-			"operational":        opMetrics,
-			"collector_counters": opCounters,
+			"process":              procStats,
+			"telemetry":            telData,
+			"operational":          opMetrics,
+			"collector_counters":   opCounters,
+			"active_intent":        activeIntent,
+			"effective_thresholds": effective,
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(resp)

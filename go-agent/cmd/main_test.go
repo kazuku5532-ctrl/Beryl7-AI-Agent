@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
@@ -498,4 +499,111 @@ func TestCORSAndAuthSecurity_Comprehensive(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+func TestIntentAwareEndpoints(t *testing.T) {
+	tempDir := t.TempDir()
+	intentsPath := filepath.Join(tempDir, "intents.json")
+
+	ramVal := 88.5
+	latVal := 45.0
+	intentsFile := config.IntentConfigFile{
+		Intents: []config.Intent{
+			{
+				Name:             "test_work_intent",
+				StartTime:        "00:00",
+				EndTime:          "23:59",
+				RAMExhaustionPct: &ramVal,
+				LatencySpikeMs:   &latVal,
+			},
+		},
+	}
+	data, _ := json.Marshal(intentsFile)
+	_ = os.WriteFile(intentsPath, data, 0600)
+
+	dbPath := filepath.Join(tempDir, "test.db")
+	store, _ := skillstore.New(dbPath)
+	defer store.Close()
+
+	wd := watchdog.New(filepath.Join(tempDir, "cp.uci"))
+	execEngine := executor.New()
+	aiClient := ai.NewClient("dummy-key")
+	collector := telemetry.NewCollector()
+
+	listener, lErr := net.Listen("tcp", "127.0.0.1:0")
+	if lErr != nil {
+		t.Fatalf("Failed to bind dynamic port: %v", lErr)
+	}
+	testPort := listener.Addr().(*net.TCPAddr).Port
+	_ = listener.Close()
+
+	cfg := &config.Config{
+		HealthPort:             testPort,
+		BindHost:               "127.0.0.1",
+		IntentsFilePath:        intentsPath,
+		RAMExhaustionPct:       95.0,
+		CPUSpikeLoad:           1.5,
+		LatencySpikeMs:         100.0,
+		LatencyZScoreThreshold: 2.5,
+	}
+	cfgAtomic.Store(cfg)
+
+	health := &HealthState{
+		Status:        "healthy",
+		LastAction:    "none",
+		StartTime:     time.Now(),
+		UptimeSeconds: 50,
+	}
+
+	server := StartHealthCheckServer(cfg, health, execEngine, store, aiClient, wd, collector)
+	defer server.Close()
+
+	time.Sleep(100 * time.Millisecond)
+
+	baseURL := fmt.Sprintf("http://127.0.0.1:%d", testPort)
+
+	// Test 1: GET /api/health
+	respHealth, err := http.Get(baseURL + "/api/health")
+	if err != nil {
+		t.Fatalf("Failed GET /api/health: %v", err)
+	}
+	defer respHealth.Body.Close()
+
+	var healthRes HealthState
+	if err := json.NewDecoder(respHealth.Body).Decode(&healthRes); err != nil {
+		t.Fatalf("Failed to decode /api/health response: %v", err)
+	}
+
+	if healthRes.ActiveIntent != "test_work_intent" {
+		t.Errorf("Expected ActiveIntent 'test_work_intent', got %q", healthRes.ActiveIntent)
+	}
+	if healthRes.RAMExhaustionPct != 88.5 {
+		t.Errorf("Expected RAMExhaustionPct 88.5, got %.1f", healthRes.RAMExhaustionPct)
+	}
+	if healthRes.LatencySpikeMs != 45.0 {
+		t.Errorf("Expected LatencySpikeMs 45.0, got %.1f", healthRes.LatencySpikeMs)
+	}
+
+	// Test 2: GET /api/v1/metrics
+	respMetrics, err := http.Get(baseURL + "/api/v1/metrics")
+	if err != nil {
+		t.Fatalf("Failed GET /api/v1/metrics: %v", err)
+	}
+	defer respMetrics.Body.Close()
+
+	var metricsRes struct {
+		ActiveIntent        string                     `json:"active_intent"`
+		EffectiveThresholds config.EffectiveThresholds `json:"effective_thresholds"`
+	}
+	if err := json.NewDecoder(respMetrics.Body).Decode(&metricsRes); err != nil {
+		t.Fatalf("Failed to decode /api/v1/metrics response: %v", err)
+	}
+
+	if metricsRes.ActiveIntent != "test_work_intent" {
+		t.Errorf("Expected metrics ActiveIntent 'test_work_intent', got %q", metricsRes.ActiveIntent)
+	}
+	if metricsRes.EffectiveThresholds.RAMExhaustionPct != 88.5 {
+		t.Errorf("Expected metrics effective RAM threshold 88.5, got %.1f", metricsRes.EffectiveThresholds.RAMExhaustionPct)
+	}
+}
+
 
