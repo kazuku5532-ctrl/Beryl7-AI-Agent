@@ -90,9 +90,11 @@ func New() *Executor {
 		"enable_cake_sqm":          e.actionEnableCAKESQM,
 		"remediate_sticky_clients": e.actionRemediateStickyClients,
 		"remediate_wifi_quality":   e.actionRemediateWifiQuality,
+		"stabilize_latency_and_jitter": e.actionStabilizeLatencyAndJitter,
 	}
 
 	e.riskMatrix["optimize_streaming_pipeline"] = 0.40 // Low Risk streaming pipeline tuning
+	e.riskMatrix["stabilize_latency_and_jitter"] = 0.40 // Low Risk latency and jitter stabilization
 
 	return e
 }
@@ -606,3 +608,35 @@ func (e *Executor) actionRemediateStickyClients(ctx context.Context, target stri
 	}
 	return nil
 }
+
+func (e *Executor) actionStabilizeLatencyAndJitter(ctx context.Context, target string, params map[string]interface{}) error {
+	logger.Info("AUTONOMOUS LATENCY & JITTER STABILIZER: Clamping Bufferbloat & Enforcing Low-Latency ECN / Pacing...")
+	// 1. Configure FQ_CoDeL with fast 3ms target and 60ms interval to eliminate queue bloat during high-speed traffic
+	_ = runSystemCmd(ctx, "/usr/sbin/tc", "qdisc", "replace", "dev", "rai0", "root", "fq_codel", "limit", "10240", "target", "3ms", "interval", "60ms", "ecn")
+	_ = runSystemCmd(ctx, "/usr/sbin/tc", "qdisc", "replace", "dev", "eth0", "root", "fq_codel", "limit", "10240", "target", "3ms", "interval", "60ms", "ecn")
+	_ = runSystemCmd(ctx, "/sbin/ifconfig", "rai0", "txqueuelen", "2000")
+	_ = runSystemCmd(ctx, "/sbin/ifconfig", "eth0", "txqueuelen", "2000")
+
+	// 2. Kernel TCP Pacing, ECN, and Low-Latency Socket Queuing
+	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.core.default_qdisc=fq_codel")
+	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.tcp_ecn=1")
+	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.tcp_notsent_lowat=16384")
+	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.tcp_pacing_ss_ratio=200")
+	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.tcp_pacing_ca_ratio=120")
+	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.tcp_autocorking=0")
+	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.tcp_early_retrans=3")
+	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.tcp_slow_start_after_idle=0")
+	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.tcp_adv_win_scale=1")
+	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.core.rmem_max=33554432")
+	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.core.wmem_max=33554432")
+
+	// 3. MediaTek MT7993 WMM / Voice / Video / Gaming Queue Priority
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.wmm=1")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.ampdu=1")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.amsdu=1")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.itxbfen=1")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.rai0.igmpsn_enable=1")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.rai0.proxy_arp=1")
+	return runSystemCmd(ctx, "/sbin/uci", "commit", "wireless")
+}
+
