@@ -19,10 +19,11 @@ func TestGetActionRiskThreshold(t *testing.T) {
 		"purge_memory_cache":    0.60,
 		"restart_wan_interface": 0.85,
 		"optimize_wifi_channel": 0.85,
-		"boost_wifi_bandwidth":  0.90,
-		"revert_wifi_bandwidth": 0.90,
+		"boost_wifi_bandwidth":     0.90,
+		"revert_wifi_bandwidth":    0.90,
 		"remediate_sticky_clients": 0.70,
-		"unknown_action":        0.90,
+		"remediate_wifi_quality":   0.80,
+		"unknown_action":           0.90,
 	}
 
 	for action, expected := range thresholds {
@@ -51,6 +52,7 @@ func TestExecuteActionAllWhitelisted(t *testing.T) {
 		"tune_network_performance",
 		"enable_cake_sqm",
 		"remediate_sticky_clients",
+		"remediate_wifi_quality",
 	}
 
 	// Test dry run mode

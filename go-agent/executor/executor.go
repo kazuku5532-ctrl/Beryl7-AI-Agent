@@ -54,6 +54,7 @@ func New() *Executor {
 			"block_device":          0.95, // High Risk
 			"set_wan_mac":           0.98, // Critical Risk
 			"remediate_sticky_clients": 0.70, // Low-Medium Risk (Ruckus SmartRoam)
+			"remediate_wifi_quality":   0.80, // Medium Risk (MediaTek MT7993 5GHz Stabilization)
 		},
 		macRegex: regexp.MustCompile(`^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$`),
 		validIfaces: map[string]bool{
@@ -88,6 +89,7 @@ func New() *Executor {
 		"ap_failover":              e.actionAPFailover,
 		"enable_cake_sqm":          e.actionEnableCAKESQM,
 		"remediate_sticky_clients": e.actionRemediateStickyClients,
+		"remediate_wifi_quality":   e.actionRemediateWifiQuality,
 	}
 
 	e.riskMatrix["optimize_streaming_pipeline"] = 0.40 // Low Risk streaming pipeline tuning
@@ -388,6 +390,15 @@ func (e *Executor) actionTuneNetworkPerformance(ctx context.Context, target stri
 	_ = runSystemCmd(ctx, "/usr/sbin/iptables", "-t", "mangle", "-D", "POSTROUTING", "-p", "tcp", "--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--clamp-mss-to-pmtu") // nolint:errcheck
 	_ = runSystemCmd(ctx, "/usr/sbin/iptables", "-t", "mangle", "-I", "POSTROUTING", "-p", "tcp", "--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--clamp-mss-to-pmtu") // nolint:errcheck
 
+	// MediaTek MT7993 5GHz Wi-Fi 7 Driver Stabilization (Eliminates Packet Loss & Bufferbloat)
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.muofdmadl_enable=0")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.muofdmaul_enable=0")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.mumimodl_enable=0")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.mumimoul_enable=0")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.ht_bawinsize=64")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.amsdu_num=3")
+	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.core.default_qdisc=fq_codel")
+
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.ampdu=1")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.amsdu=1")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.wmm=1")
@@ -425,6 +436,25 @@ func (e *Executor) actionTuneNetworkPerformance(ctx context.Context, target stri
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "network.@device[0].igmp_snooping=1")
 	_ = runSystemCmd(ctx, "/sbin/uci", "commit", "network")
 	return runSystemCmd(ctx, "/sbin/uci", "commit", "wireless")
+}
+
+func (e *Executor) actionRemediateWifiQuality(ctx context.Context, target string, params map[string]interface{}) error {
+	logger.Info("REMEDIATE WIFI QUALITY: Applying MediaTek MT7993 5GHz Wi-Fi 7 Driver Stabilization (OFDMA/BA Fix)...")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.muofdmadl_enable=0")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.muofdmaul_enable=0")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.mumimodl_enable=0")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.mumimoul_enable=0")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.ht_bawinsize=64")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.amsdu_num=3")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.ampdu=1")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.amsdu=1")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.wmm=1")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.itxbfen=1")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.rai0.igmpsn_enable=1")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.rai0.proxy_arp=1")
+	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.core.default_qdisc=fq_codel")
+	_ = runSystemCmd(ctx, "/sbin/uci", "commit", "wireless")
+	return e.TriggerWiFiReload(ctx)
 }
 
 func (e *Executor) actionOptimizeStreamingPipeline(ctx context.Context, target string, params map[string]interface{}) error {
