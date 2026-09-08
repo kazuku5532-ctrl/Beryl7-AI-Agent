@@ -390,13 +390,21 @@ func (e *Executor) actionTuneNetworkPerformance(ctx context.Context, target stri
 	_ = runSystemCmd(ctx, "/usr/sbin/iptables", "-t", "mangle", "-D", "POSTROUTING", "-p", "tcp", "--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--clamp-mss-to-pmtu") // nolint:errcheck
 	_ = runSystemCmd(ctx, "/usr/sbin/iptables", "-t", "mangle", "-I", "POSTROUTING", "-p", "tcp", "--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--clamp-mss-to-pmtu") // nolint:errcheck
 
-	// MediaTek MT7993 5GHz Wi-Fi 7 Driver Stabilization (Eliminates Packet Loss & Bufferbloat)
+	// MediaTek MT7993 5GHz Wi-Fi 7 Driver Stabilization (Eliminates Packet Loss, Jitter & Bufferbloat)
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.muofdmadl_enable=0")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.muofdmaul_enable=0")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.mumimodl_enable=0")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.mumimoul_enable=0")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.vow_airtime_fairness_en=0")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.vow_ex_en=0")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.vow_bw_ctrl=0")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.ht_bawinsize=64")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.amsdu_num=3")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.rai0.eml_mode=0")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.rai0.eml_omn_en=0")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.rai0.eht_t2lmnegosupport=0")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.rai0.eht_ap_nsep_pri_access=0")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.rai0.eht_ap_txop_sharing=0")
 	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.core.default_qdisc=fq_codel")
 
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.ampdu=1")
@@ -405,31 +413,22 @@ func (e *Executor) actionTuneNetworkPerformance(ctx context.Context, target stri
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.itxbfen=1") // Ruckus-style Client-Agnostic Implicit Beamforming
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.rai0.igmpsn_enable=1") // Ruckus-style Directed Multicast / IGMP Snooping
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.rai0.proxy_arp=1")     // Ruckus-style Airtime Preserving Proxy ARP
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.rai0.ieee80211k=1")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.rai0.bss_transition=1")
+
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_1.ampdu=1")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_1.amsdu=1")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_1.wmm=1")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_1.itxbfen=1")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.ra0.igmpsn_enable=1")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.ra0.proxy_arp=1")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.ra0.ieee80211k=1")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.ra0.bss_transition=1")
 
 	// Ruckus-style Airtime Decongestion: Eliminate legacy 802.11b rates (1, 2, 5.5, 11 Mbps)
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_1.basic_rate=6000 12000 24000")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_1.supported_rates=6000 9000 12000 18000 24000 36000 48000 54000")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.basic_rate=12000 24000")
-	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.default_radio1.beacon_rate=12000")
-	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.default_radio0.beacon_rate=6000")
-
-	// Ruckus-style 802.11k (RRM) and 802.11v (BTM) Fast Roaming Assistance
-	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.default_radio0.ieee80211k=1")
-	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.default_radio0.ieee80211v=1")
-	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.default_radio1.ieee80211k=1")
-	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.default_radio1.ieee80211v=1")
-
-	// Ruckus-style Transient Client Protection & Rapid Inactivity Reaping
-	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.default_radio0.disassoc_low_ack=1")
-	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.default_radio1.disassoc_low_ack=1")
-	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.default_radio0.max_inactivity=300")
-	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.default_radio1.max_inactivity=300")
 
 	// Ruckus-style Kernel L2 Bridge Directed Multicast / IGMP Snooping & Airtime Optimization
 	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.igmp_max_memberships=1024")
@@ -444,6 +443,9 @@ func (e *Executor) actionRemediateWifiQuality(ctx context.Context, target string
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.muofdmaul_enable=0")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.mumimodl_enable=0")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.mumimoul_enable=0")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.vow_airtime_fairness_en=0")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.vow_ex_en=0")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.vow_bw_ctrl=0")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.ht_bawinsize=64")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.amsdu_num=3")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.ampdu=1")
@@ -452,6 +454,11 @@ func (e *Executor) actionRemediateWifiQuality(ctx context.Context, target string
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.itxbfen=1")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.rai0.igmpsn_enable=1")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.rai0.proxy_arp=1")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.rai0.eml_mode=0")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.rai0.eml_omn_en=0")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.rai0.eht_t2lmnegosupport=0")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.rai0.eht_ap_nsep_pri_access=0")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.rai0.eht_ap_txop_sharing=0")
 	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.core.default_qdisc=fq_codel")
 	_ = runSystemCmd(ctx, "/sbin/uci", "commit", "wireless")
 	return e.TriggerWiFiReload(ctx)
