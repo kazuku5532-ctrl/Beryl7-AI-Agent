@@ -430,6 +430,11 @@ func (e *Executor) actionTuneNetworkPerformance(ctx context.Context, target stri
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_1.supported_rates=6000 9000 12000 18000 24000 36000 48000 54000")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.basic_rate=12000 24000")
 
+	// Expand Wi-Fi and WAN Interface Queue Headroom to 32MB to eliminate upload bottlenecks & packet loss
+	_ = runSystemCmd(ctx, "/usr/sbin/tc", "qdisc", "replace", "dev", "rai0", "root", "fq_codel", "limit", "20480", "memory_limit", "32Mb")
+	_ = runSystemCmd(ctx, "/sbin/ifconfig", "rai0", "txqueuelen", "2000")
+	_ = runSystemCmd(ctx, "/sbin/ifconfig", "eth0", "txqueuelen", "2000")
+
 	// Ruckus-style Kernel L2 Bridge Directed Multicast / IGMP Snooping & Airtime Optimization
 	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.igmp_max_memberships=1024")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "network.@device[0].igmp_snooping=1")
@@ -438,7 +443,7 @@ func (e *Executor) actionTuneNetworkPerformance(ctx context.Context, target stri
 }
 
 func (e *Executor) actionRemediateWifiQuality(ctx context.Context, target string, params map[string]interface{}) error {
-	logger.Info("REMEDIATE WIFI QUALITY: Applying MediaTek MT7993 5GHz Wi-Fi 7 Driver Stabilization (OFDMA/BA Fix)...")
+	logger.Info("REMEDIATE WIFI QUALITY: Applying MediaTek MT7993 5GHz Wi-Fi 7 Driver Stabilization (OFDMA/BA/Queue Fix)...")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.muofdmadl_enable=0")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.muofdmaul_enable=0")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.mumimodl_enable=0")
@@ -446,8 +451,8 @@ func (e *Executor) actionRemediateWifiQuality(ctx context.Context, target string
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.vow_airtime_fairness_en=0")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.vow_ex_en=0")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.vow_bw_ctrl=0")
-	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.ht_bawinsize=64")
-	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.amsdu_num=3")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.ht_bawinsize=128")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.amsdu_num=4")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.ampdu=1")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.amsdu=1")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.wmm=1")
@@ -459,7 +464,10 @@ func (e *Executor) actionRemediateWifiQuality(ctx context.Context, target string
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.rai0.eht_t2lmnegosupport=0")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.rai0.eht_ap_nsep_pri_access=0")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.rai0.eht_ap_txop_sharing=0")
-	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.core.default_qdisc=fq_codel")
+	_ = runSystemCmd(ctx, "/usr/sbin/tc", "qdisc", "replace", "dev", "rai0", "root", "fq_codel", "limit", "20480", "memory_limit", "32Mb")
+	_ = runSystemCmd(ctx, "/sbin/ifconfig", "rai0", "txqueuelen", "2000")
+	_ = runSystemCmd(ctx, "/sbin/ifconfig", "eth0", "txqueuelen", "2000")
+	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.core.default_qdisc=pfifo_fast")
 	_ = runSystemCmd(ctx, "/sbin/uci", "commit", "wireless")
 	return e.TriggerWiFiReload(ctx)
 }
