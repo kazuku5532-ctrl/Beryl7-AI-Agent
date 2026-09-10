@@ -958,9 +958,11 @@ func main() {
 					go func() { _ = tgNotifier.SendAlert(ctx, alertMsg) }()
 				}
 
-				defaultAction := "restart_wan_interface"
+				defaultAction := "remediate_silent_wan_blackhole"
 				if anomalyType == "MEMORY_EXHAUSTION" {
 					defaultAction = "purge_memory_cache"
+				} else if anomalyType == "WAN_DROP" || anomalyType == "WAN_SILENT_BLACKHOLE" {
+					defaultAction = "remediate_silent_wan_blackhole"
 				} else if anomalyType == "WIFI_FAILURE" {
 					defaultAction = "optimize_wifi_channel"
 				} else if anomalyType == "BUFFERBLOAT_SPIKE" || anomalyType == "LATENCY_SPIKE" {
