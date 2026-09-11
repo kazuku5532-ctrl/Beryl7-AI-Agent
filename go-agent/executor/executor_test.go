@@ -22,7 +22,7 @@ func TestGetActionRiskThreshold(t *testing.T) {
 		"boost_wifi_bandwidth":     0.90,
 		"revert_wifi_bandwidth":    0.90,
 		"remediate_sticky_clients": 0.70,
-		"remediate_wifi_quality":   0.80,
+		"remediate_wifi_quality":   0.85,
 		"optimize_streaming_pipeline": 0.40,
 		"stabilize_latency_and_jitter": 0.40,
 		"remediate_silent_wan_blackhole": 0.50,

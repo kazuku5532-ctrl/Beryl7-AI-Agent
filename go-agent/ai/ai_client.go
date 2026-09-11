@@ -245,11 +245,16 @@ func (c *AIClient) executeAnalyzeRequestWithContext(ctx context.Context, anomaly
 Details: %s
 System Log: %s%s
 
-Allowed actions ONLY: no_action_required, purge_memory_cache, restart_wan_interface, restart_interface, optimize_wifi_channel, block_device, set_qos_priority, set_wan_mac
+Allowed actions ONLY: no_action_required, purge_memory_cache, restart_wan_interface, restart_interface, optimize_wifi_channel, block_device, set_qos_priority, set_wan_mac, boost_wifi_bandwidth, revert_wifi_bandwidth, tune_network_performance, optimize_streaming_pipeline, scale_tx_power_down, align_channels, ap_failover, enable_cake_sqm, remediate_sticky_clients, remediate_wifi_quality, stabilize_latency_and_jitter, remediate_silent_wan_blackhole
 Guidance:
 - For MEMORY_EXHAUSTION: prefer purge_memory_cache
-- For WAN_DROP: prefer restart_wan_interface
-- For WIFI_FAILURE: prefer optimize_wifi_channel or restart_interface
+- For WAN_DROP: prefer remediate_silent_wan_blackhole or restart_wan_interface
+- For WIFI_FAILURE / WIFI_QUALITY_DEGRADED: prefer remediate_wifi_quality, optimize_wifi_channel or restart_interface
+- For BUFFERBLOAT_SPIKE / LATENCY_SPIKE: prefer stabilize_latency_and_jitter or enable_cake_sqm
+- For SUSTAINED_STREAMING: prefer optimize_streaming_pipeline
+- For REPEATER_SIGNAL_WEAK: prefer scale_tx_power_down or ap_failover
+- For REPEATER_CHANNEL_CONGESTED: prefer align_channels
+- For STICKY_CLIENTS: prefer remediate_sticky_clients
 
 Return JSON format ONLY: {"action":"action_name","reasoning":"clear explanation","confidence":0.0-1.0}`, anomalyType, description, sourceLog, fewShotSection)
 

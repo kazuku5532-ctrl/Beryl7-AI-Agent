@@ -140,3 +140,27 @@ func TestLoadAndVerifyCheckpointMalformedJSON(t *testing.T) {
 		t.Errorf("Expected error on malformed JSON checkpoint")
 	}
 }
+
+func TestExecuteRollbackWithWirelessAndNetworkSnapshot(t *testing.T) {
+	tempDir := t.TempDir()
+	cpPath := filepath.Join(tempDir, "checkpoint_full.uci")
+	wd := New(cpPath)
+
+	cfg := map[string]string{
+		"network.wan.proto":            "dhcp",
+		"wireless.MT7993_1_2.disabled": "0",
+		"wireless.MT7993_1_2.htmode":   "HE160",
+		"wireless.MT7993_1_1.channel":  "6",
+	}
+	if err := wd.SaveCheckpoint(cfg); err != nil {
+		t.Fatalf("SaveCheckpoint failed: %v", err)
+	}
+
+	if err := wd.ExecuteRollback(); err != nil {
+		t.Fatalf("ExecuteRollback failed: %v", err)
+	}
+
+	if !wd.IsSafeMode() {
+		t.Errorf("Expected SafeMode=true after rollback")
+	}
+}
