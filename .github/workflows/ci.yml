@@ -26,6 +26,7 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: '1.21'
+          cache-dependency-path: go-agent/go.sum
 
       - name: Install Industry-Standard Security Scanners (gosec & bandit)
         run: |
@@ -35,7 +36,7 @@ jobs:
       - name: Run gosec (Go AST Security & Command Injection Audit)
         run: |
           cd go-agent
-          $(go env GOPATH)/bin/gosec ./...
+          $(go env GOPATH)/bin/gosec -conf .gosec.json -quiet ./...
 
       - name: Run bandit (Python AST Security Audit)
         run: |
