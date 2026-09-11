@@ -887,6 +887,12 @@ func main() {
 
 			_, zScore := collector.UpdateEWMALatency(m.LatencyMs, 0.2)
 
+			// Autonomous Latency & Jitter Stabilizer: Proactively keep loaded latency under control during heavy throughput
+			if (m.DownloadMbps > 60.0 || m.UploadMbps > 60.0) && zScore > 1.8 {
+				logger.Info("AUTONOMOUS STABILIZER: High throughput (DL: %.1f Mbps, UL: %.1f Mbps) with rising latency variance (Z-Score: %.2f)! Enforcing low-latency queue pacing...", m.DownloadMbps, m.UploadMbps, zScore)
+				_ = execEngine.ExecuteAction(ctx, &executor.ActionRequest{ActionName: "stabilize_latency_and_jitter", Target: "lan"}, false)
+			}
+
 			// Smart Sustained Video Streaming Pipeline Acceleration (Edge-Triggered on state entry, avoiding continuous 5s execution loops)
 			if m.IsStreamingActive && !streamingPipelineActive {
 				streamingPipelineActive = true
@@ -952,13 +958,15 @@ func main() {
 					go func() { _ = tgNotifier.SendAlert(ctx, alertMsg) }()
 				}
 
-				defaultAction := "restart_wan_interface"
+				defaultAction := "remediate_silent_wan_blackhole"
 				if anomalyType == "MEMORY_EXHAUSTION" {
 					defaultAction = "purge_memory_cache"
+				} else if anomalyType == "WAN_DROP" || anomalyType == "WAN_SILENT_BLACKHOLE" {
+					defaultAction = "remediate_silent_wan_blackhole"
 				} else if anomalyType == "WIFI_FAILURE" {
 					defaultAction = "optimize_wifi_channel"
 				} else if anomalyType == "BUFFERBLOAT_SPIKE" || anomalyType == "LATENCY_SPIKE" {
-					defaultAction = "enable_cake_sqm"
+					defaultAction = "stabilize_latency_and_jitter"
 				} else if anomalyType == "REPEATER_SIGNAL_WEAK" {
 					defaultAction = "scale_tx_power_down"
 				} else if anomalyType == "REPEATER_CHANNEL_CONGESTED" {
@@ -1909,6 +1917,21 @@ func StartHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 		}
 		if r.Method != "POST" {
 			http.Error(w, `{"error":"Method Not Allowed"}`, http.StatusMethodNotAllowed)
+			return
+		}
+
+		host, _, _ := net.SplitHostPort(r.RemoteAddr)
+		if host == "" {
+			host = r.RemoteAddr
+		}
+		if !approveRateLimitCheck(host) {
+			http.Error(w, `{"error":"Too Many Requests: Rate limit exceeded for chaos injection endpoint (10 req/min)"}`, http.StatusTooManyRequests)
+			return
+		}
+
+		role, valid := validateTokenRole(r, r.Header.Get("Authorization"), cfg)
+		if !valid || (role != "operator" && role != "admin") {
+			http.Error(w, `{"error":"Forbidden: Endpoint requires operator or admin role"}`, http.StatusForbidden)
 			return
 		}
 

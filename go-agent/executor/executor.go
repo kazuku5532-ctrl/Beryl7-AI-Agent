@@ -90,9 +90,13 @@ func New() *Executor {
 		"enable_cake_sqm":          e.actionEnableCAKESQM,
 		"remediate_sticky_clients": e.actionRemediateStickyClients,
 		"remediate_wifi_quality":   e.actionRemediateWifiQuality,
+		"stabilize_latency_and_jitter": e.actionStabilizeLatencyAndJitter,
+		"remediate_silent_wan_blackhole": e.actionRemediateSilentWANBlackhole,
 	}
 
 	e.riskMatrix["optimize_streaming_pipeline"] = 0.40 // Low Risk streaming pipeline tuning
+	e.riskMatrix["stabilize_latency_and_jitter"] = 0.40 // Low Risk latency and jitter stabilization
+	e.riskMatrix["remediate_silent_wan_blackhole"] = 0.50 // Moderate Risk silent WAN blackhole recovery
 
 	return e
 }
@@ -417,7 +421,7 @@ func (e *Executor) actionTuneNetworkPerformance(ctx context.Context, target stri
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.wmm=1")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.itxbfen=1") // Ruckus-style Client-Agnostic Implicit Beamforming
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.rai0.igmpsn_enable=1") // Ruckus-style Directed Multicast / IGMP Snooping
-	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.rai0.proxy_arp=1")     // Ruckus-style Airtime Preserving Proxy ARP
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.rai0.proxy_arp=0")     // Ruckus-style Airtime Preserving Proxy ARP
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.rai0.ieee80211k=1")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.rai0.bss_transition=1")
 
@@ -426,7 +430,7 @@ func (e *Executor) actionTuneNetworkPerformance(ctx context.Context, target stri
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_1.wmm=1")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_1.itxbfen=1")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.ra0.igmpsn_enable=1")
-	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.ra0.proxy_arp=1")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.ra0.proxy_arp=0")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.ra0.ieee80211k=1")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.ra0.bss_transition=1")
 
@@ -467,7 +471,7 @@ func (e *Executor) actionRemediateWifiQuality(ctx context.Context, target string
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.wmm=1")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.itxbfen=1")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.rai0.igmpsn_enable=1")
-	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.rai0.proxy_arp=1")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.rai0.proxy_arp=0")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.rai0.eml_mode=0")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.rai0.eml_omn_en=0")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.rai0.eht_t2lmnegosupport=0")
@@ -505,7 +509,7 @@ func (e *Executor) actionOptimizeStreamingPipeline(ctx context.Context, target s
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.amsdu=1")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.itxbfen=1")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.rai0.igmpsn_enable=1")
-	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.rai0.proxy_arp=1")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.rai0.proxy_arp=0")
 	return runSystemCmd(ctx, "/sbin/uci", "commit", "wireless")
 }
 
@@ -606,3 +610,63 @@ func (e *Executor) actionRemediateStickyClients(ctx context.Context, target stri
 	}
 	return nil
 }
+
+func (e *Executor) actionStabilizeLatencyAndJitter(ctx context.Context, target string, params map[string]interface{}) error {
+	logger.Info("AUTONOMOUS LATENCY & JITTER STABILIZER: Clamping Bufferbloat & Enforcing Low-Latency ECN / Pacing...")
+	// 1. Configure FQ_CoDeL with fast 3ms target and 60ms interval to eliminate queue bloat during high-speed traffic
+	_ = runSystemCmd(ctx, "/usr/sbin/tc", "qdisc", "replace", "dev", "rai0", "root", "fq_codel", "limit", "10240", "target", "3ms", "interval", "60ms", "ecn")
+	_ = runSystemCmd(ctx, "/usr/sbin/tc", "qdisc", "replace", "dev", "eth0", "root", "fq_codel", "limit", "10240", "target", "3ms", "interval", "60ms", "ecn")
+	_ = runSystemCmd(ctx, "/sbin/ifconfig", "rai0", "txqueuelen", "2000")
+	_ = runSystemCmd(ctx, "/sbin/ifconfig", "eth0", "txqueuelen", "2000")
+
+	// 2. Kernel TCP Pacing, ECN, and Low-Latency Socket Queuing
+	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.core.default_qdisc=fq_codel")
+	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.tcp_ecn=1")
+	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.tcp_notsent_lowat=16384")
+	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.tcp_pacing_ss_ratio=200")
+	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.tcp_pacing_ca_ratio=120")
+	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.tcp_autocorking=0")
+	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.tcp_early_retrans=3")
+	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.tcp_slow_start_after_idle=0")
+	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.tcp_adv_win_scale=1")
+	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.core.rmem_max=33554432")
+	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.core.wmem_max=33554432")
+
+	// 3. MediaTek MT7993 WMM / Voice / Video / Gaming Queue Priority
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.wmm=1")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.ampdu=1")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.amsdu=1")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.itxbfen=1")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.rai0.igmpsn_enable=1")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.rai0.proxy_arp=0")
+	return runSystemCmd(ctx, "/sbin/uci", "commit", "wireless")
+}
+
+func (e *Executor) actionRemediateSilentWANBlackhole(ctx context.Context, target string, params map[string]interface{}) error {
+	logger.Warn("EMERGENCY RECOVERY: Remediation of Silent WAN/LAN Blackhole (Flushing ARP, Restarting DNS/DHCP, Reloading Firewall & Routing)...")
+	// 1. Flush stale ARP neighbor table to clear dead gateway/client MAC mappings
+	_ = runSystemCmd(ctx, "/usr/sbin/ip", "neigh", "flush", "all")
+
+	// 2. Enforce Kernel IP Forwarding
+	_ = runSystemCmd(ctx, "/sbin/sysctl", "-w", "net.ipv4.ip_forward=1")
+
+	// 3. Restart DNS & DHCP subsystem (dnsmasq) to clear dead sockets/leases
+	if _, err := os.Stat("/etc/init.d/dnsmasq"); err == nil {
+		_ = runSystemCmd(ctx, "/etc/init.d/dnsmasq", "restart")
+	}
+
+	// 4. Reload Firewall NAT rules
+	if _, err := os.Stat("/etc/init.d/firewall"); err == nil {
+		_ = runSystemCmd(ctx, "/etc/init.d/firewall", "reload")
+	}
+
+	// 5. Ensure proxy_arp is disabled on MediaTek wireless interfaces
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.rai0.proxy_arp=0")
+	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.ra0.proxy_arp=0")
+	_ = runSystemCmd(ctx, "/sbin/uci", "commit", "wireless")
+
+	// 6. Refresh WAN interface
+	return e.actionRestartWAN(ctx, target, params)
+}
+
+

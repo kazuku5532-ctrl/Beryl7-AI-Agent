@@ -23,6 +23,9 @@ func TestGetActionRiskThreshold(t *testing.T) {
 		"revert_wifi_bandwidth":    0.90,
 		"remediate_sticky_clients": 0.70,
 		"remediate_wifi_quality":   0.80,
+		"optimize_streaming_pipeline": 0.40,
+		"stabilize_latency_and_jitter": 0.40,
+		"remediate_silent_wan_blackhole": 0.50,
 		"unknown_action":           0.90,
 	}
 
@@ -50,9 +53,12 @@ func TestExecuteActionAllWhitelisted(t *testing.T) {
 		"boost_wifi_bandwidth",
 		"revert_wifi_bandwidth",
 		"tune_network_performance",
+		"optimize_streaming_pipeline",
 		"enable_cake_sqm",
 		"remediate_sticky_clients",
 		"remediate_wifi_quality",
+		"stabilize_latency_and_jitter",
+		"remediate_silent_wan_blackhole",
 	}
 
 	// Test dry run mode
