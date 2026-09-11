@@ -1,3 +1,7 @@
+---
+trigger: always_on
+---
+
 # 🏛️ Complete Self-Management Framework Rule (Triết lý Mạng Tự Trị Toàn Diện)
 
 ## 1. Nguyên lý Chỉ đạo Cao nhất (Ultimate Supreme Goal)
