@@ -54,7 +54,7 @@ func New() *Executor {
 			"block_device":          0.95, // High Risk
 			"set_wan_mac":           0.98, // Critical Risk
 			"remediate_sticky_clients": 0.70, // Low-Medium Risk (Ruckus SmartRoam)
-			"remediate_wifi_quality":   0.80, // Medium Risk (MediaTek MT7993 5GHz Stabilization)
+			"remediate_wifi_quality":   0.85, // Medium Risk (MediaTek MT7993 5GHz Stabilization - triggers auto-rollback on failure)
 		},
 		macRegex: regexp.MustCompile(`^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$`),
 		validIfaces: map[string]bool{

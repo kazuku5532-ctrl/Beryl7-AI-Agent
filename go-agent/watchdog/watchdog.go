@@ -107,7 +107,11 @@ func (w *Watchdog) SaveCheckpoint(config map[string]string) error {
 }
 
 func (w *Watchdog) saveCheckpointInternal(safeMode bool) error {
-	return w.saveCheckpointWithConfig(map[string]string{"network.wan.proto": "dhcp"})
+	return w.saveCheckpointWithConfig(map[string]string{
+		"network.wan.proto":            "dhcp",
+		"wireless.MT7993_1_2.disabled": "0",
+		"wireless.MT7993_1_1.disabled": "0",
+	})
 }
 
 func (w *Watchdog) saveCheckpointWithConfig(config map[string]string) error {
@@ -169,45 +173,72 @@ func UCISyntaxPreCheck() error {
 	return nil
 }
 
-// ExecuteRollback Guardrail khôi phục 100% cấu hình UCI cũ từ /tmp/agent_checkpoint.uci khi rớt mạng
+// ExecuteRollback Guardrail khôi phục 100% cấu hình UCI cũ (bao gồm network & wireless) khi rớt mạng
 func (w *Watchdog) ExecuteRollback() error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	logger.Warn("Watchdog Guardrail Triggered! Rolling back full router UCI configuration from checkpoint...")
+	logger.Warn("Watchdog Guardrail Triggered! Rolling back full router UCI configuration (Network & Wireless) from checkpoint...")
 
 	uciBackupPath := w.checkpointPath
 	if uciBackupPath == "" {
 		uciBackupPath = "/root/.agent_checkpoint.uci"
 	}
 	cleanBackupPath := filepath.Clean(uciBackupPath)
-	if _, err := os.Stat(cleanBackupPath); err == nil {
-		if f, errOpen := os.Open(cleanBackupPath); errOpen == nil { // #nosec G304
-			cmdImport := exec.Command("uci", "import") // #nosec G204
-			cmdImport.Stdin = f
-			if out, errImport := cmdImport.CombinedOutput(); errImport == nil {
-				_ = exec.Command("uci", "commit").Run() // #nosec G204 // nolint:errcheck (non-fatal)
-				logger.Info("Successfully imported full UCI snapshot from %s: %s", cleanBackupPath, string(out))
-			} else {
-				logger.Warn("UCI import from %s failed (%v), falling back to WAN DHCP default.", cleanBackupPath, errImport)
-				_ = exec.Command("uci", "set", "network.wan.proto=dhcp").Run() // #nosec G204 // nolint:errcheck (non-fatal)
-				_ = exec.Command("uci", "commit", "network").Run()             // #nosec G204 // nolint:errcheck (non-fatal)
+
+	restoredFromSnapshot := false
+	if data, errRead := os.ReadFile(cleanBackupPath); errRead == nil {
+		var cp Checkpoint
+		if errJSON := json.Unmarshal(data, &cp); errJSON == nil && len(cp.ConfigSnapshot) > 0 {
+			// Restore individual UCI key-value pairs from JSON snapshot
+			for k, v := range cp.ConfigSnapshot {
+				if k != "" {
+					_ = exec.Command("uci", "set", fmt.Sprintf("%s=%s", k, v)).Run() // #nosec G204 // nolint:errcheck
+				}
 			}
-			_ = f.Close() // nolint:errcheck (non-fatal)
+			restoredFromSnapshot = true
+			logger.Info("Successfully restored %d UCI settings from JSON checkpoint %s", len(cp.ConfigSnapshot), cleanBackupPath)
+		} else {
+			// Fallback: try raw UCI import if file contains plain UCI format
+			if f, errOpen := os.Open(cleanBackupPath); errOpen == nil { // #nosec G304
+				cmdImport := exec.Command("uci", "import") // #nosec G204
+				cmdImport.Stdin = f
+				if out, errImport := cmdImport.CombinedOutput(); errImport == nil {
+					restoredFromSnapshot = true
+					logger.Info("Successfully imported raw UCI snapshot from %s: %s", cleanBackupPath, string(out))
+				}
+				_ = f.Close() // nolint:errcheck
+			}
 		}
-	} else {
-		// Fallback chuẩn WAN DHCP nếu không có file snapshot
-		_ = exec.Command("uci", "set", "network.wan.proto=dhcp").Run() // #nosec G204 // nolint:errcheck (non-fatal)
-		_ = exec.Command("uci", "commit", "network").Run()             // #nosec G204 // nolint:errcheck (non-fatal)
 	}
 
-	// 2. Reload lại các dịch vụ hệ thống mạng & firewall
-	_ = exec.Command("/etc/init.d/firewall", "reload").Run() // #nosec G204 // nolint:errcheck (non-fatal)
-	_ = exec.Command("/etc/init.d/network", "reload").Run()  // #nosec G204 // nolint:errcheck (non-fatal)
+	if !restoredFromSnapshot {
+		logger.Warn("Could not restore from snapshot %s, applying fail-safe WAN DHCP & Wireless defaults.", cleanBackupPath)
+		_ = exec.Command("uci", "set", "network.wan.proto=dhcp").Run() // #nosec G204 // nolint:errcheck
+		_ = exec.Command("uci", "set", "wireless.MT7993_1_2.disabled=0").Run() // #nosec G204 // nolint:errcheck
+		_ = exec.Command("uci", "set", "wireless.MT7993_1_1.disabled=0").Run() // #nosec G204 // nolint:errcheck
+	}
+
+	// 1. Commit both Network and Wireless configurations
+	_ = exec.Command("uci", "commit", "network").Run()  // #nosec G204 // nolint:errcheck
+	_ = exec.Command("uci", "commit", "wireless").Run() // #nosec G204 // nolint:errcheck
+
+	// 2. Reload services: Firewall, Network, and Wireless subsystem
+	_ = exec.Command("/etc/init.d/firewall", "reload").Run() // #nosec G204 // nolint:errcheck
+	_ = exec.Command("/etc/init.d/network", "reload").Run()  // #nosec G204 // nolint:errcheck
+	if _, errWiFi := exec.LookPath("wifi"); errWiFi == nil {
+		_ = exec.Command("wifi", "reload").Run() // #nosec G204 // nolint:errcheck
+	} else if _, errWiFiInit := exec.LookPath("/sbin/wifi"); errWiFiInit == nil {
+		_ = exec.Command("/sbin/wifi", "reload").Run() // #nosec G204 // nolint:errcheck
+	}
 
 	w.safeModeActive = true
 	w.successfulChecks = 0
-	_ = w.saveCheckpointWithConfig(map[string]string{"network.wan.proto": "dhcp"}) // nolint:errcheck (non-fatal)
+	_ = w.saveCheckpointWithConfig(map[string]string{
+		"network.wan.proto":            "dhcp",
+		"wireless.MT7993_1_2.disabled": "0",
+		"wireless.MT7993_1_1.disabled": "0",
+	}) // nolint:errcheck
 
 	return nil
 }
