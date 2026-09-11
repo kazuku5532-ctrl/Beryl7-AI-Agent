@@ -1920,6 +1920,21 @@ func StartHealthCheckServer(cfg *config.Config, health *HealthState, execEngine 
 			return
 		}
 
+		host, _, _ := net.SplitHostPort(r.RemoteAddr)
+		if host == "" {
+			host = r.RemoteAddr
+		}
+		if !approveRateLimitCheck(host) {
+			http.Error(w, `{"error":"Too Many Requests: Rate limit exceeded for chaos injection endpoint (10 req/min)"}`, http.StatusTooManyRequests)
+			return
+		}
+
+		role, valid := validateTokenRole(r, r.Header.Get("Authorization"), cfg)
+		if !valid || (role != "operator" && role != "admin") {
+			http.Error(w, `{"error":"Forbidden: Endpoint requires operator or admin role"}`, http.StatusForbidden)
+			return
+		}
+
 		var req struct {
 			Anomaly string `json:"anomaly"`
 			Action  string `json:"action"`

@@ -223,6 +223,88 @@ func TestHealthCheckServerEndpoints(t *testing.T) {
 	if err == nil {
 		respAppBad.Body.Close()
 	}
+
+	// Test Chaos Inject endpoint over loopback server
+	chaosReq, _ := http.NewRequest("POST", baseURL+"/api/chaos/inject", bytes.NewBuffer([]byte(`{"anomaly":"MEMORY_EXHAUSTION","action":"purge_memory_cache"}`)))
+	chaosReq.Header.Set("Authorization", "Bearer operator-secret")
+	respChaos, err := http.DefaultClient.Do(chaosReq)
+	if err != nil || respChaos.StatusCode != http.StatusOK {
+		t.Errorf("Expected 200 OK for authorized chaos inject, got err=%v code=%v", err, respChaos.StatusCode)
+	}
+	if respChaos != nil {
+		respChaos.Body.Close()
+	}
+}
+
+func TestChaosInjectEndpointAuthentication(t *testing.T) {
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "test_chaos.db")
+	store, err := skillstore.New(dbPath)
+	if err != nil {
+		t.Fatalf("Failed to init store: %v", err)
+	}
+	defer store.Close()
+
+	cfg := &config.Config{
+		AuthToken:             "admin-secret-token",
+		ApproveToken:          "operator-secret-token",
+		DisableLocalhostBypass: true, // Enforce strict remote-style token checks
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/chaos/inject", func(w http.ResponseWriter, r *http.Request) {
+		role, valid := validateTokenRole(r, r.Header.Get("Authorization"), cfg)
+		if !valid || (role != "operator" && role != "admin") {
+			http.Error(w, `{"error":"Forbidden: Endpoint requires operator or admin role"}`, http.StatusForbidden)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":            "chaos_remediation_triggered",
+			"anomaly":           "MEMORY_EXHAUSTION",
+			"action":            "purge_memory_cache",
+			"execution_success": true,
+		})
+	})
+
+	ts := httptest.NewServer(mux)
+	defer ts.Close()
+
+	// 1. Unauthenticated request -> Must be 403 Forbidden
+	reqNoAuth, _ := http.NewRequest("POST", ts.URL+"/api/chaos/inject", bytes.NewBuffer([]byte(`{}`)))
+	respNoAuth, err := http.DefaultClient.Do(reqNoAuth)
+	if err != nil || respNoAuth.StatusCode != http.StatusForbidden {
+		t.Errorf("Expected 403 Forbidden for unauthenticated chaos inject, got err=%v code=%v", err, respNoAuth.StatusCode)
+	}
+	_ = respNoAuth.Body.Close()
+
+	// 2. Invalid Token -> Must be 403 Forbidden
+	reqBadToken, _ := http.NewRequest("POST", ts.URL+"/api/chaos/inject", bytes.NewBuffer([]byte(`{}`)))
+	reqBadToken.Header.Set("Authorization", "Bearer wrong-token")
+	respBadToken, err := http.DefaultClient.Do(reqBadToken)
+	if err != nil || respBadToken.StatusCode != http.StatusForbidden {
+		t.Errorf("Expected 403 Forbidden for invalid token chaos inject, got err=%v code=%v", err, respBadToken.StatusCode)
+	}
+	_ = respBadToken.Body.Close()
+
+	// 3. Valid Operator Token -> Must be 200 OK
+	reqOpToken, _ := http.NewRequest("POST", ts.URL+"/api/chaos/inject", bytes.NewBuffer([]byte(`{}`)))
+	reqOpToken.Header.Set("Authorization", "Bearer operator-secret-token")
+	respOpToken, err := http.DefaultClient.Do(reqOpToken)
+	if err != nil || respOpToken.StatusCode != http.StatusOK {
+		t.Errorf("Expected 200 OK for operator token chaos inject, got err=%v code=%v", err, respOpToken.StatusCode)
+	}
+	_ = respOpToken.Body.Close()
+
+	// 4. Valid Admin Token -> Must be 200 OK
+	reqAdminToken, _ := http.NewRequest("POST", ts.URL+"/api/chaos/inject", bytes.NewBuffer([]byte(`{}`)))
+	reqAdminToken.Header.Set("Authorization", "Bearer admin-secret-token")
+	respAdminToken, err := http.DefaultClient.Do(reqAdminToken)
+	if err != nil || respAdminToken.StatusCode != http.StatusOK {
+		t.Errorf("Expected 200 OK for admin token chaos inject, got err=%v code=%v", err, respAdminToken.StatusCode)
+	}
+	_ = respAdminToken.Body.Close()
 }
 
 func TestQueuePendingApprovalAndAuditLog(t *testing.T) {
