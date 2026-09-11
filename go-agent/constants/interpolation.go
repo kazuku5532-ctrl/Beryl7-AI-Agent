@@ -1,4 +1,4 @@
-﻿package constants
+package constants
 
 // TinyML Vector Similarity Interpolation Constants (Single Source of Truth)
 const (
