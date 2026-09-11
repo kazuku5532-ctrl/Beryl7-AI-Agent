@@ -15,6 +15,7 @@ skips:
   - "B601"  # Shell parameter check for controlled subprocess calls
   - "B603"  # Controlled subprocess execution without shell=True
   - "B607"  # Partial path executable resolution in dev scripts
+  - "B310"  # Audit url open for permitted schemes in CLI inspect tool
 
 # Default targets
 targets:

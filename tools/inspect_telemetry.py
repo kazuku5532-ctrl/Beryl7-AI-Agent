@@ -10,8 +10,10 @@ def main():
     args = parser.parse_args()
 
     try:
+        if not (args.url.startswith("http://") or args.url.startswith("https://")):
+            raise ValueError("URL scheme must be http or https")
         req = urllib.request.Request(args.url, method="GET")
-        with urllib.request.urlopen(req, timeout=5) as resp:
+        with urllib.request.urlopen(req, timeout=5) as resp:  # nosec B310
             data = json.loads(resp.read().decode("utf-8"))
     except Exception as e:
         print(f"Error fetching data from {args.url}: {e}")
