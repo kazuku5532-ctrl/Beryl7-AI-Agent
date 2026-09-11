@@ -25,6 +25,7 @@ type ActionFunc func(ctx context.Context, target string, params map[string]inter
 
 type TelemetryProvider interface {
 	AreWiFiClientsIdle(ctx context.Context) (bool, int, error)
+	IsRepeaterActive(ctx context.Context) (bool, string, int, error)
 }
 
 type Executor struct {
@@ -210,6 +211,11 @@ func (e *Executor) checkWiFiIdleGuard(ctx context.Context) error {
 			logger.Warn("ZERO-DISRUPTION GUARD: Wi-Fi reload blocked and deferred - %d active client(s) connected/transferring traffic.", activeClients)
 			return fmt.Errorf("wifi reload deferred: active client(s) connected/transferring traffic (%d clients)", activeClients)
 		}
+		isRepeater, ssid, sig, errRep := e.telemetry.IsRepeaterActive(ctx)
+		if errRep == nil && isRepeater && sig < 0 {
+			logger.Warn("REPEATER SAFEGUARD: Active Repeater uplink connected (SSID: %s, Signal: %ddBm). Guarding against disruptive radio reload.", ssid, sig)
+			return fmt.Errorf("wifi reload deferred: active repeater uplink connected (%s)", ssid)
+		}
 	}
 	return nil
 }
@@ -331,7 +337,6 @@ func (e *Executor) actionBoostWifiBandwidth(ctx context.Context, target string, 
 	}
 	logger.Info("DYNAMIC BOOST TRIGGERED: Preparing 160MHz Max Wi-Fi 7 Bandwidth on MT7993_1_2...")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.htmode=EHT160")
-	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.noscan=1")
 	return runSystemCmd(ctx, "/sbin/uci", "commit", "wireless")
 }
 
@@ -341,7 +346,6 @@ func (e *Executor) actionRevertWifiBandwidth(ctx context.Context, target string,
 	}
 	logger.Info("DYNAMIC BOOST COMPLETED: Reverting Wi-Fi 7 to Eco 80MHz Mode on MT7993_1_2...")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.htmode=HE80")
-	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.noscan=0")
 	return runSystemCmd(ctx, "/sbin/uci", "commit", "wireless")
 }
 
@@ -396,7 +400,6 @@ func (e *Executor) actionTuneNetworkPerformance(ctx context.Context, target stri
 
 	// MediaTek MT7993 5GHz Wi-Fi 7 Driver Stabilization (160MHz Wire-Speed & 256-frame Unthrottled Aggregation)
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.htmode=HE160")
-	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.noscan=1")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.muofdmadl_enable=0")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.muofdmaul_enable=0")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.mumimodl_enable=0")
@@ -454,7 +457,6 @@ func (e *Executor) actionTuneNetworkPerformance(ctx context.Context, target stri
 func (e *Executor) actionRemediateWifiQuality(ctx context.Context, target string, params map[string]interface{}) error {
 	logger.Info("REMEDIATE WIFI QUALITY: Applying MediaTek MT7993 5GHz Wi-Fi 7 Driver Stabilization (160MHz/256BA/Queue Fix)...")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.htmode=HE160")
-	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.noscan=1")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.muofdmadl_enable=0")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.muofdmaul_enable=0")
 	_ = runSystemCmd(ctx, "/sbin/uci", "set", "wireless.MT7993_1_2.mumimodl_enable=0")

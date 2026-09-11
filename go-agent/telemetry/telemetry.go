@@ -1008,6 +1008,15 @@ func (t *TelemetryCollector) CollectRepeaterMetrics(ctx context.Context) (*Repea
 	return metrics, nil
 }
 
+// IsRepeaterActive checks whether an active repeater station uplink is connected
+func (t *TelemetryCollector) IsRepeaterActive(ctx context.Context) (bool, string, int, error) {
+	m, err := t.CollectRepeaterMetrics(ctx)
+	if err != nil || m == nil {
+		return false, "", 0, err
+	}
+	return m.IsRepeater, m.SSID, m.Signal, nil
+}
+
 // HarmonizeRepeaterState dynamically orchestrates gl-repeater:
 // When wired Ethernet WAN is active, repeater background scanning is put to standby (auto=0) to protect local Wi-Fi 7 streams from rogue scanning drops.
 // When wired WAN is disconnected/offline, repeater auto-scanning is re-enabled (auto=1) for seamless travel/wireless bridging mode.
