@@ -866,16 +866,16 @@ func main() {
 				}
 			} else if isBoosted && m.DownloadMbps < cfgSnap.BandwidthRestoreMbps {
 				lowTrafficCycles++
-				if lowTrafficCycles >= 2 {
-					logger.Info("SMART BANDWIDTH STABILIZED (%.1f Mbps < %.1fMbps for 2 cycles)! Reverting Wi-Fi 7 to Eco 80MHz Mode...", m.DownloadMbps, cfgSnap.BandwidthRestoreMbps)
+				if lowTrafficCycles >= 60 { // Require 5 minutes (60 x 5s cycles) of sustained true idle before eco revert
+					logger.Info("SMART BANDWIDTH STABILIZED (%.1f Mbps < %.1fMbps for 5m idle)! Reverting Wi-Fi 7 to Eco 80MHz Mode...", m.DownloadMbps, cfgSnap.BandwidthRestoreMbps)
 					revertReq := &executor.ActionRequest{ActionName: "revert_wifi_bandwidth", Target: "radio1"}
 					if execErr := execEngine.ExecuteAction(ctx, revertReq, currentDryRun); execErr == nil {
 						isWifiBoostedAtomic.Store(false)
 						lowTrafficCycles = 0
 						if tgNotifier != nil {
 							ecoMsg := fmt.Sprintf("🌱 *Wi-Fi 7 đã tự động trở về chế độ Eco (80MHz)*\n\n"+
-								"📊 *Lưu lượng mạng:* `%.1f Mbps` (< `%.1f Mbps` trong 10s)\n"+
-								"💡 Router đã tự động hạ băng thông để tiết kiệm điện năng và giảm nhiệt độ.",
+								"📊 *Lưu lượng mạng:* `%.1f Mbps` (< `%.1f Mbps` trong 5 phút)\n"+
+								"💡 Router đã tự động hạ băng thông khi hoàn toàn rảnh rỗi để tiết kiệm điện năng và giảm nhiệt độ.",
 								m.DownloadMbps, cfgSnap.BandwidthRestoreMbps)
 							go func() { _ = tgNotifier.SendAlert(ctx, ecoMsg) }()
 						}
