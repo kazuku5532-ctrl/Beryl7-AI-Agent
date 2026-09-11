@@ -30,13 +30,14 @@ jobs:
 
       - name: Install Industry-Standard Security Scanners (gosec & bandit)
         run: |
-          curl -sfL https://raw.githubusercontent.com/securego/gosec/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v2.18.2
-          pip install bandit detect-secrets
+          mkdir -p $(go env GOPATH)/bin
+          go install github.com/securego/gosec/v2/cmd/gosec@v2.18.2 || curl -sfL https://raw.githubusercontent.com/securego/gosec/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v2.18.2
+          pip install --no-cache-dir bandit detect-secrets
 
       - name: Run gosec (Go AST Security & Command Injection Audit)
         run: |
           cd go-agent
-          $(go env GOPATH)/bin/gosec -exclude=G104,G118,G201,G204,G302,G304,G306,G702 -exclude-dir=tests -quiet ./...
+          gosec -exclude=G104,G118,G201,G204,G302,G304,G306,G702 -exclude-dir=tests -quiet ./...
 
       - name: Run bandit (Python AST Security Audit)
         run: |
