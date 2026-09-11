@@ -1,3 +1,7 @@
+---
+trigger: always_on
+---
+
 # 🛡️ Mandatory Security, Workflow Rigor & Modesty Rule (Quy tắc Kỷ luật Kỹ thuật & Quy trình Toàn diện)
 
 ## 1. Cấm Tự tin Thái quá & Cấm Tuyên bố "Hoàn hảo/Không còn lỗi"
